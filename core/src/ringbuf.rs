@@ -21,10 +21,10 @@ pub struct TrackId(pub u32);
 /// Commands sent from the UI/Control thread to the real-time Audio thread.
 ///
 /// # Note on derives
-/// This enum cannot be `Copy` or `Clone` because `AddTrack` carries a raw
-/// pointer (a `Box<TrackPlayer>` smuggled as `usize`). Cloning that value
-/// would create two owners of the same heap block and cause a double-free.
-/// We implement `Debug` manually for the pointer-carrying variants.
+/// This enum cannot be `Copy` or `Clone` because `AddTrack` and `RestartTrack`
+/// carry raw pointers (a `Box` smuggled as `usize`). Cloning that value would
+/// create two owners of the same heap block and cause a double-free.
+/// We implement `Debug` manually for the pointer-carrying variants where needed.
 #[derive(Debug)]
 pub enum EngineCommand {
     // --- Transport ---
@@ -70,6 +70,16 @@ pub enum EngineCommand {
 
     /// Remove a track from the audio thread by ID.
     RemoveTrack { track_id: TrackId },
+
+    /// Replace the stream consumer of an existing track and reset its playback
+    /// cursor. Used by the control thread after restarting a StreamDecoder so
+    /// that Stop → Play restarts audio from the beginning of the file.
+    ///
+    /// `consumer_ptr` is a `Box<Consumer<DecodedBlock>>` cast to `usize`.
+    RestartTrack {
+        track_id: TrackId,
+        consumer_ptr: usize,
+    },
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
