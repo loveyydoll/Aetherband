@@ -37,7 +37,7 @@ class TimelineView extends StatelessWidget {
   final void Function(TrackModel, double) onVolumeChanged;
 
   static const double _headerWidth = 196;
-  static const double _rulerHeight = 34;
+  static const double _rulerHeight = 38;
   static const double _minimumLaneHeight = 64;
 
   @override
@@ -213,14 +213,17 @@ class _TrackHeader extends StatelessWidget {
                     _MiniButton(label: 'S', active: track.solo, color: AetherColors.sage, onTap: onSolo),
                     const SizedBox(width: 5),
                     Expanded(
-                      child: SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          trackHeight: 2,
+                      child: Theme(
+                        data: Theme.of(context).copyWith(
                           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4),
-                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 7),
                         ),
-                        child: SizedBox(
+                        child: SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 2,
+                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4),
+                            overlayShape: const RoundSliderOverlayShape(overlayRadius: 7),
+                          ),
+                          child: SizedBox(
                           height: 23,
                           child: Slider(
                             value: track.volume.clamp(0.0, 1.0).toDouble(),
