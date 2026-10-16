@@ -104,6 +104,8 @@ pub struct StreamDecoder {
     consumer: Option<Consumer<DecodedBlock>>,
     /// Atomic flag: set to `true` to request the worker to stop.
     stop_flag: Arc<AtomicBool>,
+    /// Join handle ensures the worker is not silently detached on removal.
+    worker: Option<std::thread::JoinHandle<()>>,
 }
 
 impl StreamDecoder {
@@ -121,7 +123,7 @@ impl StreamDecoder {
         // Probe the file for info we'll need in the thread
         let info = probe_file(&path)?;
 
-        std::thread::Builder::new()
+        let worker = std::thread::Builder::new()
             .name(format!("stream-decoder({})", path.display()))
             .spawn(move || {
                 if let Err(e) = decode_worker(path, info, output_sample_rate, producer, stop_clone)
@@ -134,6 +136,7 @@ impl StreamDecoder {
         Ok(Self {
             consumer: Some(consumer),
             stop_flag,
+            worker: Some(worker),
         })
     }
 
@@ -148,9 +151,25 @@ impl StreamDecoder {
             .expect("StreamDecoder: take_consumer() called more than once")
     }
 
-    /// Request the worker thread to stop at its next opportunity.
-    pub fn stop(&self) {
-        self.stop_flag.store(true, Ordering::Relaxed);
+    /// Request the worker thread to stop and wait for it to exit.
+    ///
+    /// This is a control-thread operation and must never be called from the
+    /// real-time audio callback.
+    pub fn stop(&mut self) {
+        self.stop_flag.store(true, Ordering::Release);
+        if let Some(worker) = self.worker.take() {
+            if worker.thread().id() != std::thread::current().id() {
+                if worker.join().is_err() {
+                    log::error!("Stream decoder worker panicked while shutting down");
+                }
+            }
+        }
+    }
+}
+
+impl Drop for StreamDecoder {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 
