@@ -1,5 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Threading.Tasks;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -72,17 +73,16 @@ public partial class MainViewModel : ViewModelBase, IDisposable
 
         if (_audioService.IsInitialized)
         {
-            StatusText = "Audio Engine Active";
+            StatusText = "Engine ready";
             LoadDevices();
         }
         else
         {
             StatusText = _audioService.InitializationError is { Length: > 0 } error
                 ? $"Audio unavailable: {error}"
-                : "Audio engine unavailable. The UI is running without audio.";
+                : "Audio engine unavailable. UI is running without audio.";
         }
 
-        // 60 FPS Telemetry Polling Loop (~16ms)
         _meterTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(16)
@@ -114,7 +114,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         if (value != null)
         {
             _audioService.SelectDevice(value.Index);
-            StatusText = $"Active Device: {value.Name} ({value.SampleRate} Hz)";
+            StatusText = $"{value.Name} · {value.SampleRate} Hz";
         }
     }
 
@@ -165,6 +165,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         PlayheadFrames = 0;
         PlayheadTimeText = "00:00.00";
         TimelineProgress = 0;
+        foreach (var t in Tracks)
+            t.Progress = 0;
     }
 
     [RelayCommand]
@@ -193,11 +195,35 @@ public partial class MainViewModel : ViewModelBase, IDisposable
                 vm => RemoveTrack(vm)
             );
             Tracks.Add(trackVm);
-            StatusText = $"Loaded track: {fileName}";
+            StatusText = $"Loaded {fileName}";
+            _ = GeneratePeaksAsync(trackVm);
         }
         else
         {
-            StatusText = $"Failed to load audio file: {System.IO.Path.GetFileName(path)}";
+            StatusText = $"Failed to load {System.IO.Path.GetFileName(path)}";
+        }
+    }
+
+    private async Task GeneratePeaksAsync(TrackViewModel trackVm)
+    {
+        trackVm.IsGeneratingPeaks = true;
+        try
+        {
+            var peaks = await PeakGenerator.GenerateAsync(trackVm.FilePath);
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                trackVm.Peaks = peaks;
+                trackVm.IsGeneratingPeaks = false;
+                if (peaks != null)
+                    StatusText = $"Waveform ready · {trackVm.Name}";
+            });
+        }
+        catch
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                trackVm.IsGeneratingPeaks = false;
+            });
         }
     }
 
@@ -205,7 +231,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     {
         _audioService.RemoveTrack(vm.Id);
         Tracks.Remove(vm);
-        StatusText = $"Removed track: {vm.Name}";
+        StatusText = $"Removed {vm.Name}";
     }
 
     private void OnMeterTick(object? sender, EventArgs e)
@@ -220,16 +246,15 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             PlayheadFrames = state.PlayheadFrame;
             TotalDurationFrames = state.TotalDurationFrames;
 
-            // Calculate standard mm:ss.ms time display at 48kHz
-            double seconds = state.PlayheadFrame / 48000.0;
+            double sampleRate = SelectedDevice?.SampleRate > 0 ? SelectedDevice.SampleRate : 48000.0;
+            double seconds = state.PlayheadFrame / sampleRate;
             int mins = (int)(seconds / 60);
             double secs = seconds % 60;
             PlayheadTimeText = $"{mins:D2}:{secs:00.00}";
 
-            // Total duration display
             if (state.TotalDurationFrames > 0)
             {
-                double totalSeconds = state.TotalDurationFrames / 48000.0;
+                double totalSeconds = state.TotalDurationFrames / sampleRate;
                 int totalMins = (int)(totalSeconds / 60);
                 double totalSecs = totalSeconds % 60;
                 DurationTimeText = $"{totalMins:D2}:{totalSecs:00.00}";
@@ -239,10 +264,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             {
                 TimelineProgress = 0.0;
             }
+
+            // Drive per-lane playhead for waveform controls
+            foreach (var t in Tracks)
+                t.Progress = TimelineProgress;
         }
         else if (!IsPlaying)
         {
-            // Smooth decay when idle
             PeakLeft = Math.Max(0f, PeakLeft * 0.85f);
             PeakRight = Math.Max(0f, PeakRight * 0.85f);
             RmsLeft = Math.Max(0f, RmsLeft * 0.85f);
