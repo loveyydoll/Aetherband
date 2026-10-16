@@ -16,7 +16,7 @@ Aetherband is an early-alpha desktop DAW built around a Rust audio engine, C ABI
 
 - [x] Stop behavior fix is reported by the maintainer as complete; README describes engine silence, playhead reset, decoder restart, and a regression test.
 - [x] Core playback, multi-track mixing, native interop, and initial timeline UI are described as implemented.
-- [x] The README describes background decoding for WAV, FLAC, MP3, OGG, and AAC/M4A.
+- [x] The README describes a `symphonia` decoding pipeline. WAV is the only format reported as tested; FLAC, MP3, OGG, and AAC/M4A are plausible based on decoder support but remain unverified end-to-end.
 - [x] Contributor guidance and real-time audio constraints are documented.
 
 These are based on the current documentation and maintainer update; this audit did not run the code or hardware tests itself.
@@ -26,7 +26,7 @@ These are based on the current documentation and maintainer update; this audit d
 - [ ] Update the old issue/PR and engineering-status references to reflect the current state. Close or relabel issue #5 only when the maintainer is satisfied its acceptance criteria are met.
 - [ ] Review the latest CI runs and record which Rust/.NET checks pass on the current commits.
 - [ ] Refresh `docs/ENGINEERING_STATUS.md`; it references older branch/PR context and must not be treated as current without reconciliation.
-- [ ] Reconcile the supported-format lists. README names WAV, FLAC, MP3, OGG, AAC/M4A; `docs/REQUIREMENTS.md` currently names WAV, AIFF, FLAC, and MP3.
+- [ ] Reconcile supported-format lists around three states: implemented/configured, expected but unverified, and tested end-to-end. WAV is the only format reported as tested. Do not label other formats unsupported solely because they have not been tested.
 - [ ] Reconcile the C ABI contract: `docs/API_CONTRACT.md` mentions `daw_engine_stop`, while its exported-function list documents `daw_engine_send_command` for transport commands. Check the actual exported symbols before editing the contract.
 - [ ] Fix literal escaped newline sequences (`\\n`) in transport/implementation notes in `docs/AI_WORKFLOW.md`, `docs/AUDIO_ENGINE.md`, `docs/API_CONTRACT.md`, and `docs/DECISIONS.md`, if still present on the current branch.
 - [ ] Align README, roadmap, requirements, engineering snapshot, and PR checklists on what is implemented, planned, and verified.
@@ -36,7 +36,7 @@ These are based on the current documentation and maintainer update; this audit d
 
 1. **Reconcile current status:** inspect the latest source, issue/PR state, and CI. Remove stale claims that Stop remains an active bug.
 2. **Close out stabilization accurately:** keep only real outstanding lifecycle/test gaps. If a test or hardware check has not been run, record it as unverified rather than reopening a fixed bug.
-3. **Clean documentation contracts:** supported formats, C ABI symbol list, malformed Markdown line breaks, and old branch/PR references.
+3. **Clean documentation contracts:** supported-format confidence levels, C ABI symbol list, malformed Markdown line breaks, and old branch/PR references. Test FLAC/MP3/etc. incrementally before marking them verified.
 4. **Move forward with Phase 4 planning/implementation** as appropriate: project save/load and asset management, waveform peak generation/caching, audio input recording/background writing, and offline WAV export.
 5. Keep MIDI/instruments and effects/plugin hosting as later milestones unless the maintainer changes the roadmap priority.
 
