@@ -1,81 +1,124 @@
-# Aetherband — Engineering Status Snapshot
+# Aetherband — Current Engineering Status
 
-**Snapshot date:** 2026-10-16  
-**Branch context:** `fix/audio-engine-correctness`, draft PR #1  
-**Important:** This is a historical status snapshot, not proof that code compiles or behaves correctly. Re-check source, CI and PR status before acting on it.
+**Snapshot date:** 2026-10-17  
+**Main commit at snapshot:** `66fc6f9a39b283fdcf8dfd6b7279f02a663e0169`  
+**Canonical Flutter direction:** [`FLUTTER_DESKTOP_MIGRATION.md`](FLUTTER_DESKTOP_MIGRATION.md)  
+**AI handoff:** [`AI_HANDOFF.md`](AI_HANDOFF.md)
 
-## Current stabilization pass — 2026-10-16
+> This is a dated snapshot. Re-check current source, PRs, CI and runtime evidence before treating any item as current. The implementation may move after this snapshot.
 
-Draft PR #3: https://github.com/loveyydoll/Aetherband/pull/3
+## 1. Product and architecture status
 
-- Added a terminal zero-frame decoder marker for media whose decoded frame count ends exactly on a full block boundary, plus a track-level regression test for consuming that marker.
-- Added local verification scripts for Windows PowerShell and Bash.
-- Updated .NET CI to target the desktop project's actual `.csproj` and its `.NET 10` target framework.
-- Applied the formatting changes reported by the first Rust CI run.
+Aetherband is an early-alpha, desktop-first DAW.
 
-**Verification remains incomplete:** the first Rust CI run failed during `cargo fmt --all -- --check`, so compile/tests were skipped. Formatting edits were pushed afterward, but no successful rerun has yet been confirmed. The repository has not been built locally in this environment. Do not merge the draft until the latest branch has passing CI and the remaining P0/P1 issues below are resolved or explicitly accepted.
+- **Rust audio engine:** `core/` owns DSP, mixer, decoding coordination, device I/O and the real-time audio callback.
+- **Native contract:** `bindings/c_abi/src/lib.rs` is the source of truth for exported functions and C-compatible data layouts.
+- **Current audio-connected desktop app:** C#/.NET 10 + Avalonia under `apps/desktop/RouletteStudio.Desktop/`; the folder/namespace has a historical name.
+- **Mandatory target desktop app:** Flutter/Dart. The owner explicitly decided that Flutter must be implemented full scale and integrated through Dart FFI over the existing C ABI. This is a required product direction, not an optional prototype or redesign.
+- **Transition strategy:** keep Avalonia buildable and audio-connected until Flutter has equivalent supported workflows, passing platform builds/tests and owner review. Do not delete it prematurely.
+- **Flutter implementation state:** `prototypes/aetherband-flutter-ui/` is still mock-only. It is not yet an audio-connected production app.
 
-## Project and priority
-Aetherband is an early-alpha desktop audio workstation built around a Rust audio engine, C ABI in `bindings/c_abi/`, and a C#/.NET Avalonia desktop application. Current priority is audio correctness, ownership/lifecycle safety, repeatable CI and trustworthy documentation.
+## 2. Flutter UI work merged
 
-## Implementation attempts on PR #1
-The following changes were committed to `fix/audio-engine-correctness` and require critical review:
-- Bound audio command processing to at most 128 commands per callback.
-- Added reverse SPSC retirement communication and fixed-capacity deferred storage intended to move track-player reclamation to the control thread.
-- Kept track players boxed in audio track slots.
-- Guarded zero-channel output and cleared output channels beyond stereo.
-- Initialized the processor using the selected output device's reported default sample rate.
-- Added decoder worker join handles and stop/join behavior.
-- Added regression tests for zero-channel and extra-channel output.
-- Added a Rust CI workflow for formatting, workspace compilation and tests.
+### PR #9 — initial Flutter workspace
 
-These are implementation attempts, not verified fixes. In particular, review all queue-full/rejection paths, callback destruction/deallocation, worker shutdown and decoder/device lifecycle.
+- PR: https://github.com/loveyydoll/Aetherband/pull/9
+- Merge commit: `14ce7938a529e83c2a189b3214f5f02a57670f20`
+- Added the isolated Flutter desktop workspace, theme, demo track/clip models, mock engine, timeline, browser, device/instrument/mixer dock, widget test, and Windows/macOS CI workflow.
+- Rust, C ABI and Avalonia source were not replaced.
 
-## Verification status at snapshot time
-- Local Rust checks were not run by the authoring agent.
-- The first Rust Actions run failed at `cargo fmt --all -- --check`; compilation and tests were skipped.
-- Recent .NET workflow runs on `main` were also failing at that time; inspect their logs before attributing the cause.
-- Runtime audio/device checks were not performed.
-- PR #1 was a draft and not ready to merge.
+### PR #10 — DAW-style UI polish
 
-References:
-- [Draft PR #1](https://github.com/loveyydoll/Aetherband/pull/1)
-- [Rust workflow](https://github.com/loveyydoll/Aetherband/actions/workflows/rust.yml)
+- PR: https://github.com/loveyydoll/Aetherband/pull/10
+- Merge commit: `66fc6f9a39b283fdcf8dfd6b7279f02a663e0169`
+- Added a compact DAW/IDE-style menu and transport strip, darkened the surface palette, made arrangement track lanes responsive, corrected the final ruler cell's width to remove a 28-pixel horizontal overflow, and wrapped browser ListTiles in their own transparent `Material` surfaces to prevent Flutter framework assertions.
+- Strengthened the widget smoke test to assert no initial layout/framework exceptions.
 
-## Outstanding risks
+### Current Flutter source inventory
 
-### P0 — Transport and decoder coordination
-- Stop does not yet have a proven protocol for resetting/restarting decoder source position.
-- Seek must coordinate the playhead, decoder seek, buffered-audio invalidation and resumption.
-- Add tests for Stop → Play, seeking while playing/stopped, repeated seeks, EOF and decoder backpressure.
+- `lib/main.dart`: app entry point.
+- `lib/src/aetherband_app.dart`: workspace state/layout/menu/transport.
+- `lib/src/theme.dart`: theme tokens.
+- `lib/src/models.dart`: demo-only track and clip models.
+- `lib/src/mock_engine.dart`: fake engine/telemetry; replace behind an injectable engine interface when implementing native FFI.
+- `lib/src/widgets/timeline_view.dart`: ruler, track headers/lanes, clip positioning and mock controls.
+- `lib/src/widgets/clip_tile.dart`: visual demo clip/waveform illustration, not decoded audio peaks.
+- `lib/src/widgets/workspace_panels.dart`: browser, instrument/device preview, knobs, effects and mixer mock UI.
+- `test/widget_test.dart`: workspace/menu/transport/layout smoke test.
+- `.github/workflows/flutter-ui-prototype.yml`: workflow at repository root for Windows/macOS analysis, tests and host debug builds.
 
-### P0 — Device switching and active tracks
-- Recreating the processor may discard active track slots while control-side metadata/decoder handles remain.
-- Device switching must preserve/rebuild track players safely or fail without corrupting the session.
-- Test switching with zero, one and multiple tracks, including device-open failure.
+## 3. Visual design contract
 
-### P1 — Real-time safety
-- Review AddTrack rejection, RemoveTrack, command floods, queue-full behaviour, processor drop and engine shutdown.
-- Prove no destructor/deallocation, logging, blocking wait, I/O, lock or unbounded loop can occur in the callback.
-- Add lifecycle-focused safety tests, not just test-tone/allocation tests.
-- Define and test the policy for callback buffers above the 2048-frame scratch-buffer cap.
+The current design uses:
 
-### P1 — Decoder errors and shutdown
-- Worker failures need structured error delivery to the engine/UI.
-- Verify stop/join cannot hang and workers terminate on track removal and engine shutdown.
-- Test corrupt/unsupported media, early EOF, full decoder ring buffer and rapid load/remove.
+| Token | Value |
+|---|---|
+| background | `#1B1C20` |
+| panel | `#27282D` |
+| raised/border | `#35363D` |
+| grid | `#2D2E34` |
+| warm paper text | `#E9E3D9` |
+| secondary text | `#AAA8B0` |
+| sage | `#A9B69A` |
+| magenta | `#E94E91` |
+| blue | `#485CC7` |
 
-### P1 — Sample rate, output and device tests
-- Validate default and explicitly selected sample-rate initialization.
-- Test mono, stereo, multichannel, zero-channel defensive behaviour and oversized buffers.
-- Ensure device reconfiguration does not leave UI and processor state contradictory.
+The UI direction is an arrangement-first workstation, compact application menus, library/browser sidebar and bottom instrument/mixer dock. Do not restore the oversized product-title banner by default. Preserve original styling and assets; general DAW/IDE workflow conventions are reference material, not code/assets to copy.
 
-### P2 — Repository coherence
-- Reconcile remaining legacy C# namespace/project paths and any historical references; public-facing product documentation should use Aetherband consistently.
-- Keep this file as a dated engineering snapshot; use `AGENTS.md` for stable agent rules and `docs/AI_WORKFLOW.md` for workflow safeguards.
+## 4. Verified checks — UI PR head
 
-## Verification checklist
-Run from the repository root when Rust and native prerequisites are available:
+The Flutter CI run [38982461083](https://github.com/loveyydoll/Aetherband/actions/runs/38982461083) completed successfully on PR-head commit `3bd8e73827dcf628283575872cfa616463779e73` before PR #10 was merged:
+
+- Windows: Flutter setup, desktop runner generation, dependency install, `flutter analyze`, `flutter test`, `flutter build windows --debug` — passed.
+- macOS: Flutter setup, desktop runner generation, dependency install, `flutter analyze`, `flutter test`, `flutter build macos --debug` — passed.
+
+The merged main commit contains those source changes. Re-check the current post-merge commit before claiming fresh verification on that exact commit. The docs work currently in progress has not run local tests or altered Dart/C/Rust source.
+
+## 5. Known failing or incomplete work
+
+### Rust formatting check
+
+Rust Actions run [38982465835](https://github.com/loveyydoll/Aetherband/actions/runs/38982465835) failed at `cargo fmt --all -- --check`. Rustfmt identified formatting differences in `core/src/lib.rs` around lines 232 and 243. Workspace check and tests were skipped after that failure. The Flutter UI PR did not edit those Rust lines. Fix and re-run this independently; do not suppress the workflow or treat the failure as a Flutter test failure.
+
+### Flutter/native integration — not implemented
+
+- No production Dart FFI adapter exists at this snapshot.
+- Flutter has not yet loaded or created a real `DAWEngine` handle.
+- Flutter transport, recording state, playhead, meters, track volume/mute/solo, device list, instrument panel and mixer are not wired to native state.
+- Timeline clips and waveforms are demo data, not real file-backed audio regions or extracted peaks.
+- Native library build/package/search paths are not yet integrated into the Flutter app.
+- The menu includes placeholder actions that report they are not connected; these must not be presented as live functionality in a production mode.
+
+### Current ABI/functionality gaps
+
+The C ABI currently exports engine lifecycle, play/pause/stop, master gain/test tone, telemetry poll, device count/info/select, load/remove track, track volume/pan/mute and track count. It does not yet export a complete project/session model, clip editing, seek/scrub, audio recording, MIDI sequencing, plugin/effects chains, automation or export. See [`API_CONTRACT.md`](API_CONTRACT.md) for current exported signatures/fields and limitations.
+
+The current `csbindgen` build generates C# P/Invoke bindings only. Dart must have its own adapter. Do not copy stale `DAWConfig`, `DAWCommand`, `daw_engine_send_command` or similar examples from older drafts without confirming they exist in `bindings/c_abi/src/lib.rs`.
+
+## 6. Next priorities
+
+1. Resolve the Rust formatting CI failure and re-run Rust format/check/tests; preserve all real-time safety guarantees.
+2. Implement a testable Dart engine-client abstraction and native FFI adapter over actual C ABI exports.
+3. Validate API version, layouts, string marshaling, return codes, library loading, engine creation/destruction and telemetry.
+4. Connect existing real capabilities (devices, load/remove track, transport, master/track controls and meters/playhead) with error handling and lifecycle safety.
+5. Add integration tests and runtime/manual verification on Windows and macOS with actual audio devices.
+6. Continue the full-scale Flutter workstation implementation; add missing C ABI and engine features as required by later product phases.
+7. Only then promote Flutter to the default run/package path and retire Avalonia in a separate reviewed change.
+
+## 7. Verification commands
+
+At the Flutter workspace while it remains in the prototype path:
+
+```sh
+cd prototypes/aetherband-flutter-ui
+flutter pub get
+flutter analyze
+flutter test
+```
+
+On Windows, also run `flutter build windows --debug`; on macOS, `flutter build macos --debug`.
+
+For Rust, from the repository root when native dependencies are available:
 
 ```sh
 cargo fmt --all -- --check
@@ -84,6 +127,4 @@ cargo test --workspace --all-targets
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Discover the actual .NET solution path and SDK before running restore/build/test. For audio-engine changes, automated checks are not sufficient: test playback, track lifecycle, transport controls, device switching and clean exit on supported hardware, recording OS, device and sample rate.
-
-Update this snapshot when its facts change. Mark something verified only with successful command or CI evidence; record failures and skipped checks plainly.
+For changes to the actual audio path, automated checks are not sufficient: record the OS, device, sample rate, steps and outcome for playback, Stop → Play restart, track load/remove, device switching and clean shutdown.
