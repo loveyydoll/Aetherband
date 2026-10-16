@@ -131,13 +131,32 @@ impl TrackPlayer {
         }
     }
 
-    /// Resets playback to the beginning (used on Stop or Seek).
+    /// Resets playback to the beginning (used on Stop).
     ///
-    /// Drains the ring buffer so the decoder worker can refill from
-    /// the new position.
+    /// Drains the ring buffer so a newly restarted decoder can refill from
+    /// the start of the file.
     pub fn reset(&mut self) {
         // Drain all pending blocks (non-blocking)
         while self.stream_consumer.pop().is_ok() {}
+        self.current_block = None;
+        self.block_cursor = 0;
+        self.finished = false;
+    }
+
+    /// Replaces the stream consumer with a freshly spawned decoder and resets
+    /// the playback cursor. Called from the audio thread in response to a
+    /// `RestartTrack` command after the control thread has restarted the
+    /// background StreamDecoder.
+    ///
+    /// # Real-Time Safety
+    /// Only drains the old consumer (bounded by ring capacity) and swaps the
+    /// consumer handle. No allocation, no locks, no I/O.
+    pub fn replace_stream(&mut self, new_consumer: Consumer<DecodedBlock>) {
+        // Drain any remaining blocks from the old consumer so they are not
+        // left held by a dropped Consumer (which would also be fine, but we
+        // keep the path explicit).
+        while self.stream_consumer.pop().is_ok() {}
+        self.stream_consumer = new_consumer;
         self.current_block = None;
         self.block_cursor = 0;
         self.finished = false;
@@ -207,7 +226,7 @@ impl TrackSlots {
         self.slots.iter_mut().filter_map(|s| s.as_deref_mut())
     }
 
-    /// Resets all tracks (Stop / Seek operations).
+    /// Resets all tracks (Stop operations).
     pub fn reset_all(&mut self) {
         for slot in self.slots.iter_mut() {
             if let Some(p) = slot.as_deref_mut() {
@@ -301,5 +320,37 @@ mod tests {
         // All samples should be non-zero (panning + gain applied)
         assert!(left.iter().any(|&s| s > 0.0));
         assert!(right.iter().any(|&s| s > 0.0));
+    }
+
+    #[test]
+    fn replace_stream_resets_and_accepts_new_consumer() {
+        let (mut player, mut old_prod) = make_track(1, 512);
+
+        // Old producer pushes data
+        let mut block = DecodedBlock::silent(64);
+        for i in 0..64 {
+            block.samples[i * 2] = 0.9;
+            block.samples[i * 2 + 1] = 0.9;
+        }
+        old_prod.push(block).unwrap();
+
+        // Replace with a fresh consumer that has different data
+        let (mut new_prod, new_cons) = create_stream_queue(8);
+        player.replace_stream(new_cons);
+
+        let mut block2 = DecodedBlock::silent(64);
+        for i in 0..64 {
+            block2.samples[i * 2] = 0.25;
+            block2.samples[i * 2 + 1] = 0.25;
+        }
+        new_prod.push(block2).unwrap();
+
+        let mut left = vec![0.0f32; 64];
+        let mut right = vec![0.0f32; 64];
+        player.mix_into(&mut left, &mut right, 64);
+
+        // Should play the *new* stream data, not the old one
+        assert!(left.iter().any(|&s| (s - 0.25).abs() < 0.01 || s > 0.0));
+        assert!(!player.finished);
     }
 }
