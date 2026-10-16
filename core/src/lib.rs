@@ -296,7 +296,7 @@ impl DAWEngine {
     pub fn remove_track(&mut self, id: TrackId) -> bool {
         if let Some(pos) = self.tracks.iter().position(|t| t.id == id) {
             self.tracks.remove(pos);
-            if let Some(decoder) = self.decoders.remove(&id.0) {
+            if let Some(mut decoder) = self.decoders.remove(&id.0) {
                 decoder.stop();
             }
             let _ = self
