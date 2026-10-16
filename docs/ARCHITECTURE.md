@@ -86,37 +86,43 @@ flowchart TD
 
 ## 3. Data Flow Architecture
 
-The system segregates data into three strictly isolated pipelines:
+The application has three distinct paths. Flutter handles presentation and high-level control; the C ABI is the only Flutter-to-engine integration boundary; Rust owns audio-thread execution.
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        THREE SEPARATE DATA PIPELINES                   │
-├─────────────────────┬──────────────────────┬───────────────────────────┤
-│  1. Control Path    │  2. Telemetry Path   │  3. Audio Pipeline        │
-│  (UI ➔ Engine)      │  (Engine ➔ UI)       │  (Disk ➔ DSP ➔ Hardware)  │
-├─────────────────────┼──────────────────────┼───────────────────────────┤
-│ UI Thread produces  │ Audio thread pushes  │ Disk worker pre-buffers   │
-│ commands (Play, Pan)│ peak/RMS values to   │ samples into RAM.         │
-│ to SPSC ring buffer.│ SPSC ring buffer.    │ Audio thread pulls blocks,│
-│ Audio thread pops   │ UI timer polls ring  │ mixes without locks, and  │
-│ without blocking.   │ buffer at 60Hz.      │ writes to output device.  │
-└─────────────────────┴──────────────────────┴───────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Aetherband desktop target                      │
+├───────────────────────┬──────────────────────┬──────────────────────┤
+│ 1. Control path       │ 2. Telemetry path    │ 3. Audio path        │
+│ Flutter -> Dart FFI   │ Rust -> Dart FFI     │ Disk -> Rust -> I/O  │
+├───────────────────────┼──────────────────────┼──────────────────────┤
+│ UI engine client      │ Poll exported frame  │ Worker decodes into  │
+│ calls real exported   │ with bounded cadence │ bounded/prepared     │
+│ C ABI functions       │ and updates view     │ native buffers       │
+│ checks return codes   │ state                │ Audio callback reads │
+│ keeps one owner path  │ no busy loop         │ without UI calls     │
+└───────────────────────┴──────────────────────┴──────────────────────┘
 ```
 
-### 3.1 Control Flow (Downstream: UI to Audio Thread)
-1. User drags Master Volume slider to -6.0 dB.
-2. ViewModel constructs `EngineCommand::SetMasterVolume { target_gain: 0.501, ramp_frames: 256 }`.
-3. P/Invoke passes this small C-struct to `daw_engine_send_command()`.
-4. Rust core pushes the struct into the lock-free `CmdQueue`. If full, the command is safely dropped or logged without stalling.
-5. In the next audio callback block, the audio thread pops all pending commands from `CmdQueue` and updates its internal gain parameter.
+### 3.1 Control path (Flutter to engine)
 
-### 3.2 Telemetry Flow (Upstream: Audio Thread to UI)
-1. At the end of processing an audio block (e.g., every 128 samples), the audio thread computes the peak sample and running RMS power for Left and Right channels.
-2. The audio thread pushes a `MeteringFrame { peak_l, peak_r, rms_l, rms_r, playhead_frame }` struct into `TelemetryQueue`.
-3. If the queue is full (e.g., UI is busy), the oldest frame is overwritten (lossy telemetry is completely acceptable; audio safety is paramount).
-4. The Flutter engine client polls `daw_engine_poll_telemetry()` at a bounded UI cadence to update meters and playhead. The existing Avalonia frontend may continue using its current timer during the transition. Never busy-loop or race calls on the same native handle.
+1. The user performs a DAW action, such as pressing Play or dragging a track fader.
+2. A testable engine-client abstraction routes the action to the Dart FFI adapter.
+3. The adapter invokes an actual exported function from `bindings/c_abi/src/lib.rs` (for example, `daw_engine_play` or `daw_engine_set_track_volume`) and checks the returned integer status.
+4. The UI reports failure when a call is rejected/failed; it does not assume a local animation means the engine action succeeded.
+5. Audio-thread processing and internal queueing stay inside Rust. Flutter must not call private core methods or push internal Rust commands directly.
+
+The current ABI does not export `daw_engine_send_command` or a general-purpose `DAWCommand` struct at this snapshot. Follow [`API_CONTRACT.md`](API_CONTRACT.md), which is reconciled with the actual exported source functions.
+
+### 3.2 Telemetry path (engine to Flutter)
+
+1. Rust provides a `DAWMeteringFrame` through `daw_engine_poll_telemetry`.
+2. The frame includes peak/RMS left/right, playhead frame, total duration frames and status flags as defined by the current C ABI.
+3. The Flutter engine client polls at a bounded UI cadence and updates the view models/widgets.
+4. Handle “no telemetry frame yet,” invalid handle and engine/device errors. Do not busy-loop and do not fabricate real telemetry in production mode.
+5. Until the ABI's concurrency guarantees are deliberately expanded and tested, serialize telemetry polling with other calls on the same engine handle.
 
 ### 3.3 Audio Streaming Pipeline
+
 1. Audio files are opened by a background `DiskReaderWorker` thread.
 2. The worker thread decodes audio chunks into pre-allocated memory arenas.
 3. The real-time audio thread reads from this pre-filled arena.
@@ -130,6 +136,6 @@ The system segregates data into three strictly isolated pipelines:
 | :--- | :--- | :--- | :--- |
 | **Separation of Mobile & Desktop** | Single UI optimized for desktop and mobile at once | **Flutter desktop-first flagship; consider mobile as a separate effort later** | Allows a high-density desktop workstation without delaying the desktop migration for touch-first/mobile requirements. |
 | **Language Selection** | Pure C++20 or managed audio/DSP | **Rust (engine) + Flutter/Dart (target UI)** | Keeps real-time engine execution native; Flutter owns presentation/control through the flat C ABI. Existing C# remains transitional. |
-| **Audio Thread Communication** | Shared `Arc<Mutex<EngineState>>` | **Lock-Free SPSC Queues (`rtrb`)** | Standard mutexes cause priority inversions and audio xruns. Lock-free queues guarantee deterministic real-time execution. |
+| **Audio Thread Communication** | Shared `Arc<Mutex<EngineState>` from the UI | **Bounded native engine protocol / SPSC where implemented** | The UI calls the C ABI from a serialized control boundary; all audio-thread communication remains inside Rust and must preserve real-time constraints. |
 | **Plugin Architecture** | Immediate VST3 hosting | **Built-in DSP first; defer external plugins to Phase 5** | VST3 hosting is notoriously complex, prone to third-party crashes, and legally complicated. Built-in DSP guarantees stability. |
 | **Serialization Format** | Monolithic binary blob | **Standard JSON / MessagePack metadata + assets folder inside zip** | Readable, robust against version changes, easy to inspect and debug, highly portable. |
