@@ -141,7 +141,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\build.ps1
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\run.ps1
 ```
-*(Or open `apps/desktop/Aetherband.slnx` in Visual Studio and press **F5**).*
+*(Or open `apps/desktop/RouletteStudio.slnx` in Visual Studio and press **F5**).*
 
 ### Run the Audio Core Test Suite
 Run all unit tests and verify the 100,000-block zero-allocation guarantee:
