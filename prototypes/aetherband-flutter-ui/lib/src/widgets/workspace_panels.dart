@@ -393,7 +393,7 @@ class _EffectTile extends StatelessWidget {
               ],
             ),
           ),
-          Icon(Icons.more_horiz, color: AetherColors.secondaryText.withOpacity(0.75), size: 16),
+          Icon(Icons.more_horiz, color: AetherColors.secondaryText.withValues(alpha: 0.75), size: 16),
         ],
       ),
     );
