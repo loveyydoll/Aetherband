@@ -71,7 +71,7 @@ References:
 - Ensure device reconfiguration does not leave UI and processor state contradictory.
 
 ### P2 — Repository coherence
-- Reconcile stale `CustomDAW` / `RouletteStudio` names and old paths in README, vision, roadmap, workflow docs and solution references.
+- Reconcile remaining legacy C# namespace/project paths and any historical references; public-facing product documentation should use Aetherband consistently.
 - Keep this file as a dated engineering snapshot; use `AGENTS.md` for stable agent rules and `docs/AI_WORKFLOW.md` for workflow safeguards.
 
 ## Verification checklist
