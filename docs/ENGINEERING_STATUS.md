@@ -4,6 +4,17 @@
 **Branch context:** `fix/audio-engine-correctness`, draft PR #1  
 **Important:** This is a historical status snapshot, not proof that code compiles or behaves correctly. Re-check source, CI and PR status before acting on it.
 
+## Current stabilization pass — 2026-10-16
+
+Draft PR #3: https://github.com/loveyydoll/Aetherband/pull/3
+
+- Added a terminal zero-frame decoder marker for media whose decoded frame count ends exactly on a full block boundary, plus a track-level regression test for consuming that marker.
+- Added local verification scripts for Windows PowerShell and Bash.
+- Updated .NET CI to target the desktop project's actual `.csproj` and its `.NET 10` target framework.
+- Applied the formatting changes reported by the first Rust CI run.
+
+**Verification remains incomplete:** the first Rust CI run failed during `cargo fmt --all -- --check`, so compile/tests were skipped. Formatting edits were pushed afterward, but no successful rerun has yet been confirmed. The repository has not been built locally in this environment. Do not merge the draft until the latest branch has passing CI and the remaining P0/P1 issues below are resolved or explicitly accepted.
+
 ## Project and priority
 Aetherband is an early-alpha desktop audio workstation built around a Rust audio engine, C ABI in `bindings/c_abi/`, and a C#/.NET Avalonia desktop application. Current priority is audio correctness, ownership/lifecycle safety, repeatable CI and trustworthy documentation.
 
