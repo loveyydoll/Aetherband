@@ -131,7 +131,7 @@ class BrowserPanel extends StatelessWidget {
   }
 
   IconData _categoryIcon(String item) => switch (item) {
-    'Instruments' => Icons.piano_outlined,
+    'Instruments' => Icons.music_note_outlined,
     'Presets' => Icons.tune,
     'Effects' => Icons.blur_on,
     'Samples' => Icons.graphic_eq,
@@ -140,9 +140,9 @@ class BrowserPanel extends StatelessWidget {
 
   IconData _itemIcon(String item) => switch (item) {
     'Instruments' => Icons.piano_outlined,
-    'Presets' => Icons.waves_outlined,
-    'Effects' => Icons.auto_fix_high_outlined,
-    'Samples' => Icons.audio_file_outlined,
+    'Presets' => Icons.waves,
+    'Effects' => Icons.auto_fix_high,
+    'Samples' => Icons.audio_file,
     _ => Icons.folder_outlined,
   };
 }
@@ -489,7 +489,7 @@ class _MeterBar extends StatelessWidget {
                   const ColoredBox(color: AetherColors.raised),
                   FractionallySizedBox(
                     alignment: Alignment.centerLeft,
-                    widthFactor: value.clamp(0.0, 1.0),
+                    widthFactor: value.clamp(0.0, 1.0).toDouble(),
                     child: ColoredBox(color: color),
                   ),
                 ],
