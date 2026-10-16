@@ -209,6 +209,23 @@ impl AudioProcessor {
                         self.retire_track(player);
                     }
                 }
+                RestartTrack {
+                    track_id,
+                    consumer_ptr,
+                } => {
+                    // SAFETY: consumer_ptr is a Box<Consumer<DecodedBlock>> created by the
+                    // control thread and sent exactly once through the SPSC command queue.
+                    let consumer =
+                        unsafe { *Box::from_raw(consumer_ptr as *mut Consumer<DecodedBlock>) };
+                    if let Some(track) = self.tracks.get_mut(track_id) {
+                        track.replace_stream(consumer);
+                    } else {
+                        // Track already removed; drop the consumer on this thread
+                        // (still real-time safe — Consumer drop only frees the ring
+                        // slots it owns, which is bounded).
+                        drop(consumer);
+                    }
+                }
             }
         }
     }
@@ -436,5 +453,62 @@ mod tests {
         processor.process_interleaved(&mut buffer, 2);
 
         assert!(buffer.iter().any(|&s| s != 0.0));
+    }
+
+    /// Regression for issue #5: Stop must silence output and reset playhead.
+    ///
+    /// Sequence:
+    /// 1. Install a track with non-silent audio.
+    /// 2. Play → output is non-silent, telemetry reports playing.
+    /// 3. Stop → subsequent process blocks are silent, playhead is 0, is_playing false.
+    #[test]
+    fn stop_silences_output_and_resets_playhead() {
+        let (mut ui, audio) = create_engine_queues(32, 32);
+        let mut processor = AudioProcessor::new(48000.0, audio);
+
+        // Install a track with continuous non-silent data (not marked last so it keeps playing)
+        let (mut producer, consumer) = create_stream_queue(16);
+        for _ in 0..4 {
+            let mut block = DecodedBlock::silent(128);
+            for i in 0..128 {
+                block.samples[i * 2] = 0.4;
+                block.samples[i * 2 + 1] = 0.4;
+            }
+            producer.push(block).unwrap();
+        }
+
+        let track = TrackPlayer::new(TrackId(42), consumer, 1.0, 512);
+        assert!(processor.tracks_mut().add(Box::new(track)).is_ok());
+
+        // Play
+        ui.cmd_producer.push(EngineCommand::Play).unwrap();
+        let mut buffer = vec![0.0f32; 256];
+        processor.process_interleaved(&mut buffer, 2);
+        assert!(buffer.iter().any(|&s| s != 0.0), "Play must produce audio");
+
+        let frame_play = ui.telemetry_consumer.pop().unwrap();
+        assert!(frame_play.is_playing);
+        assert!(frame_play.playhead_frame > 0);
+
+        // Stop
+        ui.cmd_producer.push(EngineCommand::Stop).unwrap();
+        // Process several blocks after Stop — all must be silent
+        for _ in 0..4 {
+            buffer.fill(1.0); // poison so we can detect silence write
+            processor.process_interleaved(&mut buffer, 2);
+            assert!(
+                buffer.iter().all(|&s| s == 0.0),
+                "Stop must produce silence on subsequent callbacks"
+            );
+        }
+
+        // Drain telemetry and check the latest frame
+        let mut last = None;
+        while let Ok(f) = ui.telemetry_consumer.pop() {
+            last = Some(f);
+        }
+        let frame_stop = last.expect("expected telemetry after Stop");
+        assert!(!frame_stop.is_playing, "telemetry must report stopped");
+        assert_eq!(frame_stop.playhead_frame, 0, "playhead must reset to zero");
     }
 }
