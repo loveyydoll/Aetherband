@@ -49,8 +49,8 @@ pub struct AudioFileInfo {
 
 /// Probe an audio file and return its metadata without fully decoding it.
 pub fn probe_file(path: &Path) -> Result<AudioFileInfo, DecoderError> {
-    let file = File::open(path)
-        .map_err(|_| DecoderError::FileNotFound(path.display().to_string()))?;
+    let file =
+        File::open(path).map_err(|_| DecoderError::FileNotFound(path.display().to_string()))?;
 
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
@@ -59,7 +59,12 @@ pub fn probe_file(path: &Path) -> Result<AudioFileInfo, DecoderError> {
     }
 
     let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .format(
+            &hint,
+            mss,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
         .map_err(|_| DecoderError::UnsupportedFormat)?;
 
     let format = probed.format;
@@ -182,8 +187,8 @@ fn decode_worker(
     stop_flag: Arc<AtomicBool>,
 ) -> Result<(), DecoderError> {
     // ── Open file and set up Symphonia ──────────────────────────────────────
-    let file = File::open(&path)
-        .map_err(|_| DecoderError::FileNotFound(path.display().to_string()))?;
+    let file =
+        File::open(&path).map_err(|_| DecoderError::FileNotFound(path.display().to_string()))?;
 
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
@@ -264,7 +269,11 @@ fn decode_worker(
         match decoded {
             AudioBufferRef::F32(ref buf) => {
                 let ch_l = buf.chan(0);
-                let ch_r = if source_channels > 1 { buf.chan(1) } else { buf.chan(0) };
+                let ch_r = if source_channels > 1 {
+                    buf.chan(1)
+                } else {
+                    buf.chan(0)
+                };
                 pending_l.extend_from_slice(ch_l);
                 pending_r.extend_from_slice(ch_r);
             }
@@ -273,7 +282,11 @@ fn decode_worker(
                 for &s in buf.chan(0) {
                     pending_l.push(s as f32 * scale);
                 }
-                let src_r = if source_channels > 1 { buf.chan(1) } else { buf.chan(0) };
+                let src_r = if source_channels > 1 {
+                    buf.chan(1)
+                } else {
+                    buf.chan(0)
+                };
                 for &s in src_r {
                     pending_r.push(s as f32 * scale);
                 }
@@ -293,7 +306,11 @@ fn decode_worker(
                 let mut conv_buf = decoded.make_equivalent::<f32>();
                 decoded.convert(&mut conv_buf);
                 pending_l.extend_from_slice(conv_buf.chan(0));
-                let src_r = if source_channels > 1 { conv_buf.chan(1) } else { conv_buf.chan(0) };
+                let src_r = if source_channels > 1 {
+                    conv_buf.chan(1)
+                } else {
+                    conv_buf.chan(0)
+                };
                 pending_r.extend_from_slice(src_r);
             }
         }
