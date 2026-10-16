@@ -109,14 +109,17 @@ class BrowserPanel extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8),
               children: [
                 for (final item in currentItems)
-                  ListTile(
-                    dense: true,
-                    visualDensity: const VisualDensity(vertical: -3),
-                    leading: Icon(_itemIcon(category), size: 16, color: AetherColors.sage),
-                    title: Text(item, style: const TextStyle(fontSize: 11)),
-                    onTap: () => onPresetSelected(item),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                  Material(
+                    color: Colors.transparent,
+                    child: ListTile(
+                      dense: true,
+                      visualDensity: const VisualDensity(vertical: -3),
+                      leading: Icon(_itemIcon(category), size: 16, color: AetherColors.sage),
+                      title: Text(item, style: const TextStyle(fontSize: 11)),
+                      onTap: () => onPresetSelected(item),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    ),
                   ),
               ],
             ),
