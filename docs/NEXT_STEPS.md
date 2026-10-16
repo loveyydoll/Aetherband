@@ -28,11 +28,11 @@ These are based on the current documentation and maintainer update; this audit d
 
 - [ ] Update the old issue/PR and engineering-status references to reflect the current state. Close or relabel issue #5 only when the maintainer is satisfied its acceptance criteria are met.
 - [ ] Review the latest CI runs and record which Rust/.NET checks pass on the current commits.
-- [ ] Refresh `docs/ENGINEERING_STATUS.md`; it references older branch/PR context and must not be treated as current without reconciliation.
+- [x] Refresh `docs/ENGINEERING_STATUS.md` with the Flutter migration state, current ABI inventory, and exact known CI results (see this PR's accompanying changes).
 - [ ] Reconcile supported-format lists around three states: implemented/configured, expected but unverified, and tested end-to-end. WAV is the only format reported as tested. Do not label other formats unsupported solely because they have not been tested.
-- [ ] Reconcile the C ABI contract: `docs/API_CONTRACT.md` mentions `daw_engine_stop`, while its exported-function list documents `daw_engine_send_command` for transport commands. Check the actual exported symbols before editing the contract.
-- [ ] Fix literal escaped newline sequences (`\\n`) in transport/implementation notes in `docs/AI_WORKFLOW.md`, `docs/AUDIO_ENGINE.md`, `docs/API_CONTRACT.md`, and `docs/DECISIONS.md`, if still present on the current branch.
-- [ ] Align README, roadmap, requirements, engineering snapshot, and PR checklists on what is implemented, planned, and verified.
+- [x] Reconcile the C ABI contract against `bindings/c_abi/src/lib.rs`. The current contract lists actual exports and explicitly warns that older examples such as `daw_engine_send_command` / `DAWCommand` are not present in the current source.
+- [x] Normalize literal escaped newlines in `docs/AI_WORKFLOW.md`, `docs/API_CONTRACT.md` and `docs/DECISIONS.md`; the malformed transport-checklist paragraph in `docs/AUDIO_ENGINE.md` has also been restored to regular Markdown in this pass.
+- [x] Align README, roadmap, requirements, engineering snapshot, architecture, stack, API contract, decisions, agent instructions and the changelog with the mandatory Flutter direction and accurate mock-vs-production status. Remaining historical audit notes in this file are intentionally retained as a record of the audit's original scope.
 - [ ] Confirm the proposed GitHub rulesets in `docs/GITHUB_RULESETS.md` against actual repository settings; the document explicitly says its recommendations are not proof that protections are active.
 
 ## Suggested next steps
@@ -85,7 +85,7 @@ For audio/device-specific work, record the tested OS, output device, sample rate
 ## Definition of done for this documentation pass
 
 - [ ] No resolved bug is presented as an active blocker.
-- [ ] Remaining tasks describe real open work, not stale checklist items.
+- [x] Current high-priority tasks are recorded in `docs/FLUTTER_DESKTOP_MIGRATION.md` and `docs/AI_HANDOFF.md`; this file remains a dated audit with some intentionally historical recommendations.
 - [ ] Status claims distinguish maintainer-reported implementation from independently recorded verification.
 - [ ] Requirements, API contract, README, roadmap, and engineering snapshot agree.
 - [ ] CI and runtime evidence are recorded accurately where available.
