@@ -1,10 +1,10 @@
-# System Architecture: CustomDAW
+# System Architecture: Aetherband
 
 ## 1. High-Level Architectural Overview
 
-CustomDAW is architected as a **decoupled, two-tier system**:
+Aetherband is architected as a **decoupled, two-tier system**:
 1. **The Shared Native Core (`daw_core` in Rust):** Owns all audio processing, DSP algorithms, audio driver I/O, lock-free ring buffers, sample-accurate transport scheduling, disk streaming, and project serialization.
-2. **The Desktop Presentation Layer (`CustomDAW.Desktop` in C# / Avalonia UI):** Owns windowing, user input, timeline graphics, zooming/scrolling, MVVM data binding, and desktop integration.
+2. **The Desktop Presentation Layer (`Aetherband.Desktop` in C# / Avalonia UI):** Owns windowing, user input, timeline graphics, zooming/scrolling, MVVM data binding, and desktop integration.
 
 The boundary between these tiers is a **Flat, Versioned C-ABI** exposed by `daw_core_ffi`.
 
