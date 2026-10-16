@@ -6,11 +6,29 @@ Aetherband bridges the gap between intuitive songwriting sketchpads and high-pre
 
 ---
 
+## Tech Stack (What the whole app is written in)
+
+| Layer | Language / Framework | Role |
+|-------|----------------------|------|
+| **Audio Engine & DSP** | **Rust** (stable 2021 edition) | Hard real-time callback, mixer, decoder workers, lock-free queues |
+| **Native FFI** | **C99 ABI** + `csbindgen` | Flat C interface + auto-generated C# P/Invoke |
+| **Desktop UI** | **C# / .NET 10 LTS** + **Avalonia UI 11** | GPU-accelerated multi-track arranger, transport, meters |
+| **Audio I/O** | `cpal` | WASAPI (Windows) / CoreAudio (macOS) |
+| **Decoding** | `symphonia` | WAV, FLAC, MP3, OGG, AAC/M4A |
+| **Resampling** | `rubato` | High-quality sample-rate conversion |
+| **Concurrency** | `rtrb` | Wait-free SPSC ring buffers (UI ↔ audio thread) |
+| **License** | **GPLv3** | Open source |
+
+The application is **not** written in a single language. The real-time critical path is pure Rust; the interactive desktop shell is modern C# on Avalonia.
+
+---
+
 > [!WARNING]
 > ### Work in Progress (Early Alpha)
 > Aetherband is under active, rapid development and is currently in **early alpha**.
 > - APIs, project formats, and interfaces are evolving quickly and subject to breaking changes.
-> - Core audio playback and multi-track mixing are implemented, but transport/lifecycle behavior is still being stabilized. A Stop regression has been reported (the playhead resets while audio reportedly continues) and must be fixed and regression-tested. Advanced features (MIDI recording, plugin hosting, automation, and project saving) are still in development.
+> - Core audio playback and multi-track mixing are implemented. Transport Stop has been fixed in the core (decoder restart + regression test) and needs runtime confirmation on hardware.
+> - Advanced features (MIDI recording, plugin hosting, automation, and project saving) are still in development.
 > - **Not recommended for production work yet.** Use it to test, experiment, and contribute!
 
 ---
@@ -44,7 +62,7 @@ If you download and run Aetherband today, here is an honest, plain-English break
 
 ## Current Milestone: Stabilization Gate (Phases 1–3)
 
-The core engine, file playback, multi-track mixing, native interop, and initial timeline UI are implemented. They are not considered fully accepted until transport behavior and lifecycle regression tests pass. The current known issue is that Stop resets the visible playhead but reportedly does not silence audio.
+The core engine, file playback, multi-track mixing, native interop, and initial timeline UI are implemented. Transport Stop has been fixed at the engine level (see issue #5): on Stop the audio thread silences output and resets the playhead, and the control thread restarts every track’s StreamDecoder so the next Play begins at the start of the file. A regression test asserts silence + playhead zero after Stop.
 
 - [x] **Zero-Allocation Audio Thread:** Hardware callback loop executing on dedicated OS audio thread with guaranteed zero heap allocations.
 - [x] **Hardware Audio Driver Support:** Low-latency device discovery and output stream management via `cpal` (WASAPI on Windows, CoreAudio on macOS).
@@ -55,6 +73,7 @@ The core engine, file playback, multi-track mixing, native interop, and initial 
 - [x] **Automated Safety Test Harness:** Allocation-safety test harness for continuous callback processing; run the repository's current verification commands to validate the present baseline.
 - [x] **Flat C-ABI & Automated Bindings:** Clean C99 FFI with automated type-safe C# P/Invoke generation (`csbindgen`).
 - [x] **Modern Desktop App:** Hardware-accelerated desktop UI built with **.NET 10 LTS** and **Avalonia UI**, featuring multi-track lanes, track controls (Volume, Pan, Mute, Remove), playhead scrubbing, and live transport controls.
+- [x] **Stop transport correctness (core):** Stop silences output, resets playhead, and restarts decoders so Play after Stop restarts from the beginning (regression test present).
 
 ---
 
@@ -115,12 +134,14 @@ Aetherband/
 │       └── build.rs                 # Runs csbindgen to generate C# bindings
 ├── apps/
 │   └── desktop/                     # Avalonia UI desktop application (.NET 10)
-│       └── RouletteStudio.Desktop/   # Views, ViewModels, and AudioService
+│       └── RouletteStudio.Desktop/   # Views, ViewModels, and AudioService (legacy folder name)
 ├── docs/                            # Comprehensive architectural blueprints & specifications
 └── tools/                           # Automated build and execution scripts
     ├── build.ps1                    # One-command Rust + C# build script
     └── run.ps1                      # Builds and launches the desktop app
 ```
+
+> **Note on naming:** The desktop project folder and some C# namespaces still use the historical name `RouletteStudio`. Functionally everything is Aetherband; a future cleanup can rename the folder and namespaces without changing behaviour.
 
 ---
 
@@ -159,7 +180,8 @@ cargo test -p daw_core --tests
 | **1** | Real-Time Audio Core Foundation & Hardware I/O | ✅ Complete |
 | **2** | Audio File Playback & Background Disk Streaming | 🧪 Implemented; runtime gate open |
 | **3** | Multi-Track Mixer & Interactive Timeline UI | 🧪 Implemented; runtime gate open |
-| **3.5** | Transport/lifecycle stabilization and regression tests | 🚧 Current priority |\n| **4** | Audio Recording, waveform peaks, project persistence & export | ⏳ Planned |
+| **3.5** | Transport/lifecycle stabilization and regression tests | 🚧 Current priority (Stop fixed in core) |
+| **4** | Audio Recording, waveform peaks, project persistence & export | ⏳ Planned |
 | **5** | MIDI Engine, Piano Roll & Virtual Instruments | 📅 Planned |
 | **6** | Mixer Routing, Effects Engine & Plugin Hosting | 📅 Planned |
 
