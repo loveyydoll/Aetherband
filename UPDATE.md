@@ -2,6 +2,37 @@
 
 Chronological record of meaningful changes. Newest entries first.
 
+## 2026-10-17 — Flutter desktop direction, UI refinement, and AI handoff
+
+**Status:** Flutter is the mandatory full-scale target desktop UI. The Dart FFI/native audio integration is not implemented yet; the existing C#/Avalonia app remains the transition audio-connected frontend.
+
+### Owner decision and architecture
+
+- Flutter/Dart must be implemented as the primary Windows/macOS desktop UI unless the owner explicitly reverses this decision.
+- Integrate Flutter with the existing Rust audio engine through Dart FFI over `bindings/c_abi/src/lib.rs`.
+- Rust retains the real-time callback, decoding, DSP, mixer and device I/O. Do not reimplement these in Dart or bypass the C ABI.
+- Keep Avalonia operational until Flutter reaches equivalent supported audio workflows, has passing cross-platform tests/builds and receives owner review.
+- This is a mandatory direction with staged quality gates, not permission to merge untested code or mark mock UI as production.
+
+### Flutter UI commits (PRs #9 and #10)
+
+- PR #9 introduced the isolated Flutter desktop workspace under `prototypes/aetherband-flutter-ui/`: dark theme, demo arrangement/clip visualization, library browser, instrument/device panel, mock mixer/telemetry, widget smoke test and Windows/macOS GitHub Actions validation.
+- PR #10 polished the workstation design: compact File/Edit/Track/Region/Navigate/Record/Mix/View/Window/Help menu, transport strip, less oversized branding, responsive track lanes and darker surfaces.
+- Current palette: `#1B1C20` background, `#27282D` panels, `#35363D` raised/border, `#2D2E34` grid, `#E9E3D9` warm text, with `#A9B69A` sage, `#E94E91` magenta and `#485CC7` blue accents.
+- Fixed a 28-pixel `_TimelineRuler` horizontal overflow by sizing the last bar cell to remaining width.
+- Fixed Flutter ListTile tap/ink assertions by placing each browser ListTile inside its own transparent `Material`.
+- Added a widget assertion so initial layout/framework exceptions cause the test to fail.
+- PR #10 merged to `main` as `66fc6f9a39b283fdcf8dfd6b7279f02a663e0169`.
+
+### Verification and outstanding work
+
+- Flutter Actions run [38982461083](https://github.com/loveyydoll/Aetherband/actions/runs/38982461083), on PR-head `3bd8e73827dcf628283575872cfa616463779e73`, passed Dart analysis, widget tests and Windows/macOS debug desktop builds.
+- Rust Actions run [38982465835](https://github.com/loveyydoll/Aetherband/actions/runs/38982465835) failed at `cargo fmt --all -- --check` due formatting differences in `core/src/lib.rs` near lines 232 and 243; workspace check/tests were skipped. The Flutter PR did not alter those Rust lines.
+- Flutter remains mock-only. No production Dart FFI adapter, native library packaging, or real engine-state integration is present at the handoff snapshot.
+- Next: fix/reverify Rust formatting independently; implement a serialized Dart FFI adapter with layout/lifecycle/error tests; connect actual device, track loading/removal, transport, volume/pan/mute and telemetry; then achieve full UI parity before making Flutter the default app.
+
+Canonical guidance: [`docs/FLUTTER_DESKTOP_MIGRATION.md`](docs/FLUTTER_DESKTOP_MIGRATION.md), [`docs/AI_HANDOFF.md`](docs/AI_HANDOFF.md), [`docs/ENGINEERING_STATUS.md`](docs/ENGINEERING_STATUS.md), and [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md). `AGENTS.md` now makes the target frontend and C ABI boundary explicit.
+
 ---
 
 ## 2026-10-16 (evening) — UI overhaul + precise waveforms
