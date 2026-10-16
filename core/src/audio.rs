@@ -6,7 +6,7 @@
 //! - Zero blocking filesystem / network I/O
 
 use crate::dsp::{GainRamp, LevelMeter, SineOscillator};
-use crate::ringbuf::{AudioEndpoints, EngineCommand, TelemetryFrame};
+use crate::ringbuf::{AudioEndpoints, DecodedBlock, EngineCommand, TelemetryFrame};
 use crate::track::{TrackPlayer, TrackSlots, MAX_TRACKS};
 use rtrb::{Consumer, Producer};
 
