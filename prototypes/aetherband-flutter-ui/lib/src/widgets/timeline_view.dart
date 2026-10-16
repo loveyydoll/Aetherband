@@ -224,12 +224,13 @@ class _TrackHeader extends StatelessWidget {
                             overlayShape: const RoundSliderOverlayShape(overlayRadius: 7),
                           ),
                           child: SizedBox(
-                          height: 23,
-                          child: Slider(
-                            value: track.volume.clamp(0.0, 1.0).toDouble(),
-                            onChanged: onVolumeChanged,
-                            min: 0,
-                            max: 1,
+                            height: 23,
+                            child: Slider(
+                              value: track.volume.clamp(0.0, 1.0).toDouble(),
+                              onChanged: onVolumeChanged,
+                              min: 0,
+                              max: 1,
+                            ),
                           ),
                         ),
                       ),
