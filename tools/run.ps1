@@ -3,5 +3,5 @@ $ErrorActionPreference = "Stop"
 
 & "$PSScriptRoot\build.ps1"
 
-Write-Host "==> Launching Aetherband.Desktop..." -ForegroundColor Green
-& "C:\Program Files\dotnet\dotnet.exe" run --project "$PSScriptRoot\..\apps\desktop\Aetherband.Desktop\Aetherband.Desktop.csproj" --no-build
+Write-Host "==> Launching RouletteStudio.Desktop..." -ForegroundColor Green
+& "C:\Program Files\dotnet\dotnet.exe" run --project "$PSScriptRoot\..\apps\desktop\RouletteStudio.Desktop\RouletteStudio.Desktop.csproj" --no-build
