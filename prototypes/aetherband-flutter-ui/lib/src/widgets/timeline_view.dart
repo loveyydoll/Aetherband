@@ -44,7 +44,7 @@ class TimelineView extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final baseWidth = math.max(1400.0, constraints.maxWidth / zoom);
+        final baseWidth = math.max(1400.0, constraints.maxWidth / zoom).toDouble();
         final contentWidth = baseWidth * zoom;
         final playheadX =
             (playheadSeconds * tempo / 240 * 84 * zoom).clamp(0.0, contentWidth).toDouble();
@@ -323,7 +323,7 @@ class _TimelineLane extends StatelessWidget {
             Positioned(
               left: clip.start * zoom,
               top: 9,
-              width: math.max(48.0, clip.width * zoom),
+              width: math.max(48.0, clip.width * zoom).toDouble(),
               height: 50,
               child: ClipTile(
                 clip: clip,
