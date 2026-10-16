@@ -15,8 +15,8 @@ The audio callback executes on a high-priority, real-time operating system threa
    - Reading or writing to disk can stall for tens or hundreds of milliseconds due to OS page cache misses, disk spin-up, or background paging.
 4. **NO Operating System or Network Calls:**
    - Logging (`println!`, logging frameworks that write to files or console), socket operations, and time-query syscalls are prohibited.
-5. **NO FFI Calls into Managed Runtimes:**
-   - Calling back into C# or Swift from the audio thread is forbidden, as managed runtimes may trigger garbage collector safepoints or ARC reference deallocations.
+5. **NO FFI Calls into UI/Managed Runtimes:**
+   - Calling back into C#, Avalonia, Flutter/Dart, Swift, or another UI runtime from the audio thread is forbidden. The audio callback must not wait for UI work, trigger managed-runtime callbacks, or depend on UI object lifetime.
 
 ### 1.2 Real-Time Verification
 In continuous integration and debug test suites, the real-time audio callback is wrapped using the `assert_no_alloc` crate. Any accidental allocation inside the audio loop triggers an immediate assertion panic during automated testing.
@@ -69,7 +69,7 @@ classDiagram
 ```
 
 ### 3.1 Device Management & Disconnection Handling
-- When the user selects a new device in Avalonia, the UI sends a command to the control thread.
+- During migration, the existing Avalonia client and the target Flutter client request device selection through their respective UI adapters and the C ABI. The native control path owns stream reconfiguration; the audio callback never calls back into either UI runtime.
 - The control thread gracefully stops the existing stream, cleans up resources, and opens the new stream.
 - If an active device is disconnected by the OS (e.g., USB cable pulled):
   1. `cpal` invokes an error callback (`StreamErrorCallback`).
@@ -113,7 +113,13 @@ $$g_L = \cos\left(\frac{\pi}{4}\right) = \frac{\sqrt{2}}{2} \approx 0.7071 \; (-
 
 ---
 
-## 5. Transport stop/reset regression checklist\n\nThe UI resetting its local timer is not proof that the audio engine stopped. The engine telemetry is authoritative, and Stop must be consumed by the audio callback. Regression coverage must verify non-silent playback before Stop, silence after Stop, stopped telemetry with a zero playhead, and correct restart behavior. Draining already-decoded ring-buffer blocks does not by itself rewind a decoder worker; restart/rewind semantics must be explicitly implemented and tested. Keep this work on the control/worker side where needed and preserve the real-time callback's no-allocation/no-blocking contract.\n\n## 6. Ring Buffers and Thread Communication
+## 5. Transport stop/reset regression checklist
+
+The original Stop/playhead inconsistency was reported fixed by the maintainer on 2026-10-16, with a regression test documented. Treat this section as enduring acceptance criteria, **not evidence that the bug is currently recurring**. Reopen it only if current tests or runtime observation reproduce a failure.
+
+When validating Stop behavior, verify non-silent playback before Stop, silence after Stop, stopped telemetry with a zero playhead, and successful Play from the beginning afterward. Draining already-decoded ring-buffer blocks does not by itself rewind a decoder source; rewind/restart behavior must be implemented explicitly and tested. Keep decoder restart and resource management on the control/worker side, preserving the real-time callback's no-allocation, no-deallocation, and no-blocking constraints.
+
+## 6. Ring Buffers and Thread Communication
 
 Cross-thread communication relies entirely on the `rtrb` crate (Single-Producer Single-Consumer wait-free ring buffer):
 
