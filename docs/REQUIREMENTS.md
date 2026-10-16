@@ -1,4 +1,4 @@
-# System Requirements: CustomDAW
+# System Requirements: Aetherband
 
 ## 1. Functional Requirements
 
