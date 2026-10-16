@@ -1,25 +1,25 @@
-# 🎰 Aetherband
+# Aetherband
 
 > **A modern, open-source desktop Digital Audio Workstation engineered for flow, speed, and hard real-time precision.**
 
-RouletteStudio bridges the gap between intuitive songwriting sketchpads and high-precision production environments. It combines the immediate, distraction-free workflow of modern creative apps with the low-latency, deterministic audio processing expected of a professional workstation.
+Aetherband bridges the gap between intuitive songwriting sketchpads and high-precision production environments. It combines the immediate, distraction-free workflow of modern creative apps with the reliability, timing discipline, and low-latency control demanded by serious audio work.
 
 ---
 
 > [!WARNING]
-> ### 🚧 Work in Progress (Early Alpha)
-> RouletteStudio is under active, rapid development and is currently in **early alpha**.
+> ### Work in Progress (Early Alpha)
+> Aetherband is under active, rapid development and is currently in **early alpha**.
 > - APIs, project formats, and interfaces are evolving quickly and subject to breaking changes.
-> - While core audio playback and multi-track mixing are functional and backed by real-time safety tests, advanced features (MIDI recording, plugin hosting, automation, and project saving) are in active development.
+> - While core audio playback and multi-track mixing are functional and backed by real-time safety tests, advanced features (MIDI recording, plugin hosting, automation, and project saving) are still in development.
 > - **Not recommended for production work yet.** Use it to test, experiment, and contribute!
 
 ---
 
-## 🧐 What Can It Do Right Now? (For the Average User)
+## What Can It Do Right Now? (For the Average User)
 
-If you download and run RouletteStudio today, here is an honest, plain-English breakdown of what is working versus what is still being built:
+If you download and run Aetherband today, here is an honest, plain-English breakdown of what is working versus what is still being built:
 
-### ✅ What You Can Do Right Now:
+### What You Can Do Right Now:
 - **Import Multiple Audio Files:** Load common audio file formats (**WAV, FLAC, MP3, OGG, AAC/M4A**) onto separate tracks by clicking `+ Add Audio Track`.
 - **Automatic Format & Sample Rate Conversion:** Mix audio files of different sample rates (e.g. 44.1 kHz, 48 kHz, 96 kHz) together—the engine resamples them seamlessly in the background.
 - **Multi-Track Playback:** Play, pause, and stop playback of all loaded tracks simultaneously in sync.
@@ -31,7 +31,7 @@ If you download and run RouletteStudio today, here is an honest, plain-English b
 - **Master Bus Control & Metering:** Control master volume and monitor real-time stereo peak/RMS VU meters updating smoothly at 60 FPS.
 - **Audio Device Selection:** Switch output devices (headphones, speakers, audio interfaces) directly from the top transport bar without restarting.
 
-### ❌ What It Cannot Do Yet (Under Active Development):
+### What It Cannot Do Yet (Under Active Development):
 - **No Saving or Loading Projects:** You cannot save your session to disk yet (session state resets when closing the app).
 - **No Audio Recording:** Microphone/instrument audio recording via inputs is planned for Phase 4.
 - **No Visual Waveform Peaks (Yet):** Track lanes currently show clip markers, but not drawn peak/RMS waveform outlines yet.
@@ -42,9 +42,9 @@ If you download and run RouletteStudio today, here is an honest, plain-English b
 
 ---
 
-## 🚀 Current Milestone: Phase 2 & 3 (Multi-Track Playback & Arranger UI)
+## Current Milestone: Phase 2 & 3 (Multi-Track Playback & Arranger UI)
 
-RouletteStudio has completed **Phase 1 (Real-Time Audio Core)** and **Phase 2 & 3 (Multi-Track Audio Playback, Disk Streaming & Timeline UI)**:
+Aetherband has completed **Phase 1 (Real-Time Audio Core)** and **Phase 2 & 3 (Multi-Track Audio Playback, Disk Streaming & Timeline UI)**:
 
 - [x] **Zero-Allocation Audio Thread:** Hardware callback loop executing on dedicated OS audio thread with guaranteed zero heap allocations.
 - [x] **Hardware Audio Driver Support:** Low-latency device discovery and output stream management via `cpal` (WASAPI on Windows, CoreAudio on macOS).
@@ -54,11 +54,11 @@ RouletteStudio has completed **Phase 1 (Real-Time Audio Core)** and **Phase 2 & 
 - [x] **Lock-Free Concurrency:** Single-Producer Single-Consumer (SPSC) ring buffers (`rtrb`) for wait-free UI ⇄ Audio communications.
 - [x] **Automated Safety Test Harness:** Automated enforcement of zero allocations across 100,000 continuous blocks via `assert_no_alloc`.
 - [x] **Flat C-ABI & Automated Bindings:** Clean C99 FFI with automated type-safe C# P/Invoke generation (`csbindgen`).
-- [x] **Modern Desktop App:** Hardware-accelerated desktop UI built with **.NET 10 LTS** and **Avalonia UI**, featuring multi-track lanes, track controls (Volume, Pan, Mute, Remove), playhead scrubber, timeline counter, and live stereo VU meters.
+- [x] **Modern Desktop App:** Hardware-accelerated desktop UI built with **.NET 10 LTS** and **Avalonia UI**, featuring multi-track lanes, track controls (Volume, Pan, Mute, Remove), playhead scrubbing, and live transport controls.
 
 ---
 
-## ⚡ Highlights
+## Highlights
 
 - **Hard Real-Time Audio Engine:** Engineered in pure **Rust** with zero-allocation audio callbacks and wait-free concurrency (`rtrb`), eliminating dropouts, clicks, and priority inversions.
 - **Hardware-Accelerated UI:** Built in **C# (.NET 10 LTS)** with **Avalonia UI**, delivering fluid 60–120 FPS timeline scrolling and vector waveforms on Windows and macOS.
@@ -68,11 +68,11 @@ RouletteStudio has completed **Phase 1 (Real-Time Audio Core)** and **Phase 2 & 
 
 ---
 
-## 🛠️ Architecture at a Glance
+## Architecture at a Glance
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│                   RouletteStudio                       │
+│                   Aetherband                            │
 ├───────────────────────────┬────────────────────────────┤
 │  Desktop Presentation     │  Shared Audio Engine       │
 │  (C# .NET 10 + Avalonia)  │  (Rust Core Library)       │
@@ -94,10 +94,10 @@ RouletteStudio has completed **Phase 1 (Real-Time Audio Core)** and **Phase 2 & 
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
-RouletteStudio/
+Aetherband/
 ├── Cargo.toml                       # Root Rust workspace (core + bindings)
 ├── core/                            # Pure Rust audio engine & DSP library
 │   ├── src/
@@ -115,7 +115,7 @@ RouletteStudio/
 │       └── build.rs                 # Runs csbindgen to generate C# bindings
 ├── apps/
 │   └── desktop/                     # Avalonia UI desktop application (.NET 10)
-│       └── RouletteStudio.Desktop/  # Views, ViewModels, and AudioService
+│       └── RouletteStudio.Desktop/   # Views, ViewModels, and AudioService
 ├── docs/                            # Comprehensive architectural blueprints & specifications
 └── tools/                           # Automated build and execution scripts
     ├── build.ps1                    # One-command Rust + C# build script
@@ -124,7 +124,7 @@ RouletteStudio/
 
 ---
 
-## 💻 Getting Started
+## Getting Started
 
 ### Prerequisites
 1. **Rust Toolchain:** [rustup.rs](https://rustup.rs/) (stable MSVC on Windows).
@@ -151,7 +151,7 @@ cargo test -p daw_core --tests
 
 ---
 
-## 🗺️ Roadmap Overview
+## Roadmap Overview
 
 | Phase | Milestone | Status |
 |:---:|---|:---:|
@@ -165,7 +165,7 @@ cargo test -p daw_core --tests
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 Detailed blueprints and architectural specifications:
 
@@ -180,6 +180,6 @@ Detailed blueprints and architectural specifications:
 
 ---
 
-## 📄 License
+## License
 
-RouletteStudio is licensed under the [GNU General Public License v3.0 (GPLv3)](LICENSE).
+Aetherband is licensed under the [GNU General Public License v3.0 (GPLv3)](LICENSE).
