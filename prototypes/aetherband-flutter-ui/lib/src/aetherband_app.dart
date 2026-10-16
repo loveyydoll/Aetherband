@@ -30,7 +30,7 @@ class AetherbandWorkspace extends StatefulWidget {
 }
 
 class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
-  final MockEngineController _engine = MockEngineController();
+  final EngineController _engine = MockEngineController();
   final List<TrackModel> _tracks = createDemoTracks();
   final Map<String, double> _knobValues = {
     'Tone': 0.62,
