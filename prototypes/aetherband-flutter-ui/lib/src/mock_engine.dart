@@ -16,7 +16,15 @@ class EngineTelemetry {
 }
 
 /// UI-only simulation. This class does not open an audio device or produce sound.
-class MockEngineController {
+abstract class EngineController {
+  Stream<EngineTelemetry> get telemetry;
+  Future<void> play();
+  Future<void> stop();
+  Future<void> dispose();
+}
+
+/// Demo implementation. A future native adapter can implement the same contract.
+class MockEngineController implements EngineController {
   final StreamController<EngineTelemetry> _telemetry =
       StreamController<EngineTelemetry>.broadcast();
 
