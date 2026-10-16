@@ -1,44 +1,48 @@
 # Aetherband — Documentation Audit and Next Steps
 
 **Reviewed:** 2026-10-16  
-**Scope:** Markdown documentation on `main`, plus the currently discoverable Stop issue and stabilization pull request.  
-**Purpose:** Contributor handoff. This is a documentation-based review, not a source-code audit or a claim that builds/tests passed.
+**Status update:** The project collaborator/maintainer reports that the Stop bug is fixed and most stabilization work is complete. This supersedes the earlier audit's assumption that Stop should still be treated as an active blocker.  
+**Scope:** Markdown documentation on `main`, current README status, and discoverable issue/PR metadata. This is a documentation handoff, not an independent source-code or runtime verification.
 
 ## Executive summary
 
-Aetherband is an early-alpha desktop DAW with a Rust real-time audio engine, a flat C ABI, and a C#/.NET 10 Avalonia UI. The docs consistently identify transport/lifecycle correctness and verification as the immediate priority. Do not start major feature work until the stabilization gate is demonstrated.
+Aetherband is an early-alpha desktop DAW built around a Rust audio engine, C ABI, and C#/.NET 10 Avalonia UI. Core playback, multi-track mixing, and transport Stop fixes are described in the README. The maintainer reports that the Stop bug and most stabilization items have been fixed.
 
-The README says the Stop behavior has been fixed in the core, but also says runtime confirmation is still needed. GitHub issue [#5](https://github.com/loveyydoll/Aetherband/issues/5) describes the user-visible failure (the playhead resets while audio reportedly continues) and explicitly requires automated regression coverage **and** manual runtime confirmation. Treat Stop as not yet accepted until both are evidenced.
+**Current direction:** Do not keep the resolved Stop bug as a P0 blocker. Finish reconciling status documentation, record which checks have actually passed, and focus on genuinely outstanding work. Keep a distinction between implementation reported as fixed and verification evidence independently recorded in the repository.
 
-## Priority order
+## Current status
 
-### P0 — Finish transport stabilization
+### Reported fixed / implemented
 
-Track this work against [issue #5](https://github.com/loveyydoll/Aetherband/issues/5) and [PR #7: Fix/phase 1 3 stabilization](https://github.com/loveyydoll/Aetherband/pull/7).
+- [x] Stop behavior fix is reported by the maintainer as complete; README describes engine silence, playhead reset, decoder restart, and a regression test.
+- [x] Core playback, multi-track mixing, native interop, and initial timeline UI are described as implemented.
+- [x] The README describes background decoding for WAV, FLAC, MP3, OGG, and AAC/M4A.
+- [x] Contributor guidance and real-time audio constraints are documented.
 
-- [ ] Reproduce Stop with the diagnostic tone disabled, first with one imported track and then multiple tracks.
-- [ ] Trace command acceptance end-to-end: C# UI → P/Invoke/C ABI result → bounded command queue → audio callback consumption → authoritative telemetry.
-- [ ] Ensure the UI reports queue rejection/errors instead of optimistically claiming a command succeeded or resetting the playhead as if Stop were confirmed.
-- [ ] Add/confirm a regression test: Play produces non-silent output; Stop produces silence and stopped telemetry/playhead frame zero; Play after Stop restarts at the beginning.
-- [ ] Test Stop while playing, paused, at EOF, immediately after Play, with multiple tracks, and repeated Stop.
-- [ ] Verify decoder restart/rewind semantics. Emptying buffered audio alone does not rewind a decoder worker.
-- [ ] Confirm Pause is distinct from Stop and Seek coordinates playhead, decoder position, stale buffered samples, and resumption.
-- [ ] Preserve callback guarantees: bounded work, no blocking locks/I/O/logging, and no allocation/deallocation or arbitrary resource destruction on the audio thread.
+These are based on the current documentation and maintainer update; this audit did not run the code or hardware tests itself.
 
-**Acceptance:** Automated regression tests pass, manual playback confirms silence after Stop and correct restart, and the result is reflected in telemetry rather than only local UI state.
+### Remaining documentation and evidence work
 
-### P1 — Verify lifecycle and real-time safety
+- [ ] Update the old issue/PR and engineering-status references to reflect the current state. Close or relabel issue #5 only when the maintainer is satisfied its acceptance criteria are met.
+- [ ] Review the latest CI runs and record which Rust/.NET checks pass on the current commits.
+- [ ] Refresh `docs/ENGINEERING_STATUS.md`; it references older branch/PR context and must not be treated as current without reconciliation.
+- [ ] Reconcile the supported-format lists. README names WAV, FLAC, MP3, OGG, AAC/M4A; `docs/REQUIREMENTS.md` currently names WAV, AIFF, FLAC, and MP3.
+- [ ] Reconcile the C ABI contract: `docs/API_CONTRACT.md` mentions `daw_engine_stop`, while its exported-function list documents `daw_engine_send_command` for transport commands. Check the actual exported symbols before editing the contract.
+- [ ] Fix literal escaped newline sequences (`\\n`) in transport/implementation notes in `docs/AI_WORKFLOW.md`, `docs/AUDIO_ENGINE.md`, `docs/API_CONTRACT.md`, and `docs/DECISIONS.md`, if still present on the current branch.
+- [ ] Align README, roadmap, requirements, engineering snapshot, and PR checklists on what is implemented, planned, and verified.
+- [ ] Confirm the proposed GitHub rulesets in `docs/GITHUB_RULESETS.md` against actual repository settings; the document explicitly says its recommendations are not proof that protections are active.
 
-- [ ] Test device switching with zero, one, and multiple tracks, including failure to open the replacement device.
-- [ ] Test unplugged/lost devices, stream errors, shutdown, track removal, corrupt/unsupported media, early EOF, decoder queue saturation, and rapid load/remove.
-- [ ] Audit queue-full/rejected commands and resource ownership/reclamation paths.
-- [ ] Test mono, stereo, multichannel, zero-channel defensive handling, and oversized callback buffers.
-- [ ] Verify sample-rate initialization and reconfiguration against the selected device.
-- [ ] Confirm worker cancellation/join cannot hang and errors reach the UI in a structured way.
+## Suggested next steps
 
-### P1 — Run and record verification
+1. **Reconcile current status:** inspect the latest source, issue/PR state, and CI. Remove stale claims that Stop remains an active bug.
+2. **Close out stabilization accurately:** keep only real outstanding lifecycle/test gaps. If a test or hardware check has not been run, record it as unverified rather than reopening a fixed bug.
+3. **Clean documentation contracts:** supported formats, C ABI symbol list, malformed Markdown line breaks, and old branch/PR references.
+4. **Move forward with Phase 4 planning/implementation** as appropriate: project save/load and asset management, waveform peak generation/caching, audio input recording/background writing, and offline WAV export.
+5. Keep MIDI/instruments and effects/plugin hosting as later milestones unless the maintainer changes the roadmap priority.
 
-Run from the repository root where the required toolchains and native dependencies are available:
+## Verification commands
+
+Run from the repository root where toolchains and native prerequisites are available:
 
 ```sh
 cargo fmt --all -- --check
@@ -47,66 +51,38 @@ cargo test --workspace --all-targets
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Then discover the current .NET solution/project and SDK from the repository, and run the appropriate restore, build, and test commands. Do not assume a historical solution path is current.
+Discover the actual .NET solution/project and SDK from the current tree before running matching restore/build/test commands. Inspect current Actions results rather than relying on the existence of workflow files.
 
-- [ ] Inspect the latest GitHub Actions runs and latest commit for each required check; record failures and skipped stages.
-- [ ] Run the repository verification script if applicable.
-- [ ] Perform manual runtime checks on available supported hardware; record OS, device, sample rate, and outcomes.
-- [ ] Do not claim macOS verification unless it was actually performed on macOS.
-- [ ] Update PR #7's verification checklist with exact commands/results before review or merge.
-
-**Evidence status for this audit:** I reviewed Markdown files and GitHub issue/PR metadata. I did not run the repository build, tests, or hardware playback, and this document does not claim they passed.
-
-### P2 — Align documentation and contracts
-
-- [ ] Reconcile the README's “Stop fixed in core” wording with the still-open runtime acceptance gate. Prefer “core fix implemented; runtime acceptance pending” until the manual test is complete.
-- [ ] Align the supported-format lists. The README describes WAV, FLAC, MP3, OGG, and AAC/M4A; `docs/REQUIREMENTS.md` currently names WAV, AIFF, FLAC, and MP3 in its decoding requirement.
-- [ ] Reconcile the C ABI contract: `docs/API_CONTRACT.md` mentions `daw_engine_stop`, but its exported-function list documents `daw_engine_send_command` for transport commands. Confirm the real symbols and document the actual API.
-- [ ] Review status claims in `docs/ENGINEERING_STATUS.md`: it references older draft PRs/branch context. Refresh it against current source, issue/PR state, and CI before treating it as current.
-- [ ] Fix literal escaped newline sequences (`\\n`) that appear in several Markdown sections (notably the transport notes in `docs/AI_WORKFLOW.md`, `docs/AUDIO_ENGINE.md`, `docs/API_CONTRACT.md`, and the implementation note in `docs/DECISIONS.md`) so headings and paragraphs render normally.
-- [ ] Keep project/folder naming notes (for example, legacy `RouletteStudio` paths) consistent with the current solution and source tree.
-- [ ] Ensure the README, roadmap, requirements, engineering snapshot, and PR checklist agree on which milestones are implemented, planned, and runtime-verified.
-
-### P3 — Resume feature work only after the gate is green
-
-After stabilization, prioritize the planned Phase 4 capabilities:
-1. Versioned project save/load and asset packaging.
-2. Waveform peak generation/caching.
-3. Audio input recording and background file writing.
-4. Offline WAV export and recovery/autosave.
-
-MIDI/instruments and effects/plugin hosting remain later milestones. Keep UI redesign work presentation-focused and do not let it weaken audio-thread guarantees or delay stabilization.
+For audio/device-specific work, record the tested OS, output device, sample rate, steps, and result. This audit did not execute builds, tests, CI jobs, or hardware playback and therefore makes no claim that they passed.
 
 ## Markdown files reviewed
 
 | File | Review notes |
 |---|---|
-| [README.md](../README.md) | Primary user-facing status, build/test commands, stack and phase overview. Stop wording should distinguish core implementation from runtime acceptance. |
-| [docs/VISION.md](VISION.md) | Product direction and MVP boundaries; long-term goals must not be mistaken for current features. |
-| [docs/REQUIREMENTS.md](REQUIREMENTS.md) | Functional/non-functional acceptance criteria; audio-format list differs from README. |
-| [docs/ARCHITECTURE.md](ARCHITECTURE.md) | Layer boundaries, responsibilities and data flows; verify design claims against source when doing code work. |
-| [docs/AUDIO_ENGINE.md](AUDIO_ENGINE.md) | Real-time callback constraints and transport/lifecycle notes; transport note has literal escaped newline formatting. |
-| [docs/API_CONTRACT.md](API_CONTRACT.md) | C ABI, error codes, commands and telemetry; reconcile `daw_engine_stop` wording with listed exports. |
-| [docs/ROADMAP.md](ROADMAP.md) | Current stabilization gate and phase ordering; use as the feature sequencing reference. |
-| [docs/DECISIONS.md](DECISIONS.md) | Architecture decisions; implementation note has literal escaped newline formatting and plugin phase wording should stay aligned with roadmap. |
-| [docs/AI_WORKFLOW.md](AI_WORKFLOW.md) | Verification and AI contributor safeguards; project caution section has literal escaped newline formatting. |
-| [docs/ENGINEERING_STATUS.md](ENGINEERING_STATUS.md) | Dated engineering snapshot, but branch/PR references appear older than current stabilization work. Refresh before relying on it. |
-| [docs/GITHUB_RULESETS.md](GITHUB_RULESETS.md) | Clearly labels branch protection as proposed rather than applied; re-check actual settings separately. |
-| [AGENTS.md](../AGENTS.md) | Contributor/agent entry point and required completion report. |
+| [README.md](../README.md) | Current public-facing feature/status summary; Stop fix is described as implemented, with runtime confirmation noted. |
+| [docs/VISION.md](VISION.md) | Product direction and MVP boundaries; keep future goals distinct from available features. |
+| [docs/REQUIREMENTS.md](REQUIREMENTS.md) | Acceptance criteria; audio-format list differs from README. |
+| [docs/ARCHITECTURE.md](ARCHITECTURE.md) | System boundaries and data flow; verify design claims against current source when needed. |
+| [docs/AUDIO_ENGINE.md](AUDIO_ENGINE.md) | Real-time callback constraints and transport notes; check literal escaped newline formatting. |
+| [docs/API_CONTRACT.md](API_CONTRACT.md) | C ABI and telemetry; reconcile Stop function wording with actual exports. |
+| [docs/ROADMAP.md](ROADMAP.md) | Feature sequencing; update current status to reflect maintainer's report that most stabilization is complete. |
+| [docs/DECISIONS.md](DECISIONS.md) | Architecture decisions; check implementation note formatting and consistency with roadmap. |
+| [docs/AI_WORKFLOW.md](AI_WORKFLOW.md) | Contributor verification safeguards; check project caution formatting/status. |
+| [docs/ENGINEERING_STATUS.md](ENGINEERING_STATUS.md) | Dated engineering snapshot with older branch/PR references; refresh against current state. |
+| [docs/GITHUB_RULESETS.md](GITHUB_RULESETS.md) | Describes proposed protections, not confirmed active settings. |
+| [AGENTS.md](../AGENTS.md) | Contributor/agent workflow and completion report requirements. |
 | [.github/instructions/audio-realtime.instructions.md](../.github/instructions/audio-realtime.instructions.md) | Callback, queue, ownership, lifecycle and evidence requirements. |
 
-## Current GitHub references
+## GitHub references to reconcile
 
-- [Issue #5 — Fix Stop transport: audio continues after playhead resets](https://github.com/loveyydoll/Aetherband/issues/5)
-- [PR #7 — Fix/phase 1 3 stabilization](https://github.com/loveyydoll/Aetherband/pull/7)
+- [Issue #5 — Stop transport](https://github.com/loveyydoll/Aetherband/issues/5): issue text describes the original bug and strict acceptance criteria; update its status if the maintainer considers the fix fully accepted.
+- [PR #7 — stabilization](https://github.com/loveyydoll/Aetherband/pull/7): review current state and latest CI before treating it as the canonical implementation record.
+- [PR #8 — documentation audit](https://github.com/loveyydoll/Aetherband/pull/8): this audit document is being revised to reflect the maintainer's status correction.
 
-Re-check their live state and latest CI before acting; this audit records what was discoverable during review and is not a substitute for current CI evidence.
+## Definition of done for this documentation pass
 
-## Definition of done for this stabilization pass
-
-- [ ] Stop regression is covered by an automated test and passes.
-- [ ] Manual Play/Pause/Stop/Seek and restart behavior is verified on real hardware.
-- [ ] Decoder, track, device and shutdown edge cases are tested or explicitly tracked.
-- [ ] Rust and .NET checks have actual passing results; skipped checks are disclosed.
-- [ ] Documentation claims match verified behavior and the current API.
-- [ ] PR review checklist is complete, and a human reviewer approves the changes before merge.
+- [ ] No resolved bug is presented as an active blocker.
+- [ ] Remaining tasks describe real open work, not stale checklist items.
+- [ ] Status claims distinguish maintainer-reported implementation from independently recorded verification.
+- [ ] Requirements, API contract, README, roadmap, and engineering snapshot agree.
+- [ ] CI and runtime evidence are recorded accurately where available.
