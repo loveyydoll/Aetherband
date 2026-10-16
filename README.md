@@ -115,7 +115,7 @@ Aetherband/
 │       └── build.rs                 # Runs csbindgen to generate C# bindings
 ├── apps/
 │   └── desktop/                     # Avalonia UI desktop application (.NET 10)
-│       └── RouletteStudio.Desktop/   # Views, ViewModels, and AudioService
+│       └── Aetherband.Desktop/   # Views, ViewModels, and AudioService
 ├── docs/                            # Comprehensive architectural blueprints & specifications
 └── tools/                           # Automated build and execution scripts
     ├── build.ps1                    # One-command Rust + C# build script
@@ -141,7 +141,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\build.ps1
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\run.ps1
 ```
-*(Or open `apps/desktop/RouletteStudio.slnx` in Visual Studio and press **F5**).*
+*(Or open `apps/desktop/Aetherband.slnx` in Visual Studio and press **F5**).*
 
 ### Run the Audio Core Test Suite
 Run all unit tests and verify the 100,000-block zero-allocation guarantee:
