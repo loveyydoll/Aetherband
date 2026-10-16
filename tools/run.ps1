@@ -14,6 +14,9 @@ if (-not (Test-Path $desktopProject)) {
 }
 
 & (Join-Path $PSScriptRoot "build.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "Build script failed with exit code $LASTEXITCODE; application will not be launched."
+}
 
 Push-Location $repoRoot
 try {
