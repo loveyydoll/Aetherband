@@ -115,7 +115,7 @@ Aetherband/
 │       └── build.rs                 # Runs csbindgen to generate C# bindings
 ├── apps/
 │   └── desktop/                     # Avalonia UI desktop application (.NET 10)
-│       └── RouletteStudio.Desktop/   # Views, ViewModels, and AudioService
+│       └── RouletteStudio.Desktop/   # Existing desktop project folder (legacy name; product is Aetherband)
 ├── docs/                            # Comprehensive architectural blueprints & specifications
 └── tools/                           # Automated build and execution scripts
     ├── build.ps1                    # One-command Rust + C# build script
