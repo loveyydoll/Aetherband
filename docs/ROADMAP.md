@@ -6,19 +6,27 @@ Aetherband is being developed incrementally, with correctness and testable miles
 
 Priorities:
 
-1. Stabilize and verify the existing audio engine and desktop integration.
-2. Complete the recording, project, mixer, and export foundations.
-3. Refresh the UI once those core workflows and APIs are stable.
-4. Add MIDI, instruments, effects, and plugin hosting on top of the stable foundation.
-5. Consider mobile as a separate effort after the desktop application is mature.
+1. Preserve and verify the Rust engine's real-time correctness and the actual C ABI.
+2. **Implement the Flutter/Dart desktop UI to full DAW scope through Dart FFI over the existing C ABI. This is an explicit owner decision and is mandatory, not an optional redesign.**
+3. Connect Flutter to the real currently supported engine workflows, then close UI/engine feature gaps incrementally.
+4. Keep C#/Avalonia buildable as a transition frontend until Flutter reaches feature parity and passes the documented migration/release gates; do not treat it as the permanent target.
+5. Continue audio-engine feature work (projects, recording, MIDI, instruments, effects, automation, plugin hosting and export) with functionality exposed to Flutter through reviewed ABI additions.
+6. Treat mobile as a separate future effort after the desktop product is mature.
 
-The current UI is intentionally retained during stabilization so it remains a known test surface. Do not begin a broad visual redesign during the current correctness pass.
+The Flutter migration starts now and runs in parallel with engine stabilization where practical. Do not defer it until all future audio features have been implemented. Do not, however, call a mock UI production-ready or bypass test, ABI, ownership or real-time audio safeguards to accelerate the migration.
 
 ## 2. Current status
 
-**Current focus: Stabilization and verification of Phases 1–3.**
+**Current focus:** Flutter desktop migration through the C ABI, alongside Rust engine correctness and verification.
 
-The repository already contains Rust audio-engine code and a C#/Avalonia desktop application, but the existence of these components does not mean the phases are fully verified. The current stabilization work must establish reliable builds, automated tests, decoder/transport lifecycle correctness, audio callback safety, and device-switching behavior before these phases can be marked complete.
+PR #9 introduced the isolated Flutter workspace; PR #10 added the compact workstation menu, darker theme, responsive arrangement lanes and layout/assertion fixes. The Flutter workspace is still mock-only: the Dart FFI adapter, native-library packaging and real engine integration remain to be implemented. The current audio-connected desktop app is still the C#/Avalonia app, which is retained until parity.
+
+Use [`FLUTTER_DESKTOP_MIGRATION.md`](FLUTTER_DESKTOP_MIGRATION.md) for the required target architecture, API limits and migration acceptance gates, and [`AI_HANDOFF.md`](AI_HANDOFF.md) for the exact work history and latest known verification.
+
+Track status against evidence:
+- **Implemented:** code exists.
+- **In verification:** acceptance tests or runtime checks are still outstanding.
+- **Complete:** every stated acceptance criterion has passed and the result is recorded.
 
 Track status against evidence:
 - **Implemented:** code exists.
@@ -60,16 +68,18 @@ Use `scripts/verify.ps1` on Windows PowerShell or `scripts/verify.sh` in Bash-co
   - Tests cover zero-frame/end-of-stream blocks, full and partial final blocks, and supported output channel counts.
 - **Status:** Implemented work is under stabilization; do not mark complete until the criteria are verified.
 
-### Phase 2 — Desktop MVP and Cross-Language Integration
+### Phase 2 — Native Engine and C-ABI Baseline
 
-- **Goal:** Reliably connect the Rust engine to the C# Avalonia desktop app.
+- **Goal:** Reliably expose the Rust engine and preserve a working native-audio desktop client while the mandatory Flutter frontend is implemented.
 - **Deliverables:**
   - Native C ABI and platform-specific library outputs.
-  - C# P/Invoke bindings, generated where appropriate.
-  - Existing desktop controls for device selection, transport, master volume, meters, and audio playback.
+  - C# P/Invoke bindings for the existing transition frontend, generated where appropriate.
+  - Existing audio-connected controls for device selection, transport, master volume, meters, track loading and mixing.
+  - Verified ABI function/struct contract and a separate Dart FFI adapter plan/client for Flutter.
 - **Acceptance criteria:**
-  - Rust native library and desktop application build using the documented scripts/toolchain.
+  - Rust native library and the existing transition desktop application build using the documented scripts/toolchain.
   - Native library loading and ABI behavior are tested on the supported target platforms.
+  - Flutter has a dedicated testable Dart FFI client, using only real exports from `bindings/c_abi/src/lib.rs`; its work can progress alongside this phase.
   - Playback, pause, stop, rapid volume changes, and clean application shutdown work without crashes, hangs, clicks, or unexpected dropouts.
   - Device selection and stream reinitialization do not leave stale track metadata, decoder handles, or invalid processor state.
   - CI results are green for the latest commit, not just an earlier commit in the branch.
@@ -82,7 +92,7 @@ Use `scripts/verify.ps1` on Windows PowerShell or `scripts/verify.sh` in Bash-co
   - Background media decoding with `symphonia`.
   - Preallocated/bounded buffering between decoder workers and the audio callback.
   - Sample-accurate track playback and transport coordination.
-  - Existing timeline and track controls, preserving the current UI during stabilization.
+  - Existing timeline and track controls in the Avalonia transition app, plus the Flutter UI migration path; Flutter must not pretend to have real audio before its native adapter is connected.
 - **Acceptance criteria:**
   - Supported WAV, FLAC, MP3, OGG, and AAC files are tested, including corrupt files, EOF, resampling, and partial final blocks.
   - Stop, seek/reset, remove-track, rapid load/remove, queue backpressure, and device-switch scenarios have regression tests and do not deadlock or hang.
@@ -98,15 +108,16 @@ Use `scripts/verify.ps1` on Windows PowerShell or `scripts/verify.sh` in Bash-co
   - Ensure callback-owned data can be reclaimed without callback-time allocation/deallocation or other unsafe work.
   - Correctly handle device changes, output sample-rate/channel changes, and failed track/command submissions.
   - Verify final-block handling and resampling-length calculations.
-  - Run formatting, Rust checks/tests, .NET restore/build/tests, and the available CI workflows on the latest commit.
-  - Test on the developer's Windows machine with real output hardware, including playback and clean shutdown.
+  - Run formatting, Rust checks/tests, transition-app restore/build/tests, Flutter analysis/widget/integration tests, and available CI workflows on the latest commit.
+  - Test on Windows with real output hardware, including playback and clean shutdown.
   - Update engineering status with exact commands, outcomes, environment, and remaining known limitations.
+  - Do not block Flutter UI engineering on unrelated future features, but do not declare its engine integration complete before engine/ABI correctness is verified.
 - **Exit criteria:**
   - Required CI checks pass on the exact candidate commit.
   - Automated regression tests pass.
   - Manual hardware checks are recorded.
   - No unresolved P0 correctness or real-time safety issues remain.
-- **Rule:** Do not start Phase 4 implementation work that depends on unstable transport/engine APIs until this gate is passed. UI planning may happen in parallel, but the existing UI remains unchanged.
+- **Rule:** Do not start engine feature work that depends on unstable transport APIs until this gate is passed. Flutter UI/migration work may proceed in parallel using mock injection and the stable, already exported C ABI, but native integration must preserve the gate and API safeguards.
 
 ### Phase 4 — Audio Recording, Mixer, Projects, and Export
 
@@ -124,23 +135,29 @@ Use `scripts/verify.ps1` on Windows PowerShell or `scripts/verify.sh` in Bash-co
   - A three-minute arrangement export performance target is measured and recorded; do not claim the target until tested.
 - **Prerequisite:** Phase 3.5 stabilization gate passed.
 
-### UI Milestone — Design and UI Revamp
+### Mandatory UI Milestone — Full-Scale Flutter Desktop Migration
 
-This is a dedicated milestone, not a reason to interrupt the current stabilization work.
+**Owner decision (2026-10-17): mandatory target, not optional.** This milestone begins immediately and progresses in parallel with engine stabilization and Phase 4 where practical. Its position here groups frontend work in the roadmap; it does not mean the project should wait until all later audio features are finished to begin.
 
-- **Planning can begin during Phase 3.5:** document current screens, identify usability problems from real testing, establish interaction priorities, and prepare wireframes/design tokens without replacing the current UI.
-- **Begin implementation after Phase 4's core project, transport, recording, and mixer APIs are stable, and before the main Phase 5 piano-roll/instrument/plugin workflows are built.**
-- **Scope:**
-  - Rework layout, navigation, hierarchy, spacing, typography, and reusable components.
-  - Keep existing workflows available while migrating screens incrementally.
-  - Design around real editing tasks and keyboard/mouse workflows, not appearance alone.
-  - Preserve or add UI tests for transport, track management, recording, project save/load, mixer, and export.
-  - Avoid changing audio-engine behavior as part of purely visual work.
-- **Exit criteria:**
-  - Core workflows can be completed without regressions.
-  - UI remains responsive during playback and timeline interaction.
-  - The design supports planned MIDI, instruments, effects, and plugin panels.
-  - The previous UI or a reliable test build remains available until the new UI passes regression testing.
+- **Goal:** Make Flutter/Dart the primary full-scale Windows/macOS desktop frontend using Dart FFI over the existing Rust C ABI.
+- **Deliverables:**
+  - Dedicated, injectable Dart engine-client/FFI adapter with ABI layout and error handling tests.
+  - Platform-specific builds/packaging/loading of the native `daw_core` shared library.
+  - Real engine-connected transport, device selection, audio-file loading, track removal/volume/pan/mute, master control, playhead and telemetry.
+  - Production arrangement, library, instrument/effect panel, mixer, menu/shortcut, scaling, accessibility and error states.
+  - Explicit integration for future engine features through reviewed ABI changes, rather than mock success.
+- **Migration safety:** Keep the existing C#/Avalonia application buildable and audio-connected until Flutter reaches feature parity. Do not delete/disable Avalonia before review and acceptance.
+- **Acceptance criteria:**
+  - Real FFI calls use actual exports in `bindings/c_abi/src/lib.rs`; no undocumented/guessed functions.
+  - Calls on one engine handle are serialized until the ABI proves safe concurrent access.
+  - Mock data is injectable for widget tests but is not used as production audio.
+  - Dart analysis, widget/integration tests, ABI layout/lifecycle checks, native build and Flutter Windows/macOS desktop builds pass on the candidate commit.
+  - All currently supported audio workflows from Avalonia have equivalent tested Flutter workflows.
+  - The owner reviews the new UI and the documented run/package path defaults to Flutter before migration is marked complete.
+  - Avalonia retirement is a separate reviewed step after these criteria pass.
+- **Reference:** [`FLUTTER_DESKTOP_MIGRATION.md`](FLUTTER_DESKTOP_MIGRATION.md).
+
+---
 
 ### Phase 5 — MIDI, Instruments, DSP Effects, and Plugins
 
