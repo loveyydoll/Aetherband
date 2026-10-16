@@ -1,5 +1,8 @@
 # Aetherband — Documentation Audit and Next Steps
 
+> **Current direction update (2026-10-17):** This is an audit snapshot. Its previous suggestion to defer a UI revamp is superseded by the owner's explicit decision to implement Flutter as the full-scale desktop frontend through the Rust C ABI. This is mandatory unless the owner reverses it. Keep the current C#/Avalonia app during migration for real-audio parity. See [`FLUTTER_DESKTOP_MIGRATION.md`](FLUTTER_DESKTOP_MIGRATION.md) and [`AI_HANDOFF.md`](AI_HANDOFF.md) for the current implementation history, test evidence and next steps. The actual exported ABI in `bindings/c_abi/src/lib.rs` supersedes stale signatures in any older doc.
+
+
 **Reviewed:** 2026-10-16  
 **Status update:** The project collaborator/maintainer reports that the Stop bug is fixed and most stabilization work is complete. This supersedes the earlier audit's assumption that Stop should still be treated as an active blocker.  
 **Scope:** Markdown documentation on `main`, current README status, and discoverable issue/PR metadata. This is a documentation handoff, not an independent source-code or runtime verification.
