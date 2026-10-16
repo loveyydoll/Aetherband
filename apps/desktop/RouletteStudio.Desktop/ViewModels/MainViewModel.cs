@@ -77,7 +77,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         }
         else
         {
-            StatusText = "Failed to initialize audio driver";
+            StatusText = _audioService.InitializationError is { Length: > 0 } error
+                ? $"Audio unavailable: {error}"
+                : "Audio engine unavailable. The UI is running without audio.";
         }
 
         // 60 FPS Telemetry Polling Loop (~16ms)
