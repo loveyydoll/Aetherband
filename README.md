@@ -12,7 +12,7 @@ Aetherband bridges the gap between intuitive songwriting sketchpads and high-pre
 |---|---|---|
 | **Audio engine and DSP** | Rust (2021 edition, stable toolchain) | Native engine, decoders, real-time mixer and audio-device callbacks |
 | **Native interoperability** | Flat C ABI under `bindings/c_abi/` | Required shared boundary between the Rust engine and desktop UI runtimes |
-| **Target desktop UI** | **Flutter + Dart** | Mandatory full-scale Windows/macOS frontend direction; currently a UI-only prototype being integrated through Dart FFI |
+| **Target desktop UI** | **Flutter + Dart** | Mandatory full-scale Windows/macOS frontend direction; current workspace is UI-only and the production Dart FFI adapter remains to be implemented |
 | **Dart/native interop** | Dart `dart:ffi` adapter over the C ABI | Production adapter still needs implementing; do not bind Flutter to private Rust internals |
 | **Existing transition UI** | C# / .NET 10 + Avalonia | Existing audio-connected desktop frontend, retained until Flutter reaches real-engine feature parity and passes migration gates |
 | **C# bindings** | `csbindgen` | Currently generates P/Invoke bindings for the Avalonia app; it does not generate Dart bindings |
