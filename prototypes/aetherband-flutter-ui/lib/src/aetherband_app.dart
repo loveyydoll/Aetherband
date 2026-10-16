@@ -237,9 +237,9 @@ class _TopBar extends StatelessWidget {
             width: 31,
             height: 31,
             decoration: BoxDecoration(
-              color: AetherColors.sage.withOpacity(0.12),
+              color: AetherColors.sage.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(9),
-              border: Border.all(color: AetherColors.sage.withOpacity(0.5)),
+              border: Border.all(color: AetherColors.sage.withValues(alpha: 0.5)),
             ),
             child: const Icon(Icons.graphic_eq, color: AetherColors.sage, size: 18),
           ),
@@ -249,7 +249,7 @@ class _TopBar extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('aetherband', style: TextStyle(color: AetherColors.paper, fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: -0.5)),
-              Text('UNTITLED PROJECT / EARLY ALPHA', style: TextStyle(color: AetherColors.secondaryText.withOpacity(0.85), fontSize: 8, letterSpacing: 1.0)),
+              Text('UNTITLED PROJECT / EARLY ALPHA', style: TextStyle(color: AetherColors.secondaryText.withValues(alpha: 0.85), fontSize: 8, letterSpacing: 1.0)),
             ],
           ),
           const SizedBox(width: 20),
@@ -300,8 +300,8 @@ class _TopBar extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
             decoration: BoxDecoration(
-              color: AetherColors.magenta.withOpacity(0.1),
-              border: Border.all(color: AetherColors.magenta.withOpacity(0.4)),
+              color: AetherColors.magenta.withValues(alpha: 0.1),
+              border: Border.all(color: AetherColors.magenta.withValues(alpha: 0.4)),
               borderRadius: BorderRadius.circular(5),
             ),
             child: const Row(
@@ -349,7 +349,7 @@ class _TransportButton extends StatelessWidget {
         width: 36,
         height: 36,
         child: Material(
-          color: primary ? AetherColors.sage.withOpacity(0.15) : AetherColors.panel,
+          color: primary ? AetherColors.sage.withValues(alpha: 0.15) : AetherColors.panel,
           borderRadius: BorderRadius.circular(7),
           child: InkWell(
             borderRadius: BorderRadius.circular(7),
