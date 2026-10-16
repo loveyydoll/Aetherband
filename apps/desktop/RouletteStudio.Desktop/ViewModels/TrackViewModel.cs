@@ -34,6 +34,21 @@ public partial class TrackViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isMuted;
 
+    /// <summary>
+    /// Absolute peak magnitudes [0,1] for waveform drawing. Null while loading.
+    /// </summary>
+    [ObservableProperty]
+    private float[]? _peaks;
+
+    /// <summary>
+    /// 0–1 playhead progress shared from the main transport for this lane.
+    /// </summary>
+    [ObservableProperty]
+    private double _progress;
+
+    [ObservableProperty]
+    private bool _isGeneratingPeaks;
+
     public TrackViewModel(
         uint id,
         string name,
