@@ -484,13 +484,15 @@ class _MeterBar extends StatelessWidget {
             child: SizedBox(
               height: 7,
               child: Stack(
-                fit: StackFit.expand,
                 children: [
-                  const ColoredBox(color: AetherColors.raised),
-                  FractionallySizedBox(
+                  const Positioned.fill(child: ColoredBox(color: AetherColors.raised)),
+                  Align(
                     alignment: Alignment.centerLeft,
-                    widthFactor: value.clamp(0.0, 1.0).toDouble(),
-                    child: ColoredBox(color: color),
+                    child: FractionallySizedBox(
+                      widthFactor: value.clamp(0.0, 1.0).toDouble(),
+                      heightFactor: 1,
+                      child: ColoredBox(color: color),
+                    ),
                   ),
                 ],
               ),
