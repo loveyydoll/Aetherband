@@ -1,4 +1,6 @@
-# AI-Assisted Development Workflow & Engineering Safeguards: CustomDAW
+# AI-Assisted Development Workflow & Engineering Safeguards: Aetherband
+
+> **Agent entry point:** Read the repository-root [`AGENTS.md`](../AGENTS.md) first. It is the canonical current handoff for project identity, verified/not-yet-verified changes, open risks, and next steps. This document contains the broader workflow safeguards; some legacy paths and version references below still need reconciliation with the current repository.
 
 ## 1. Principles of AI-Assisted Pair Programming
 
