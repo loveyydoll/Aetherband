@@ -264,6 +264,32 @@ mod tests {
     }
 
     #[test]
+    fn zero_channel_count_clears_output_without_panicking() {
+        let (_, audio) = create_engine_queues(16, 16);
+        let mut processor = AudioProcessor::new(48000.0, audio);
+        let mut buffer = vec![1.0f32; 16];
+
+        processor.process_interleaved(&mut buffer, 0);
+
+        assert!(buffer.iter().all(|&sample| sample == 0.0));
+    }
+
+    #[test]
+    fn extra_output_channels_are_cleared() {
+        let (_, audio) = create_engine_queues(16, 16);
+        let mut processor = AudioProcessor::new(48000.0, audio);
+        // Four channels per frame; initialize all channels to non-silence.
+        let mut buffer = vec![1.0f32; 4 * 16];
+
+        processor.process_interleaved(&mut buffer, 4);
+
+        for frame in buffer.chunks_exact(4) {
+            assert_eq!(frame[2], 0.0);
+            assert_eq!(frame[3], 0.0);
+        }
+    }
+
+    #[test]
     fn test_test_tone_when_playing() {
         let (mut ui, audio) = create_engine_queues(16, 16);
         let mut processor = AudioProcessor::new(48000.0, audio);
