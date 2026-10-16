@@ -6,20 +6,24 @@ Aetherband bridges the gap between intuitive songwriting sketchpads and high-pre
 
 ---
 
-## Tech Stack (What the whole app is written in)
+## Technology stack and frontend direction
 
-| Layer | Language / Framework | Role |
-|-------|----------------------|------|
-| **Audio Engine & DSP** | **Rust** (stable 2021 edition) | Hard real-time callback, mixer, decoder workers, lock-free queues |
-| **Native FFI** | **C99 ABI** + `csbindgen` | Flat C interface + auto-generated C# P/Invoke |
-| **Desktop UI** | **C# / .NET 10 LTS** + **Avalonia UI 11** | GPU-accelerated multi-track arranger, transport, meters |
-| **Audio I/O** | `cpal` | WASAPI (Windows) / CoreAudio (macOS) |
-| **Decoding** | `symphonia` | WAV tested; FLAC, MP3, OGG, AAC/M4A expected from decoder support but not yet verified end-to-end |
-| **Resampling** | `rubato` | High-quality sample-rate conversion |
-| **Concurrency** | `rtrb` | Wait-free SPSC ring buffers (UI ↔ audio thread) |
-| **License** | **GPLv3** | Open source |
+| Layer | Technology | Role / status |
+|---|---|---|
+| **Audio engine and DSP** | Rust (2021 edition, stable toolchain) | Native engine, decoders, real-time mixer and audio-device callbacks |
+| **Native interoperability** | Flat C ABI under `bindings/c_abi/` | Required shared boundary between the Rust engine and desktop UI runtimes |
+| **Target desktop UI** | **Flutter + Dart** | Mandatory full-scale Windows/macOS frontend direction; currently a UI-only prototype being integrated through Dart FFI |
+| **Dart/native interop** | Dart `dart:ffi` adapter over the C ABI | Production adapter still needs implementing; do not bind Flutter to private Rust internals |
+| **Existing transition UI** | C# / .NET 10 + Avalonia | Existing audio-connected desktop frontend, retained until Flutter reaches real-engine feature parity and passes migration gates |
+| **C# bindings** | `csbindgen` | Currently generates P/Invoke bindings for the Avalonia app; it does not generate Dart bindings |
+| **Audio I/O** | `cpal` | Platform audio output |
+| **Decoding** | `symphonia` | WAV playback has been tested; FLAC/MP3/OGG/AAC-M4A are expected candidates but remain unverified end-to-end |
+| **Resampling / concurrency** | `rubato`, `rtrb` | Sample-rate conversion and SPSC queues |
+| **License** | GPLv3 | Open source |
 
-The application is **not** written in a single language. The real-time critical path is pure Rust; the interactive desktop shell is modern C# on Avalonia.
+**Product decision (2026-10-17): Flutter is the long-term desktop UI and must be implemented full scale.** This direction is not optional unless the project owner explicitly changes it. Rust remains the audio engine; Flutter must use the C ABI. Avalonia remains available during the staged migration, but it is not the intended final frontend. See [the Flutter migration plan](docs/FLUTTER_DESKTOP_MIGRATION.md) and [AI handoff](docs/AI_HANDOFF.md).
+
+**Status distinction:** The Flutter preview currently shows simulated transport, clips/waveforms, meters, and instrument state. It does not yet play, record, decode, or export audio. The C#/Avalonia app is still the existing audio-connected desktop UI while the new Dart FFI adapter and end-to-end Flutter engine integration are built.
 
 ---
 
@@ -80,7 +84,7 @@ The core engine, file playback, multi-track mixing, native interop, and initial 
 ## Highlights
 
 - **Hard Real-Time Audio Engine:** Engineered in pure **Rust** with zero-allocation audio callbacks and wait-free concurrency (`rtrb`), eliminating dropouts, clicks, and priority inversions.
-- **Hardware-Accelerated UI:** Built in **C# (.NET 10 LTS)** with **Avalonia UI**, delivering fluid 60–120 FPS timeline scrolling and vector waveforms on Windows and macOS.
+- **Frontend migration:** Flutter is the mandatory target UI with the compact DAW/IDE-oriented layout in `prototypes/aetherband-flutter-ui/`. The existing C#/Avalonia frontend remains the transition audio-connected app until the Flutter engine adapter and feature parity are verified.
 - **Desktop-First Precision:** Designed specifically for desktop workflows—dense mixer strips, multi-monitor layouts, keyboard shortcuts, and sample-accurate editing.
 - **Self-Contained Projects:** Portable `.dawproject` format planned to bundle project metadata and audio assets, eliminating "missing audio file" headaches.
 - **Open-Source & Extensible:** Free software under the GPLv3 license, built with a clean modular separation between core DSP and UI presentation.
@@ -89,27 +93,34 @@ The core engine, file playback, multi-track mixing, native interop, and initial 
 
 ## Architecture at a Glance
 
-```
-┌────────────────────────────────────────────────────────┐
-│                   Aetherband                            │
-├───────────────────────────┬────────────────────────────┤
-│  Desktop Presentation     │  Shared Audio Engine       │
-│  (C# .NET 10 + Avalonia)  │  (Rust Core Library)       │
-├───────────────────────────┼────────────────────────────┤
-│ • GPU-Accelerated Skia    │ • Hardware Callback Loop   │
-│ • ReactiveUI / MVVM       │ • Lock-Free SPSC Queues    │
-│ • Multi-Track Arranger    │ • Equal-Power Pan Mixer    │
-│ • Track Control Strips    │ • Symphonia Disk Streaming │
-│ • Live Stereo VU Meters   │ • Rubato Resampling (SRC)  │
-└─────────────▲─────────────┴─────────────▲──────────────┘
-              │                           │
-              └───────[ Flat C-ABI ]──────┘
-                 (csbindgen P/Invoke)
+**Target desktop architecture (required):**
+
+```mermaid
+flowchart TD
+    UI[Flutter / Dart desktop UI]
+    Client[Engine client + serialized native-call boundary]
+    FFI[Dart FFI]
+    ABI[Flat C ABI]
+    Rust[Rust audio engine]
+    RT[Real-time callback / DSP / mixer]
+    IO[cpal and OS audio device]
+    Workers[Background decoder workers]
+    UI --> Client --> FFI --> ABI --> Rust
+    Rust --> RT --> IO
+    Rust --> Workers
+    Rust --> ABI
+    ABI --> FFI --> Client --> UI
+    Legacy[C# / Avalonia transition frontend]
+    Legacy -. csbindgen-generated P/Invoke .-> ABI
 ```
 
-- **Core & DSP:** Rust (`cpal` backend, `symphonia` decoder, `rubato` SRC, `rtrb` lock-free queues)
-- **Desktop Frontend:** C# (.NET 10 LTS) + Avalonia UI (v11+)
-- **Interoperability:** Flat C99 ABI with automated type-safe bindings (`csbindgen`)
+- **Target frontend:** Flutter/Dart, with a dedicated adapter using the same exported C ABI.
+- **Audio engine:** Rust owns decoding, device I/O, DSP, mixing and the audio callback.
+- **Interop boundary:** `bindings/c_abi/src/lib.rs` is the source of truth for exported functions and `#[repr(C)]` layouts.
+- **Temporary legacy frontend:** C#/.NET + Avalonia stays intact until Flutter has real-engine feature parity and the migration acceptance criteria pass.
+- **Do not infer functionality from the prototype:** current Flutter telemetry and audio clips are mock data, not native playback.
+
+See [`docs/FLUTTER_DESKTOP_MIGRATION.md`](docs/FLUTTER_DESKTOP_MIGRATION.md) for the staged implementation plan and current ABI inventory.
 
 ---
 
@@ -133,9 +144,11 @@ Aetherband/
 │   └── c_abi/                       # Flat C-ABI export layer (daw_core.dll)
 │       └── build.rs                 # Runs csbindgen to generate C# bindings
 ├── apps/
-│   └── desktop/                     # Avalonia UI desktop application (.NET 10)
-│       └── RouletteStudio.Desktop/   # Existing desktop project folder (legacy name; product is Aetherband)
-├── docs/                            # Comprehensive architectural blueprints & specifications
+│   └── desktop/                     # Existing Avalonia transition UI (.NET 10; audio-connected)
+│       └── RouletteStudio.Desktop/   # Historical project/namespace name
+├── prototypes/
+│   └── aetherband-flutter-ui/       # Mandatory target UI under development; currently mock-only
+├── docs/                            # Architecture, mandatory Flutter migration plan and AI handoff
 └── tools/                           # Automated build and execution scripts
     ├── build.ps1                    # One-command Rust + C# build script
     └── run.ps1                      # Builds and launches the desktop app
@@ -158,11 +171,27 @@ Run the automated build script from PowerShell:
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1
 ```
 
-### Launch the Desktop App
+### Launch the existing audio-connected desktop app (transition UI)
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\run.ps1
 ```
-*(Or open `apps/desktop/RouletteStudio.slnx` in Visual Studio and press **F5**).*
+
+This launches the existing C#/Avalonia app. Keep it as the safe working frontend while Flutter is connected to the real engine; it is not the long-term UI target.
+
+### Run the Flutter desktop UI preview (mock audio only)
+
+Requires Flutter stable plus Visual Studio's **Desktop development with C++** workload on Windows. From the repository root:
+
+```powershell
+cd prototypes\aetherband-flutter-ui
+flutter pub get
+flutter analyze
+flutter test
+flutter run -d windows
+```
+
+On macOS, use Xcode and `flutter run -d macos`. This is still a UI preview; it is not connected to the Rust audio engine. The required Dart FFI integration plan is in [`docs/FLUTTER_DESKTOP_MIGRATION.md`](docs/FLUTTER_DESKTOP_MIGRATION.md).
 
 ### Run the Audio Core Test Suite
 Run all unit tests and verify the 100,000-block zero-allocation guarantee:
