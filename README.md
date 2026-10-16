@@ -15,6 +15,33 @@ RouletteStudio bridges the gap between intuitive songwriting sketchpads and high
 
 ---
 
+## 🧐 What Can It Do Right Now? (For the Average User)
+
+If you download and run RouletteStudio today, here is an honest, plain-English breakdown of what is working versus what is still being built:
+
+### ✅ What You Can Do Right Now:
+- **Import Multiple Audio Files:** Load common audio file formats (**WAV, FLAC, MP3, OGG, AAC/M4A**) onto separate tracks by clicking `+ Add Audio Track`.
+- **Automatic Format & Sample Rate Conversion:** Mix audio files of different sample rates (e.g. 44.1 kHz, 48 kHz, 96 kHz) together—the engine resamples them seamlessly in the background.
+- **Multi-Track Playback:** Play, pause, and stop playback of all loaded tracks simultaneously in sync.
+- **Track Mixing Controls:**
+  - Adjust volume faders per track with real-time dB readouts and click-free volume smoothing.
+  - Pan tracks left, right, or center with an equal-power stereo balance law.
+  - Mute/unmute individual tracks on the fly.
+  - Remove unwanted tracks from the session.
+- **Master Bus Control & Metering:** Control master volume and monitor real-time stereo peak/RMS VU meters updating smoothly at 60 FPS.
+- **Audio Device Selection:** Switch output devices (headphones, speakers, audio interfaces) directly from the top transport bar without restarting.
+
+### ❌ What It Cannot Do Yet (Under Active Development):
+- **No Saving or Loading Projects:** You cannot save your session to disk yet (session state resets when closing the app).
+- **No Audio Recording:** Microphone/instrument audio recording via inputs is planned for Phase 4.
+- **No Visual Waveform Peaks (Yet):** Track lanes currently show clip markers, but not drawn peak/RMS waveform outlines yet.
+- **No MIDI, Virtual Instruments, or Piano Roll:** MIDI keyboard input, software synths, and sequencing will come in Phase 5.
+- **No VST3 / CLAP / AU Plugins:** Audio effect and instrument plugin hosting will be introduced in Phase 6.
+- **No Automation Curves:** Volume/pan cannot be automated along a curve yet.
+- **No Exporting to WAV/MP3 ("Bounce/Render"):** Offline mixdown rendering is not yet implemented.
+
+---
+
 ## 🚀 Current Milestone: Phase 2 & 3 (Multi-Track Playback & Arranger UI)
 
 RouletteStudio has completed **Phase 1 (Real-Time Audio Core)** and **Phase 2 & 3 (Multi-Track Audio Playback, Disk Streaming & Timeline UI)**:
