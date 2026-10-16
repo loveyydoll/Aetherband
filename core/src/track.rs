@@ -266,6 +266,22 @@ mod tests {
     }
 
     #[test]
+    fn zero_frame_terminal_block_marks_track_finished() {
+        let (mut player, mut producer) = make_track(7, 0);
+        let mut terminal = DecodedBlock::silent(0);
+        terminal.is_last = true;
+        producer.push(terminal).unwrap();
+
+        let mut left = vec![0.0f32; 64];
+        let mut right = vec![0.0f32; 64];
+        player.mix_into(&mut left, &mut right, 64);
+
+        assert!(player.finished);
+        assert!(left.iter().all(|sample| *sample == 0.0));
+        assert!(right.iter().all(|sample| *sample == 0.0));
+    }
+
+    #[test]
     fn test_track_plays_block_data() {
         let (mut player, mut prod) = make_track(1, 512);
 
