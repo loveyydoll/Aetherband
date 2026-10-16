@@ -79,7 +79,7 @@ These changes have been committed to the branch and included in draft PR #1:
 ### Verification state
 
 - **Local Rust checks:** not run by the agent that authored the branch.
-- **Rust GitHub Actions:** workflow was started for the PR; the last observed status was in progress. Re-check the live run before reporting its result.
+- **Rust GitHub Actions:** the first run failed at `cargo fmt --all -- --check`. Compilation and tests were skipped because formatting failed. Fix formatting, rerun CI, and only then treat compilation/tests as verified.
 - **Existing .NET workflow:** recent runs on `main` were failing at the time of this snapshot. Inspect their logs before changing the .NET workflow; do not assume the failure is caused by the Rust patch.
 - **Runtime audio checks:** not performed.
 - **Merge status:** PR #1 is a draft and must not be merged until review and required checks pass.
