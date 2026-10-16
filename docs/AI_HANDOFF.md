@@ -141,6 +141,8 @@ These fixes are included in the validated PR-head commit.
 
 ## 8. Safe commands for a Windows developer
 
+**Protect the user's local work first.** In an earlier session the local Windows checkout reported an unfinished merge while `git branch --show-current` showed `main`, plus locally generated untracked Flutter runner files. The user later succeeded in launching the prototype, but the current local tree has not been inspected in this handoff. Before switching branches, pulling or resolving merge state, ask for `git status -sb` and `git branch --show-current`. Never use `git reset --hard`, delete generated/untracked files, or force a merge without reviewing what is staged and preserving local work.
+
 From a clean checkout, switch to main to get the merged UI code:
 
 ```powershell
