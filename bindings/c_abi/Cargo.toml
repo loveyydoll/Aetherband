@@ -1,0 +1,16 @@
+[package]
+name = "daw_core_ffi"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+name = "daw_core"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+daw_core = { path = "../../core" }
+
+[build-dependencies]
+csbindgen = "1.9"

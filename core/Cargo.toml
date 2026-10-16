@@ -1,0 +1,15 @@
+[package]
+name = "daw_core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+cpal = "0.15"
+rtrb = "0.3"
+thiserror = "2.0"
+log = "0.4"
+
+[dev-dependencies]
+assert_no_alloc = "1.1"

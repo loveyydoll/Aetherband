@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = [
+    "core",
+    "bindings/c_abi",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["arpeggi1 <rodrigoloureiro981@gmail.com>"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/arpeggi1/RouletteStudio"

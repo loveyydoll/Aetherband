@@ -1,0 +1,208 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:RouletteStudio.Desktop.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="960" d:DesignHeight="600"
+        Width="960" Height="600"
+        WindowStartupLocation="CenterScreen"
+        x:Class="RouletteStudio.Desktop.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="RouletteStudio — Audio Engine Proving Ground"
+        Background="#141417">
+
+    <Design.DataContext>
+        <vm:MainViewModel />
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- TOP TRANSPORT BAR -->
+        <Border Grid.Row="0" Background="#1E1E24" BorderBrush="#2D2D36" BorderThickness="0,0,0,1" Padding="16,10">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                <!-- LOGO & BRAND -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <TextBlock Text="🎰" FontSize="24" VerticalAlignment="Center" />
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="ROULETTESTUDIO" FontWeight="Bold" FontSize="15" LetterSpacing="1.5" Foreground="#F4F4F5" />
+                        <TextBlock Text="HARD REAL-TIME AUDIO ENGINE" FontSize="10" FontWeight="SemiBold" Foreground="#71717A" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- TRANSPORT CONTROLS & TIMELINE -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="14" VerticalAlignment="Center">
+                    <!-- TIMELINE COUNTER -->
+                    <Border Background="#101014" CornerRadius="6" Padding="14,6" BorderBrush="#2A2A34" BorderThickness="1">
+                        <TextBlock Text="{Binding PlayheadTimeText}" FontFamily="Consolas, monospace" FontSize="18" FontWeight="Bold" Foreground="#38BDF8" />
+                    </Border>
+
+                    <!-- BUTTONS -->
+                    <Button Command="{Binding PlayCommand}" 
+                            Padding="16,8" CornerRadius="6" FontWeight="SemiBold">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="▶" Foreground="#4ADE80" />
+                            <TextBlock Text="Play" Foreground="#F4F4F5" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Command="{Binding PauseCommand}" Padding="16,8" CornerRadius="6" FontWeight="SemiBold">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="⏸" Foreground="#FACC15" />
+                            <TextBlock Text="Pause" Foreground="#F4F4F5" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Command="{Binding StopCommand}" Padding="16,8" CornerRadius="6" FontWeight="SemiBold">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="⏹" Foreground="#F87171" />
+                            <TextBlock Text="Stop" Foreground="#F4F4F5" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+
+                <!-- AUDIO DEVICE SELECTOR -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="0,0,10,0">
+                    <TextBlock Text="Device:" VerticalAlignment="Center" FontSize="12" Foreground="#A1A1AA" />
+                    <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" Width="240" CornerRadius="6">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- MAIN STAGE -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,260" Margin="20">
+            <!-- LEFT: PROVING GROUND WORKBENCH -->
+            <Border Grid.Column="0" Background="#1A1A20" CornerRadius="10" BorderBrush="#2A2A34" BorderThickness="1" Padding="24" Margin="0,0,16,0">
+                <Grid RowDefinitions="Auto,Auto,*">
+                    <!-- WORKBENCH HEADER -->
+                    <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,20">
+                        <TextBlock Text="Phase 1: Real-Time Engine Proving Ground" FontSize="18" FontWeight="Bold" Foreground="#F4F4F5" />
+                        <TextBlock Text="Zero-allocation audio callback loop running on native OS thread via lock-free SPSC queues." FontSize="13" Foreground="#A1A1AA" />
+                    </StackPanel>
+
+                    <!-- TEST TONE GENERATOR CARD -->
+                    <Border Grid.Row="1" Background="#141418" CornerRadius="8" Padding="18" BorderBrush="#2D2D38" BorderThickness="1">
+                        <StackPanel Spacing="16">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="Diagnostic Test Tone Generator" FontWeight="Bold" FontSize="15" Foreground="#F4F4F5" />
+                                    <TextBlock Text="Pure sine wave oscillator processed entirely in Rust" FontSize="12" Foreground="#71717A" />
+                                </StackPanel>
+                                <ToggleSwitch Grid.Column="1" IsChecked="{Binding TestToneEnabled}" OnContent="Active" OffContent="Muted" />
+                            </Grid>
+
+                            <Separator Background="#2A2A34" Height="1" />
+
+                            <!-- FREQUENCY CONTROLS -->
+                            <StackPanel Spacing="8">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Oscillator Frequency" FontSize="13" Foreground="#D4D4D8" />
+                                    <TextBlock Grid.Column="1" Text="{Binding ToneFrequency, StringFormat={}{0:F0} Hz}" FontWeight="Bold" Foreground="#38BDF8" />
+                                </Grid>
+                                <Slider Minimum="55" Maximum="1760" Value="{Binding ToneFrequency}" />
+
+                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                                    <Button Content="A2 (110 Hz)" Command="{Binding SetFrequencyCommand}" CommandParameter="110" />
+                                    <Button Content="A3 (220 Hz)" Command="{Binding SetFrequencyCommand}" CommandParameter="220" />
+                                    <Button Content="A4 (440 Hz)" Command="{Binding SetFrequencyCommand}" CommandParameter="440" />
+                                    <Button Content="A5 (880 Hz)" Command="{Binding SetFrequencyCommand}" CommandParameter="880" />
+                                    <Button Content="1 kHz" Command="{Binding SetFrequencyCommand}" CommandParameter="1000" />
+                                </StackPanel>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- REAL-TIME GUARANTEES DISPLAY -->
+                    <StackPanel Grid.Row="2" VerticalAlignment="Bottom" Spacing="8" Margin="0,20,0,0">
+                        <TextBlock Text="SYSTEM STATUS &amp; REAL-TIME SAFETY" FontSize="11" FontWeight="Bold" LetterSpacing="1" Foreground="#71717A" />
+                        <Grid ColumnDefinitions="*,*,*" Margin="0,4,0,0">
+                            <Border Grid.Column="0" Background="#141418" Padding="12" CornerRadius="6" Margin="0,0,6,0">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="HEAP ALLOCATIONS" FontSize="10" Foreground="#71717A" />
+                                    <TextBlock Text="ZERO (0)" FontWeight="Bold" FontSize="14" Foreground="#4ADE80" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Grid.Column="1" Background="#141418" Padding="12" CornerRadius="6" Margin="3,0,3,0">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="THREAD LOCKS" FontSize="10" Foreground="#71717A" />
+                                    <TextBlock Text="WAIT-FREE (SPSC)" FontWeight="Bold" FontSize="14" Foreground="#38BDF8" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Grid.Column="2" Background="#141418" Padding="12" CornerRadius="6" Margin="6,0,0,0">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="TELEMETRY RATE" FontSize="10" Foreground="#71717A" />
+                                    <TextBlock Text="60 FPS (16 ms)" FontWeight="Bold" FontSize="14" Foreground="#FACC15" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- RIGHT: MASTER STRIP & VU METERS -->
+            <Border Grid.Column="1" Background="#1A1A20" CornerRadius="10" BorderBrush="#2A2A34" BorderThickness="1" Padding="20">
+                <Grid RowDefinitions="Auto,*,Auto,Auto">
+                    <!-- HEADER -->
+                    <StackPanel Grid.Row="0" HorizontalAlignment="Center" Margin="0,0,0,16">
+                        <TextBlock Text="MASTER OUT" FontWeight="Bold" FontSize="14" Foreground="#F4F4F5" HorizontalAlignment="Center" LetterSpacing="1" />
+                        <TextBlock Text="{Binding VolumeDbText}" FontWeight="Bold" FontSize="20" Foreground="#38BDF8" HorizontalAlignment="Center" Margin="0,4,0,0" />
+                    </StackPanel>
+
+                    <!-- METERS & FADER AREA -->
+                    <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" HorizontalAlignment="Center" Margin="0,10">
+                        <!-- STEREO METERS -->
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Stretch">
+                            <!-- LEFT METER -->
+                            <Border Width="16" Background="#101014" CornerRadius="3" BorderBrush="#2A2A34" BorderThickness="1">
+                                <ProgressBar Orientation="Vertical" Minimum="0" Maximum="1" Value="{Binding PeakLeft}"
+                                             Background="Transparent" Foreground="#4ADE80" />
+                            </Border>
+                            <!-- RIGHT METER -->
+                            <Border Width="16" Background="#101014" CornerRadius="3" BorderBrush="#2A2A34" BorderThickness="1">
+                                <ProgressBar Orientation="Vertical" Minimum="0" Maximum="1" Value="{Binding PeakRight}"
+                                             Background="Transparent" Foreground="#4ADE80" />
+                            </Border>
+                        </StackPanel>
+
+                        <!-- DB LABELS -->
+                        <UniformGrid Grid.Column="1" Rows="6" Margin="8,0" HorizontalAlignment="Center">
+                            <TextBlock Text="+6" FontSize="10" Foreground="#71717A" VerticalAlignment="Top" />
+                            <TextBlock Text=" 0" FontSize="10" Foreground="#4ADE80" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <TextBlock Text="-6" FontSize="10" Foreground="#71717A" VerticalAlignment="Center" />
+                            <TextBlock Text="-12" FontSize="10" Foreground="#71717A" VerticalAlignment="Center" />
+                            <TextBlock Text="-24" FontSize="10" Foreground="#71717A" VerticalAlignment="Center" />
+                            <TextBlock Text="-∞" FontSize="10" Foreground="#71717A" VerticalAlignment="Bottom" />
+                        </UniformGrid>
+
+                        <!-- VOLUME FADER -->
+                        <Slider Grid.Column="2" Orientation="Vertical" Minimum="0.0" Maximum="1.5" 
+                                Value="{Binding MasterVolume}" Height="280" Width="36" />
+                    </Grid>
+
+                    <!-- ANTI-ZIPPER BADGE -->
+                    <Border Grid.Row="2" Background="#101014" CornerRadius="4" Padding="6,4" HorizontalAlignment="Center" Margin="0,10,0,0">
+                        <TextBlock Text="De-Zippered 256-sample Gain Ramp" FontSize="10" Foreground="#A1A1AA" />
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- BOTTOM STATUS BAR -->
+        <Border Grid.Row="2" Background="#101014" BorderBrush="#2D2D36" BorderThickness="0,1,0,0" Padding="16,6">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                    <Ellipse Width="8" Height="8" Fill="#4ADE80" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="#A1A1AA" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="RouletteStudio v0.1.0-alpha • .NET 10 LTS • Rust MSVC" FontSize="11" Foreground="#52525B" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
