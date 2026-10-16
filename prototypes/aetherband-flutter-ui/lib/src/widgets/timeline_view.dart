@@ -283,7 +283,7 @@ class _TimelineRuler extends StatelessWidget {
                 ),
               ),
               child: Text(
-                '${(i + 1).toString().padLeft(2, '0')}',
+                "${(i + 1).toString().padLeft(2, '0')}",
                 style: const TextStyle(color: AetherColors.secondaryText, fontSize: 10),
               ),
             ),
