@@ -106,7 +106,8 @@ impl DAWEngine {
         let mut backend = CpalBackend::new()?;
         let (ui_endpoints, audio_endpoints) = create_engine_queues(1024, 2048);
 
-        let processor = AudioProcessor::new(48000.0, audio_endpoints);
+        let sample_rate = backend.output_sample_rate(None)?;
+        let processor = AudioProcessor::new(sample_rate as f32, audio_endpoints);
         let active_stream = backend.start_output_stream(None, processor)?;
         let output_sample_rate = active_stream.sample_rate();
 
@@ -130,10 +131,13 @@ impl DAWEngine {
 
     /// Switches the active output device by index, restarting the audio stream.
     pub fn select_device(&mut self, device_index: usize) -> Result<(), EngineError> {
+        // Validate the target and obtain its real sample rate before tearing
+        // down the currently working stream.
+        let sample_rate = self.backend.output_sample_rate(Some(device_index))?;
         self.active_stream = None; // Drop old stream first
 
         let (ui_endpoints, audio_endpoints) = create_engine_queues(1024, 2048);
-        let processor = AudioProcessor::new(48000.0, audio_endpoints);
+        let processor = AudioProcessor::new(sample_rate as f32, audio_endpoints);
         let active_stream = self.backend.start_output_stream(Some(device_index), processor)?;
 
         self.output_sample_rate = active_stream.sample_rate();
