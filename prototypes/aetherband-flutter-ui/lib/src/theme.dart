@@ -47,7 +47,7 @@ abstract final class AetherTheme {
         activeTrackColor: AetherColors.sage,
         inactiveTrackColor: AetherColors.raised,
         thumbColor: AetherColors.paper,
-        overlayColor: AetherColors.sage.withOpacity(0.12),
+        overlayColor: AetherColors.sage.withValues(alpha: 0.12),
         trackHeight: 3,
       ),
     );
