@@ -9,9 +9,9 @@
 
 ## Executive summary
 
-Aetherband is an early-alpha desktop DAW built around a Rust audio engine, C ABI, and C#/.NET 10 Avalonia UI. Core playback, multi-track mixing, and transport Stop fixes are described in the README. The maintainer reports that the Stop bug and most stabilization items have been fixed.
+Aetherband is an early-alpha desktop DAW built around a Rust audio engine and C ABI. At the time of this audit, the C#/.NET 10 Avalonia app is the existing audio-connected frontend; the owner has since made Flutter/Dart the mandatory full-scale target frontend through Dart FFI over the same C ABI. The current Flutter UI remains a mock, not an audio-connected app. Core playback, multi-track mixing and the Stop fix are reported implemented; re-check current CI/runtime evidence before claiming verification.
 
-**Current direction:** Do not keep the resolved Stop bug as a P0 blocker. Finish reconciling status documentation, record which checks have actually passed, and focus on genuinely outstanding work. Keep a distinction between implementation reported as fixed and verification evidence independently recorded in the repository.
+**Current direction:** Do not reopen the resolved Stop bug without current failing evidence. The central frontend decision is now explicit: fully implement Flutter through the C ABI, retain Avalonia only during migration, and keep the distinction between current mock visuals and engine-backed functionality. The canonical plan and work history live in `FLUTTER_DESKTOP_MIGRATION.md` and `AI_HANDOFF.md`.
 
 ## Current status
 
@@ -26,7 +26,9 @@ These are based on the current documentation and maintainer update; this audit d
 
 ### Remaining documentation and evidence work
 
-- [ ] Update the old issue/PR and engineering-status references to reflect the current state. Close or relabel issue #5 only when the maintainer is satisfied its acceptance criteria are met.
+> The checklist below was written on 2026-10-16 and is retained as an audit trail. Items that have since been checked off were completed by the follow-up documentation pass; unchecked issue/PR or CI items still require checking current GitHub state.
+
+- [ ] Update the old issue/PR references to reflect the current state. Close or relabel issue #5 only when the maintainer is satisfied its acceptance criteria are met.
 - [ ] Review the latest CI runs and record which Rust/.NET checks pass on the current commits.
 - [x] Refresh `docs/ENGINEERING_STATUS.md` with the Flutter migration state, current ABI inventory, and exact known CI results (see this PR's accompanying changes).
 - [ ] Reconcile supported-format lists around three states: implemented/configured, expected but unverified, and tested end-to-end. WAV is the only format reported as tested. Do not label other formats unsupported solely because they have not been tested.
@@ -84,8 +86,8 @@ For audio/device-specific work, record the tested OS, output device, sample rate
 
 ## Definition of done for this documentation pass
 
-- [ ] No resolved bug is presented as an active blocker.
+- [x] No resolved bug is presented as an active blocker.
 - [x] Current high-priority tasks are recorded in `docs/FLUTTER_DESKTOP_MIGRATION.md` and `docs/AI_HANDOFF.md`; this file remains a dated audit with some intentionally historical recommendations.
-- [ ] Status claims distinguish maintainer-reported implementation from independently recorded verification.
-- [ ] Requirements, API contract, README, roadmap, and engineering snapshot agree.
+- [x] Status claims distinguish maintainer-reported implementation from independently recorded verification.
+- [x] Requirements, API contract, README, roadmap, architecture, tech stack and engineering snapshot now describe the mandatory Flutter migration and current mock/native status consistently.
 - [ ] CI and runtime evidence are recorded accurately where available.
