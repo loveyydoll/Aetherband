@@ -76,7 +76,8 @@ The core engine, file playback, multi-track mixing, native interop, and initial 
 - [x] **Lock-Free Concurrency:** Single-Producer Single-Consumer (SPSC) ring buffers (`rtrb`) for wait-free UI ⇄ Audio communications.
 - [x] **Automated Safety Test Harness:** Allocation-safety test harness for continuous callback processing; run the repository's current verification commands to validate the present baseline.
 - [x] **Flat C-ABI & Automated Bindings:** Clean C99 FFI with automated type-safe C# P/Invoke generation (`csbindgen`).
-- [x] **Modern Desktop App:** Hardware-accelerated desktop UI built with **.NET 10 LTS** and **Avalonia UI**, featuring multi-track lanes, track controls (Volume, Pan, Mute, Remove), playhead scrubbing, and live transport controls.
+- [x] **Existing audio-connected transition app:** Hardware-accelerated UI built with **.NET 10 + Avalonia**, featuring multi-track lanes, track controls, playhead and transport. This remains available during Flutter migration.
+- [ ] **Target desktop frontend:** Full-scale Flutter/Dart DAW UI connected to the Rust engine through Dart FFI over the C ABI. The visual prototype exists, but native audio integration and feature parity are not complete.
 - [x] **Stop transport correctness (core):** Stop silences output, resets playhead, and restarts decoders so Play after Stop restarts from the beginning (regression test present).
 
 ---
@@ -224,10 +225,14 @@ Detailed blueprints and architectural specifications:
 - [**REQUIREMENTS.md**](docs/REQUIREMENTS.md) — Real-time performance and functional requirements.
 - [**ARCHITECTURE.md**](docs/ARCHITECTURE.md) — System boundaries, thread boundaries, and data flow.
 - [**AUDIO_ENGINE.md**](docs/AUDIO_ENGINE.md) — Real-time thread contract, latency calculations, and mixer design.
-- [**API_CONTRACT.md**](docs/API_CONTRACT.md) — Flat C-ABI definitions and C# interop contract.
+- [**API_CONTRACT.md**](docs/API_CONTRACT.md) — Current exported C ABI, structure layouts, return codes, ownership and Dart/C# interop requirements.
 - [**ROADMAP.md**](docs/ROADMAP.md) — Complete 6-phase development roadmap.
 - [**DECISIONS.md**](docs/DECISIONS.md) — Architecture Decision Records (ADRs).
 - [**AI_WORKFLOW.md**](docs/AI_WORKFLOW.md) — AI pair-programming safety procedures.
+- [**FLUTTER_DESKTOP_MIGRATION.md**](docs/FLUTTER_DESKTOP_MIGRATION.md) — Mandatory full-scale Flutter target architecture, C ABI integration and migration gates.
+- [**AI_HANDOFF.md**](docs/AI_HANDOFF.md) — Work history, precise current state, CI evidence and next priorities.
+- [**ENGINEERING_STATUS.md**](docs/ENGINEERING_STATUS.md) — Dated current engineering/verification snapshot.
+- [**TECH_STACK.md**](docs/TECH_STACK.md) — Selected tech stack and binding responsibilities.
 
 ---
 
