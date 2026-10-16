@@ -1,82 +1,71 @@
 # System Architecture: Aetherband
 
-## 1. High-Level Architectural Overview
+## 1. Target Architecture — Flutter + Rust via C ABI
 
-Aetherband is architected as a **decoupled, two-tier system**:
-1. **The Shared Native Core (`daw_core` in Rust):** Owns all audio processing, DSP algorithms, audio driver I/O, lock-free ring buffers, sample-accurate transport scheduling, disk streaming, and project serialization.
-2. **The Desktop Presentation Layer (`Aetherband.Desktop` in C# / Avalonia UI):** Owns windowing, user input, timeline graphics, zooming/scrolling, MVVM data binding, and desktop integration.
+**Mandatory product direction (2026-10-17):** implement Flutter/Dart as the full-scale primary desktop UI. The existing C#/Avalonia app is the transition frontend and remains available until the Flutter client has real engine integration and passes feature-parity/release gates. See [`FLUTTER_DESKTOP_MIGRATION.md`](FLUTTER_DESKTOP_MIGRATION.md).
 
-The boundary between these tiers is a **Flat, Versioned C-ABI** exposed by `daw_core_ffi`.
+The intended architecture is a decoupled presentation/client layer, native interoperability boundary, and Rust engine:
+
+1. **Flutter presentation layer (Dart):** owns user experience, app menu, timeline editing surface, browser/library, instrument/effect panels, mixer layout, keyboard shortcuts, view state and user preferences.
+2. **Dart FFI adapter:** exposes a small typed engine-client interface and calls only exported functions in `bindings/c_abi/src/lib.rs`. It maps ABI layouts, handles and return codes and owns the serialized call boundary.
+3. **Flat C ABI:** owns the language-neutral public boundary to the native engine. C-compatible structs and opaque handles are the only native data structures visible to the UI.
+4. **Rust native engine:** owns audio processing, DSP, decoding, audio-device I/O, mixer, and all real-time-critical execution.
 
 ```mermaid
 flowchart TD
-    subgraph UI_Tier ["Presentation Tier (C# / .NET 10 / Avalonia UI)"]
-        View["Views & Controls\n• Timeline\n• Mixer Console\n• Transport Toolbar\n• Live VU Meters"]
-        ViewModel["ViewModels (MVVM)\n• TrackViewModel\n• TransportViewModel\n• DeviceSettingsViewModel"]
-        AudioClient["AudioEngineClient (C# Singleton Wrapper)"]
-        View --> ViewModel --> AudioClient
-    end
-
-    subgraph FFI_Tier ["C-ABI Interoperability Tier"]
-        PInvoke["P/Invoke (Generated via csbindgen)\n• daw_engine_create()\n• daw_engine_send_command()\n• daw_engine_poll_telemetry()\n• daw_engine_destroy()"]
-        AudioClient --> PInvoke
-    end
-
-    subgraph Core_Tier ["Shared Native Core (Rust Workspace)"]
-        FFIFacade["daw_core_ffi (Facade & Serialization Boundary)"]
-        Engine["Engine Controller & Command Dispatcher"]
-        
-        subgraph Background_Workers ["Non-Real-Time Worker Threads"]
-            DiskReader["Disk Streaming Worker\n(Reads audio files into pre-allocated memory)"]
-            ProjectService["Project Serializer / Deserializer\n(JSON / MessagePack Schema)"]
-        end
-
-        subgraph SPSC_Queues ["Wait-Free Lock-Free Queues (rtrb)"]
-            CmdQueue["Command Queue (Capacity: 1024 messages)"]
-            TelemetryQueue["Telemetry Queue (Capacity: 2048 messages)"]
-        end
-
-        subgraph Audio_Thread ["Hard Real-Time Audio Thread (OS Audio Callback)"]
-            Graph["Audio Processing Graph (Sample-Accurate Scheduler)"]
-            Mixer["Summing Bus & Gain Staging"]
-            DSP["DSP Units (Filters, Oscillators, Meters)"]
-            Driver["Audio Driver (cpal / WASAPI / CoreAudio)"]
-        end
-        
-        PInvoke <--> FFIFacade
-        FFIFacade <--> Engine
-        Engine --> Background_Workers
-        Engine -- Push Commands --> CmdQueue
-        CmdQueue -- Pop Commands --> Graph
-        Graph --> Mixer --> DSP --> Driver
-        DSP -- Push Metering --> TelemetryQueue
-        TelemetryQueue -- Pop Metering --> Engine
-    end
+    UI[Flutter / Dart desktop UI]
+    Client[Engine client]
+    FFI[Dart FFI wrapper]
+    ABI[Flat C ABI facade]
+    Engine[Rust DAWEngine]
+    Workers[Background decoder workers]
+    RT[Real-time audio callback / mixer / DSP]
+    Device[cpal + operating-system audio device]
+    UI --> Client --> FFI --> ABI --> Engine
+    Engine --> Workers
+    Engine --> RT --> Device
+    Engine --> ABI
+    ABI --> FFI --> Client --> UI
+    Legacy[C# / Avalonia transition frontend]
+    Legacy -. existing csbindgen-generated P/Invoke .-> ABI
 ```
+
+**Implementation state:** the current Flutter workspace is still mock-only. Its transport, meter values, track/clip models and displayed waveforms are not native engine state. The diagram above is the required target architecture, not a claim that the Dart FFI adapter already exists.
+
+### Native engine remains authoritative
+
+- `core/` owns real-time processing, device streams, decoder workers and mixer state.
+- `bindings/c_abi/src/lib.rs` is the authoritative list of exported functions and ABI layouts. Do not copy stale example signatures from older docs.
+- `bindings/c_abi/build.rs` runs `csbindgen` for the existing C# frontend. That does not generate Dart bindings.
+- If Flutter needs an operation not present in the C ABI, implement/review it on the native side and update the API contract, Dart wrapper, C# generated bindings (where applicable), and tests together.
+- Do not implement DSP, file decoding, device callbacks, or raw-audio processing in Dart.
 
 ---
 
 ## 2. Component Responsibilities & Boundaries
 
-### 2.1 The Presentation Layer (`apps/desktop/`)
+### 2.1 Flutter presentation layer (target; currently under `prototypes/aetherband-flutter-ui/`)
 - **Responsibilities:**
-  - Rendering UI at 60–144 Hz using hardware-accelerated Skia.
-  - Translating user actions (button clicks, fader drags, keyboard shortcuts) into strongly-typed `EngineCommand` structures.
-  - Polling engine telemetry (playback position, stereo meters) via a 60 Hz timer loop and updating ViewModels.
-  - Storing user interface preferences (window layout, recent files, zoom levels).
+  - Render the desktop workstation at interactive refresh rates, with an arrangement-first layout, browser/library, instrument/effect panels, mixer and menus.
+  - Keep UI/domain models separate from native engine handles behind an injectable engine-client interface.
+  - Reflect native return codes and polled telemetry rather than assuming that a local button state means playback or a mix change succeeded.
+  - Store view-only preferences (window layout, recent-file UI, zoom and panel visibility) separately from native audio state.
 - **Prohibitions:**
-  - **Zero audio processing:** Must never attempt to calculate DSP, filter audio, or manipulate audio samples.
-  - **Zero blocking FFI:** Must never execute long-running blocking calls into the native core on the UI thread.
+  - **Zero audio processing:** never calculate DSP, decode media, mix samples or manipulate device buffers in Dart.
+  - **Zero blocking FFI:** no long-running native or disk operation on the UI isolate.
+  - Until concurrency guarantees are redesigned and tested, serialize calls for one engine handle through one owner boundary/isolate.
+  - Do not ship the mock engine as if it were a real audio backend.
 
-### 2.2 The C-ABI Interoperability Layer (`bindings/c_abi/`)
+### 2.2 The C-ABI interoperability layer (`bindings/c_abi/`)
 - **Responsibilities:**
-  - Exposing an `extern "C"` interface with strict `#[no_mangle]` function exports.
-  - Providing opaque pointers (`*mut DAWEngine`) to manage lifetime and encapsulation.
-  - Ensuring consistent memory layout (`#[repr(C)]`) across compilers.
-  - Generating C# binding definitions automatically using `csbindgen`.
+  - Expose only deliberate `extern "C"` functions and `#[repr(C)]` layouts with documented ownership, return codes and lifetimes.
+  - Provide opaque `DAWEngine` handles and ensure native allocations/resources are released through Rust exports.
+  - Keep the actual function inventory in `bindings/c_abi/src/lib.rs` synchronized with `docs/API_CONTRACT.md` and the Dart adapter tests.
+  - Continue generating C# P/Invoke declarations with `csbindgen` for the legacy frontend until it is retired.
 - **Prohibitions:**
-  - Must never pass complex managed objects (e.g., C# classes or delegates) across the boundary.
-  - Must never pass continuous streams of raw audio buffers across FFI.
+  - Do not pass C#/Dart objects, closures, UI handles or Rust internals across the boundary.
+  - Do not move continuous raw audio samples through UI event handlers.
+  - Do not assume `csbindgen` generates Dart bindings; Dart requires its own adapter.
 
 ### 2.3 The Core Engine (`core/`)
 - **Responsibilities:**
@@ -125,7 +114,7 @@ The system segregates data into three strictly isolated pipelines:
 1. At the end of processing an audio block (e.g., every 128 samples), the audio thread computes the peak sample and running RMS power for Left and Right channels.
 2. The audio thread pushes a `MeteringFrame { peak_l, peak_r, rms_l, rms_r, playhead_frame }` struct into `TelemetryQueue`.
 3. If the queue is full (e.g., UI is busy), the oldest frame is overwritten (lossy telemetry is completely acceptable; audio safety is paramount).
-4. An Avalonia 60 Hz dispatcher timer calls `daw_engine_poll_telemetry()`, reading the latest frame to animate VU meter bars and update the timeline playhead.
+4. The Flutter engine client polls `daw_engine_poll_telemetry()` at a bounded UI cadence to update meters and playhead. The existing Avalonia frontend may continue using its current timer during the transition. Never busy-loop or race calls on the same native handle.
 
 ### 3.3 Audio Streaming Pipeline
 1. Audio files are opened by a background `DiskReaderWorker` thread.
@@ -139,8 +128,8 @@ The system segregates data into three strictly isolated pipelines:
 
 | Decision | Alternative Considered | Chosen Approach | Rationale |
 | :--- | :--- | :--- | :--- |
-| **Separation of Mobile & Desktop** | Single unified codebase running Avalonia or Qt on both desktop and mobile | **Desktop-first flagship (C#/Avalonia), separate future mobile DAW** | Avoids compromise in desktop density/power; eliminates iOS build friction during initial development while keeping core engine 100% reusable. |
-| **Language Selection** | Pure C++20 | **Rust (Core) + C# (Desktop UI)** | Eliminates C++ memory corruption risks and build-system chaos while utilizing developer's C# strength. |
+| **Separation of Mobile & Desktop** | Single UI optimized for desktop and mobile at once | **Flutter desktop-first flagship; consider mobile as a separate effort later** | Allows a high-density desktop workstation without delaying the desktop migration for touch-first/mobile requirements. |
+| **Language Selection** | Pure C++20 or managed audio/DSP | **Rust (engine) + Flutter/Dart (target UI)** | Keeps real-time engine execution native; Flutter owns presentation/control through the flat C ABI. Existing C# remains transitional. |
 | **Audio Thread Communication** | Shared `Arc<Mutex<EngineState>>` | **Lock-Free SPSC Queues (`rtrb`)** | Standard mutexes cause priority inversions and audio xruns. Lock-free queues guarantee deterministic real-time execution. |
 | **Plugin Architecture** | Immediate VST3 hosting | **Built-in DSP first; defer external plugins to Phase 5** | VST3 hosting is notoriously complex, prone to third-party crashes, and legally complicated. Built-in DSP guarantees stability. |
 | **Serialization Format** | Monolithic binary blob | **Standard JSON / MessagePack metadata + assets folder inside zip** | Readable, robust against version changes, easy to inspect and debug, highly portable. |
