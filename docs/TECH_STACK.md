@@ -1,65 +1,83 @@
-# Technology Stack Evaluation: CustomDAW
+# Aetherband Technology Stack
 
-## 1. Selected Technology Stack
+**Reviewed:** 2026-10-17  
+**Decision:** Flutter/Dart is the mandatory full-scale target desktop UI. The existing C#/Avalonia application is retained as a transitional audio-connected frontend until migration parity is proven.
 
-| Layer | Technology | Version / Target | Rationale |
-| :--- | :--- | :--- | :--- |
-| **Audio & DSP Core** | **Rust** | 2021 Edition (stable) | Memory safety without garbage collection; zero-cost abstractions; compile-time thread safety; cross-compiles cleanly to Windows, macOS, iOS, Android. |
-| **Audio I/O Driver** | **`cpal`** | Latest stable | Pure Rust multiplatform audio I/O library supporting WASAPI (Shared & Exclusive) on Windows and CoreAudio on macOS. |
-| **Concurrency / Queues**| **`rtrb`** | Latest stable | Wait-free Single-Producer Single-Consumer (SPSC) ring buffer designed specifically for real-time audio threads. |
-| **Real-Time Safety** | **`assert_no_alloc`** | Latest stable | Enforces zero dynamic memory allocations in automated CI audio test suites. |
-| **Audio File Decoding** | **`symphonia`** | Latest stable | Pure Rust, memory-safe audio decoding library supporting WAV, FLAC, MP3, AAC, and OGG with zero C-library dependencies. |
-| **Interoperability (FFI)**| **Flat C-ABI + `csbindgen`** | Latest stable | Flat C99 ABI with automated C# P/Invoke binding generation, preventing manual marshaling errors. |
-| **Desktop Application** | **C# / .NET** | .NET 8 / 9 LTS | Strong performance, excellent productivity, aligns with primary developer expertise, and rich tooling. |
-| **Desktop UI Framework**| **Avalonia UI** | v11+ | High-performance, GPU-accelerated Skia rendering, XAML styling, cross-platform on Windows and macOS. |
-| **Build Tools** | **Cargo + MSBuild / dotnet** | Latest | Standard toolchains; clean scriptable automation without arcane C++ build systems. |
+## 1. Selected architecture
 
----
+| Layer | Technology | Current role and constraints |
+|---|---|---|
+| **Audio engine / DSP** | Rust, 2021 edition, stable | Owns the real-time audio callback, mixer, decoding coordination, device I/O and DSP. Remains the engine; do not rewrite this in Dart. |
+| **Audio I/O** | `cpal` | Opens platform-native audio streams; existing native paths handle device audio. |
+| **Concurrency** | `rtrb` and bounded native protocols | Audio/control communication. Preserve ownership, queue-capacity and real-time constraints. |
+| **Audio decoding** | `symphonia` | WAV playback is reported tested; FLAC, MP3, OGG and AAC/M4A remain unverified end-to-end unless new evidence is recorded. |
+| **Resampling** | `rubato` | Native sample-rate conversion. |
+| **Native API** | Flat C ABI at `bindings/c_abi/src/lib.rs` | Cross-language boundary used by both the existing C# frontend and the target Flutter frontend. It exposes an opaque `DAWEngine` handle and C-compatible structs. |
+| **Target desktop UI** | **Flutter + Dart** | Mandatory implementation target for Windows/macOS. Current source is under `prototypes/aetherband-flutter-ui/`; current app remains mock-only. |
+| **Flutter ↔ Rust** | Dart `dart:ffi` wrapper over C ABI | Not yet implemented at the current handoff snapshot. Must check native results, structure layouts, ownership, lifecycle and platform library loading. |
+| **Transition desktop UI** | C# / .NET 10 + Avalonia | Existing app under `apps/desktop/RouletteStudio.Desktop/`; keep working while Flutter reaches feature parity. It is not the intended final frontend. |
+| **C# bindings** | `csbindgen` | `bindings/c_abi/build.rs` currently generates C# P/Invoke declarations. This does **not** generate Dart bindings. |
+| **Toolchains** | Cargo, Flutter stable/Dart, Visual Studio C++ workload (Windows), Xcode (macOS) | CI and local instructions must validate each host's actual prerequisites. |
 
-## 2. Alternatives Evaluated and Rejected
+## 2. Binding requirements for Flutter
 
-### 2.1 C++20 + JUCE
-- **Description:** The legacy industry standard for audio plugins and DAWs (Tracktion, Bitwig's native engine).
-- **Why Rejected:**
-  - C++ lacks memory safety; dangling pointers and data races lead to silent memory corruption and hard-to-reproduce crashes.
-  - Steep learning curve for a developer transitioning from C#.
-  - JUCE licensing is restrictive: dual GPLv3 or expensive commercial subscription ($50–$150/mo per developer).
-  - Heavy monolithic framework with high coupling.
+Flutter must connect to the **existing C ABI**, not Rust internals. The exported API inventory in [`API_CONTRACT.md`](API_CONTRACT.md) must be verified against `bindings/c_abi/src/lib.rs` before binding work.
 
-### 2.2 Pure C# / Managed Audio Engine
-- **Description:** Writing the audio callback directly in C# using .NET P/Invoke to WASAPI.
-- **Why Rejected:**
-  - .NET is a garbage-collected runtime. Even with modern optimizations (`Span<T>`, GC-free code paths, NativeAOT), the .NET runtime can trigger garbage-collection pauses, background finalizers, or thread suspension, causing unpredictable audio buffer under-runs (xruns) at low latencies ($\le 128$ frames).
+- Use a dedicated, small Dart FFI adapter. Widgets must depend on an injectable engine interface, not raw pointers or static native calls.
+- Use only real exports and exact `#[repr(C)]` layouts. Older examples in stale docs may mention symbols/structs that do not currently exist; never copy them blindly.
+- Consider a canonical C header and Dart binding generation as part of integration after checking available tooling/dependencies. `csbindgen` is C#-specific in the current repository.
+- Until concurrency guarantees are explicitly established, serialize calls for one `DAWEngine` handle through a single owner boundary/isolate. Prevent concurrent lifecycle/control/telemetry calls and never destroy the handle with calls in flight.
+- Check API version and all return codes. Communicate engine/device failures to the UI; do not make local transport state look like engine success.
+- Keep audio buffers, decoding, DSP and device callbacks inside Rust. No raw audio buffers through widget events or a Dart-side audio callback.
+- Update API documentation and tests for every exported API change.
 
-### 2.3 Pure Rust UI (Slint / Makepad / egui)
-- **Description:** Writing both the engine and the UI entirely in Rust to eliminate FFI.
-- **Why Rejected:**
-  - Rust GUI frameworks are still evolving rapidly.
-  - Text editing, complex window docking, accessibility, and high-DPI platform conventions are significantly more mature in Avalonia UI.
-  - Sacrifices the developer's core strength and productivity in C#.
+## 3. Flutter desktop UI status
 
----
+Merged source includes:
+- A compact workstation menu bar (File, Edit, Track, Region, Navigate, Record, Mix, View, Window, Help).
+- A transport strip and arrangement-first work area.
+- A library browser and bottom instrument/mixer preview dock.
+- Dark charcoal/sage/magenta/blue styling and synthetic demo clip visuals.
+- A widget smoke test and a Windows/macOS CI matrix for analysis, tests and debug builds.
 
-## 3. Licensing Strategy
+These are presentation features only until connected to real application state and the Rust C ABI. The current `MockEngineController` simulates transport telemetry. It must not silently remain the production engine adapter.
 
-- **Core Engine (`daw_core`):** Licensed under **GPLv3** (with an option for dual-licensing).
-  - Preserves open-source integrity, preventing proprietary closed-source commercial forks without giving back.
-  - Compatible with open-source audio toolchains and dependencies (all selected Rust crates use MIT or Apache-2.0, which are compatible with GPLv3).
-- **Dependencies License Audit:**
-  - `cpal`: Apache-2.0 (Permissive, GPLv3 compatible).
-  - `rtrb`: MIT / Apache-2.0 (Permissive, GPLv3 compatible).
-  - `symphonia`: MPL-2.0 (Permissive, compatible).
-  - `csbindgen`: MIT (Permissive, compatible).
-  - `Avalonia`: MIT (Permissive, compatible).
-- **No Steinberg proprietary SDK code** is checked into the core repository for the MVP, avoiding any proprietary license conflicts.
+## 4. Target visual tokens
 
----
+Tokens currently in `prototypes/aetherband-flutter-ui/lib/src/theme.dart`:
 
-## 4. Decisions Requiring Early Prototype Validation
+| Token | Value |
+|---|---|
+| Main background | `#1B1C20` |
+| Panel | `#27282D` |
+| Raised surface / border | `#35363D` |
+| Grid | `#2D2E34` |
+| Main text, warm paper | `#E9E3D9` |
+| Secondary text | `#AAA8B0` |
+| Sage accent | `#A9B69A` |
+| Active / recording magenta | `#E94E91` |
+| Modulation / experimental blue | `#485CC7` |
 
-1. **`cpal` WASAPI Exclusive Latency on Windows:**
-   - *Question:* Does `cpal` achieve stable $< 6\text{ ms}$ round-trip latency across consumer USB audio interfaces in WASAPI Exclusive mode without requiring a dedicated ASIO driver?
-   - *Validation:* Will be measured directly in Phase 1 via a dedicated latency test harness.
-2. **Avalonia 120 Hz Timeline Rendering Performance:**
-   - *Question:* Does Avalonia's Skia rendering maintain 120 FPS when drawing multi-track vector waveforms with horizontal zoom?
-   - *Validation:* Will be benchmarked in Phase 3 with a dedicated waveform stress test.
+Maintain a professional, compact, arrangement-first DAW workspace with a lightweight application menu. The design can be refined, but do not revert to oversized branding or copy proprietary DAW code/assets.
+
+## 5. Alternatives and decisions
+
+- **C++ / JUCE engine rewrite:** not selected. Rust and the current C ABI remain the engine architecture.
+- **Dart implementation of the audio engine:** not allowed. Dart is the UI and control/client side; real-time audio and DSP stay in Rust.
+- **Keeping Avalonia as the permanent main UI:** superseded by the owner's explicit Flutter decision. Keep Avalonia during migration only for parity, comparison and recovery.
+- **Using existing C# P/Invoke bindings from Dart:** not possible directly. Flutter needs Dart FFI declarations for the same native C ABI.
+- **Dropping the C ABI to use a private bridge:** not allowed without explicit owner approval and a separately reviewed architecture decision. New needed operations should be surfaced as stable C ABI exports.
+
+See [`FLUTTER_DESKTOP_MIGRATION.md`](FLUTTER_DESKTOP_MIGRATION.md), [`DECISIONS.md`](DECISIONS.md) (ADR-008), and [`AI_HANDOFF.md`](AI_HANDOFF.md) for implementation stages and history.
+
+## 6. Migration acceptance gates
+
+Flutter becomes the default documented desktop app only after it:
+1. Loads the native `daw_core` library reliably on Windows and macOS.
+2. Uses real native engine results for current engine-supported workflows (device enumeration/selection, load/remove audio tracks, transport, track/master controls and telemetry).
+3. Has no false-success controls or mock engine fallback in production mode.
+4. Passes Dart analysis, widget/integration tests, native build and ABI lifecycle/layout checks in both platform CI jobs.
+5. Reaches user-reviewed feature parity with the currently audio-connected Avalonia frontend.
+6. Has reproducible packaging, run instructions, useful startup/engine errors and documented remaining limitations.
+
+The full-scale Flutter direction is mandatory; these gates govern a safe migration, not whether migration is pursued.
