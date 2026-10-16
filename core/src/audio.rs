@@ -394,7 +394,12 @@ mod tests {
         assert!(!frame1.is_playing);
 
         // Enable test tone and play
-        ui.cmd_producer.push(EngineCommand::SetTestTone { enabled: true, frequency_hz: 440.0 }).unwrap();
+        ui.cmd_producer
+            .push(EngineCommand::SetTestTone {
+                enabled: true,
+                frequency_hz: 440.0,
+            })
+            .unwrap();
         ui.cmd_producer.push(EngineCommand::Play).unwrap();
         processor.process_interleaved(&mut buffer, 2);
         assert!(buffer.iter().any(|&s| s != 0.0));
