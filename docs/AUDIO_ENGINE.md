@@ -121,18 +121,29 @@ When validating Stop behavior, verify non-silent playback before Stop, silence a
 
 ## 6. Ring Buffers and Thread Communication
 
-Cross-thread communication relies entirely on the `rtrb` crate (Single-Producer Single-Consumer wait-free ring buffer):
+Internal thread-to-thread transfers in the Rust engine use bounded protocols such as SPSC queues where implemented. The Flutter and transitional Avalonia frontends do not access those internal queues directly: they call exported C ABI functions from the control side and poll native telemetry through the ABI.
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                      LOCK-FREE SPSC RING BUFFERS                       │
-├────────────────────────────────────────────────────────────────────────┤
-│ UI Thread ──[push: max 1024]──► CommandQueue ──[pop]──► Audio Thread   │
-│                                                                        │
-│ Audio Thread ──[push: max 2048]► TelemetryQueue ──[pop]► UI (60Hz)     │
-│                                                                        │
-│ Disk Worker ──[push: audio frames]► TrackStreamQueue ──► Audio Thread  │
-└────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                      ENGINE / UI COMMUNICATION                          │
+├─────────────────────────────┬────────────────────────────────────────────┤
+│ UI control path             │ Native real-time / worker path             │
+├─────────────────────────────┼────────────────────────────────────────────┤
+│ Flutter UI                  │ C ABI control call enters Rust              │
+│    │                        │    │                                        │
+│ Dart FFI engine client      │    ▼                                        │
+│    │                        │ Bounded command/control protocol            │
+│ C ABI function              │    │                                        │
+│    │                        │    ▼                                        │
+│    └────────────────────────┼ Audio callback / mixer / device output      │
+│                             │    │                                        │
+│ Flutter polls telemetry ◄───┼── Native telemetry frame                    │
+│                             │                                            │
+│                             │ Decoder workers -> bounded audio queues    │
+│                             │                    -> audio callback       │
+└─────────────────────────────┴────────────────────────────────────────────┘
 ```
 
-- **Wait-Free Guarantee:** Neither `push` nor `pop` ever waits on the other thread. If the command queue is full, the command is rejected or buffered in UI memory. If the telemetry queue is full, the oldest meter frame is discarded without impeding audio playback.
+- The exact queue types, capacities and full/empty behavior are defined by the current Rust source, not by this illustrative diagram. Do not assume an exported C ABI call is lock-free or safe for concurrent callers unless its implementation explicitly guarantees that.
+- Audio callbacks must never wait for a UI call, disk worker, network operation or another thread. Queue saturation, telemetry empty/full behavior and lifecycle transitions need explicit handling and tests.
+- Telemetry is presented at a bounded UI cadence. Never spin-poll from Flutter, and never claim native state changed if the FFI call reported an error.
