@@ -1,4 +1,4 @@
-# Audio Engine Specification: CustomDAW
+# Aetherband Audio Engine Specification: Aetherband
 
 ## 1. Real-Time Audio Constraints (The Real-Time Thread Contract)
 
@@ -113,7 +113,7 @@ $$g_L = \cos\left(\frac{\pi}{4}\right) = \frac{\sqrt{2}}{2} \approx 0.7071 \; (-
 
 ---
 
-## 5. Ring Buffers and Thread Communication
+## 5. Transport stop/reset regression checklist\n\nThe UI resetting its local timer is not proof that the audio engine stopped. The engine telemetry is authoritative, and Stop must be consumed by the audio callback. Regression coverage must verify non-silent playback before Stop, silence after Stop, stopped telemetry with a zero playhead, and correct restart behavior. Draining already-decoded ring-buffer blocks does not by itself rewind a decoder worker; restart/rewind semantics must be explicitly implemented and tested. Keep this work on the control/worker side where needed and preserve the real-time callback's no-allocation/no-blocking contract.\n\n## 6. Ring Buffers and Thread Communication
 
 Cross-thread communication relies entirely on the `rtrb` crate (Single-Producer Single-Consumer wait-free ring buffer):
 
