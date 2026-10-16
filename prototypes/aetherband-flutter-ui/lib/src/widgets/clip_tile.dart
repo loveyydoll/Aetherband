@@ -28,9 +28,9 @@ class ClipTile extends StatelessWidget {
       child: Container(
         height: 50,
         decoration: BoxDecoration(
-          color: base.withOpacity(isSelected ? 0.28 : 0.15),
+          color: base.withValues(alpha: isSelected ? 0.28 : 0.15),
           border: Border.all(
-            color: isSelected ? AetherColors.paper : base.withOpacity(0.65),
+            color: isSelected ? AetherColors.paper : base.withValues(alpha: 0.65),
             width: isSelected ? 1.4 : 0.8,
           ),
           borderRadius: BorderRadius.circular(5),
@@ -40,7 +40,7 @@ class ClipTile extends StatelessWidget {
           children: [
             Positioned.fill(
               child: CustomPaint(
-                painter: WaveformPainter(color: base.withOpacity(0.86), seed: clip.id.hashCode),
+                painter: WaveformPainter(color: base.withValues(alpha: 0.86), seed: clip.id.hashCode),
               ),
             ),
             Positioned(
