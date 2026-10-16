@@ -87,7 +87,11 @@ impl AudioProcessor {
     #[inline]
     fn handle_commands(&mut self) {
         use crate::ringbuf::EngineCommand::*;
-        while let Ok(cmd) = self.cmd_consumer.pop() {
+        // Bound control work per callback so a burst of UI commands cannot
+        // monopolize the real-time thread for an unbounded amount of time.
+        const MAX_COMMANDS_PER_BLOCK: usize = 128;
+        for _ in 0..MAX_COMMANDS_PER_BLOCK {
+            let Ok(cmd) = self.cmd_consumer.pop() else { break; };
             match cmd {
                 Play => {
                     self.is_playing = true;
@@ -152,7 +156,14 @@ impl AudioProcessor {
     /// # Real-Time Safety
     /// Zero heap allocations. Zero blocking operations. Zero OS locks.
     pub fn process_interleaved(&mut self, output: &mut [f32], channels: usize) {
-        // 1. Pop all pending UI commands
+        // A malformed/unsupported channel count must never cause division by
+        // zero. Keep the callback allocation-free while guaranteeing silence.
+        if channels == 0 {
+            output.fill(0.0);
+            return;
+        }
+
+        // 1. Process a bounded number of pending UI commands.
         self.handle_commands();
 
         let frames = output.len() / channels;
@@ -193,6 +204,11 @@ impl AudioProcessor {
             if channels >= 2 {
                 output[f * channels] = l;
                 output[f * channels + 1] = r;
+                // Explicitly clear channels beyond stereo instead of leaving
+                // stale/uninitialized samples in the hardware output buffer.
+                for channel in 2..channels {
+                    output[f * channels + channel] = 0.0;
+                }
             } else {
                 output[f * channels] = (l + r) * 0.5;
             }
