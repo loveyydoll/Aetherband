@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/src/aetherband_app.dart';
+import 'package:aetherband_flutter_ui/src/aetherband_app.dart';
 
 void main() {
   testWidgets('renders the Aetherband demo workspace and toggles transport', (tester) async {
