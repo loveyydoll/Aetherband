@@ -1,4 +1,4 @@
-# Architecture Decision Records (ADRs): CustomDAW
+# Architecture Decision Records (ADRs): Aetherband
 
 ## Index of Decisions
 
@@ -18,7 +18,7 @@
 - **Context:**
   The project vision encompasses desktop platforms (Windows, macOS) and mobile/touch platforms (iOS, iPadOS, Android). Building a single UI to serve both paradigms creates ergonomic compromises: desktop users need high information density, multi-window support, and precision mouse editing, while mobile users need large touch targets and simplified single-window workflows. Additionally, developing iOS on Windows requires remote macOS build agents.
 - **Decision:**
-  Develop CustomDAW as a dedicated desktop-first flagship application for Windows and macOS. The audio engine (`daw_core`) and project format (`.dawproject`) remain 100% platform-agnostic. A separate mobile companion DAW for iOS/iPadOS and Android will be developed later, reusing the proven Rust core.
+  Develop Aetherband as a dedicated desktop-first flagship application for Windows and macOS. The audio engine (`daw_core`) and project format (`.dawproject`) remain 100% platform-agnostic. A separate mobile companion DAW for iOS/iPadOS and Android will be developed later, reusing the proven Rust core.
 - **Consequences:**
   - Dramatically accelerates desktop development; eliminates iOS build overhead from Windows.
   - Allows the desktop UI to be optimized specifically for keyboard/mouse without touch compromises.
