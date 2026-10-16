@@ -4,10 +4,13 @@ applyTo: "**/*.cs, **/*.axaml, **/*.csproj, **/*.sln, **/*.slnx, **/Directory.Bu
 
 # C# / .NET / Avalonia Rules
 
+> **Transition status:** This is the existing audio-connected frontend, retained while Flutter is implemented. Flutter/Dart is the mandatory long-term desktop UI (see `docs/FLUTTER_DESKTOP_MIGRATION.md`). Keep the Avalonia app correct/buildable during migration, but do not silently redefine the product's target UI or implement all future frontend work only in C# by default. The Rust engine and C ABI remain shared.
+
 ## Verify the project first
 - Inspect the actual `.sln` / `.slnx`, `.csproj`, `global.json`, package references and generated-code setup before choosing commands or framework assumptions.
 - Repository documentation may contain old project names and target-framework versions. The project files are authoritative.
 - Follow the current UI architecture and naming conventions; do not introduce a new MVVM framework or state-management system without an explicit design decision.
+- Changes needed to keep the current real-audio workflows operational may remain in Avalonia during migration. New UI behavior should be designed with the Flutter target and shared C ABI in mind; do not remove or break the transition app before parity is verified.
 
 ## UI and application code
 - Keep views focused on presentation and ViewModels/services focused on state and behaviour.
