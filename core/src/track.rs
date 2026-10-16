@@ -150,7 +150,7 @@ pub const MAX_TRACKS: usize = 64;
 ///
 /// Using a fixed-size array avoids any dynamic allocation on the audio thread.
 pub struct TrackSlots {
-    slots: [Option<TrackPlayer>; MAX_TRACKS],
+    slots: [Option<Box<TrackPlayer>>; MAX_TRACKS],
     count: usize,
 }
 
@@ -171,46 +171,42 @@ impl TrackSlots {
     }
 
     /// Adds a track. Returns `false` if the slot table is full.
-    pub fn add(&mut self, player: TrackPlayer) -> bool {
+    pub fn add(&mut self, player: Box<TrackPlayer>) -> Result<(), Box<TrackPlayer>> {
         for slot in self.slots.iter_mut() {
             if slot.is_none() {
                 *slot = Some(player);
                 self.count += 1;
-                return true;
+                return Ok(());
             }
         }
-        false
+        Err(player)
     }
 
-    /// Removes a track by ID. Returns `true` if found and removed.
-    pub fn remove(&mut self, id: TrackId) -> bool {
+    /// Removes a track by ID and returns ownership for deferred control-thread destruction.
+    pub fn remove(&mut self, id: TrackId) -> Option<Box<TrackPlayer>> {
         for slot in self.slots.iter_mut() {
             if matches!(slot, Some(p) if p.id == id) {
-                *slot = None;
                 self.count -= 1;
-                return true;
+                return slot.take();
             }
         }
-        false
+        None
     }
 
     /// Returns a mutable reference to a track slot by ID.
     pub fn get_mut(&mut self, id: TrackId) -> Option<&mut TrackPlayer> {
-        self.slots.iter_mut().find_map(|s| {
-            if let Some(p) = s { if p.id == id { return Some(p); } }
-            None
-        })
+        self.slots.iter_mut().find_map(|s| s.as_deref_mut().filter(|p| p.id == id))
     }
 
     /// Iterates mutably over all active track players.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut TrackPlayer> {
-        self.slots.iter_mut().filter_map(|s| s.as_mut())
+        self.slots.iter_mut().filter_map(|s| s.as_deref_mut())
     }
 
     /// Resets all tracks (Stop / Seek operations).
     pub fn reset_all(&mut self) {
         for slot in self.slots.iter_mut() {
-            if let Some(p) = slot { p.reset(); }
+            if let Some(p) = slot.as_deref_mut() { p.reset(); }
         }
     }
 
@@ -240,13 +236,13 @@ mod tests {
         let (p1, _prod1) = make_track(1, 48000);
         let (p2, _prod2) = make_track(2, 48000);
 
-        assert!(slots.add(p1));
-        assert!(slots.add(p2));
+        assert!(slots.add(Box::new(p1)).is_ok());
+        assert!(slots.add(Box::new(p2)).is_ok());
         assert_eq!(slots.count(), 2);
 
-        assert!(slots.remove(TrackId(1)));
+        assert!(slots.remove(TrackId(1)).is_some());
         assert_eq!(slots.count(), 1);
-        assert!(!slots.remove(TrackId(99))); // non-existent
+        assert!(slots.remove(TrackId(99)).is_none()); // non-existent
     }
 
     #[test]
