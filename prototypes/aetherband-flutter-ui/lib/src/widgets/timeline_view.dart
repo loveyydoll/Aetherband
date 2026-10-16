@@ -164,7 +164,7 @@ class _TrackHeader extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(10, 8, 8, 7),
           decoration: BoxDecoration(
             border: Border(
-              right: BorderSide(color: track.color.withOpacity(0.8), width: 3),
+              right: BorderSide(color: track.color.withValues(alpha: 0.8), width: 3),
               bottom: const BorderSide(color: AetherColors.raised, width: 0.7),
             ),
           ),
@@ -179,7 +179,7 @@ class _TrackHeader extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: selected ? AetherColors.paper : AetherColors.paper.withOpacity(0.9),
+                        color: selected ? AetherColors.paper : AetherColors.paper.withValues(alpha: 0.9),
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
                       ),
@@ -236,7 +236,7 @@ class _MiniButton extends StatelessWidget {
       width: 24,
       height: 21,
       child: Material(
-        color: active ? color.withOpacity(0.2) : AetherColors.background,
+        color: active ? color.withValues(alpha: 0.2) : AetherColors.background,
         borderRadius: BorderRadius.circular(4),
         child: InkWell(
           borderRadius: BorderRadius.circular(4),
