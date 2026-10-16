@@ -6,6 +6,21 @@ RouletteStudio bridges the gap between intuitive songwriting sketchpads and high
 
 ---
 
+## 🚀 Current Status: Phase 1 Active
+
+RouletteStudio is currently in **Phase 1: Real-Time Audio Core Foundation & Desktop Proving Ground**.
+
+- [x] Allocation-free real-time audio callback running on high-priority OS threads.
+- [x] Hardware audio device discovery and streaming via `cpal` (WASAPI on Windows, CoreAudio on macOS).
+- [x] Pure Sine Wave oscillator test tone generator with sample-accurate frequency modulation.
+- [x] De-zippered anti-zipper linear gain ramping over 256 samples for click-free volume fading.
+- [x] Wait-free lock-free Single-Producer Single-Consumer (SPSC) ring buffers (`rtrb`).
+- [x] Automated real-time safety verification harness enforcing zero heap allocations via `assert_no_alloc` over 100,000 blocks.
+- [x] Flat C-ABI interop layer with automated type-safe C# P/Invoke binding generation (`csbindgen`).
+- [x] Modern hardware-accelerated desktop application running in **.NET 10 LTS** with **Avalonia UI**, live stereo VU meters, and transport controls.
+
+---
+
 ## ⚡ Highlights
 
 - **Hard Real-Time Audio Engine:** Engineered in pure **Rust** with zero-allocation audio callbacks and wait-free concurrency (`rtrb`), eliminating dropouts, clicks, and priority inversions.
@@ -28,7 +43,7 @@ RouletteStudio bridges the gap between intuitive songwriting sketchpads and high
 │ • GPU-Accelerated Skia    │ • Hardware Callback Loop   │
 │ • ReactiveUI / MVVM       │ • Lock-Free SPSC Queues    │
 │ • High-DPI Waveforms      │ • Equal-Power Pan Mixer    │
-│ • Custom Timeline & Mixer │ • Anti-Zipper Gain Ramping │
+│ • Live Stereo VU Meters   │ • Anti-Zipper Gain Ramping │
 └─────────────▲─────────────┴─────────────▲──────────────┘
               │                           │
               └───────[ Flat C-ABI ]──────┘
@@ -39,6 +54,61 @@ RouletteStudio bridges the gap between intuitive songwriting sketchpads and high
 - **Desktop Frontend:** C# (.NET 10 LTS) + Avalonia UI (v11+)
 - **Interoperability:** Flat C99 ABI with automated type-safe bindings (`csbindgen`)
 - **Future Companion:** Standalone mobile companion DAW planned for iOS/iPadOS and Android reusing the shared Rust core.
+
+---
+
+## 📁 Repository Structure
+
+```
+RouletteStudio/
+├── Cargo.toml                       # Root Rust workspace (core + bindings)
+├── core/                            # Pure Rust audio engine & DSP library
+│   ├── src/
+│   │   ├── audio.rs                 # Allocation-free audio callback processor
+│   │   ├── device.rs                # Hardware discovery & cpal stream backend
+│   │   ├── dsp.rs                   # Sine oscillator, gain ramp, level meter
+│   │   ├── ringbuf.rs               # Lock-free SPSC queues (rtrb)
+│   │   └── lib.rs                   # High-level DAWEngine controller
+│   └── tests/
+│       └── realtime_safety.rs       # 100,000-block zero-allocation test harness
+├── bindings/
+│   └── c_abi/                       # Flat C-ABI export layer (daw_core.dll)
+│       └── build.rs                 # Runs csbindgen to generate C# bindings
+├── apps/
+│   └── desktop/                     # Avalonia UI desktop application (.NET 10)
+│       └── RouletteStudio.Desktop/  # Views, ViewModels, and AudioService
+├── docs/                            # Comprehensive architectural blueprints
+└── tools/                           # Automated build and execution scripts
+    ├── build.ps1                    # One-command Rust + C# build script
+    └── run.ps1                      # Builds and launches the desktop app
+```
+
+---
+
+## 💻 Getting Started
+
+### Prerequisites
+1. **Rust Toolchain:** [rustup.rs](https://rustup.rs/) (stable MSVC on Windows).
+2. **.NET 10 SDK:** [.NET 10 Download](https://dotnet.microsoft.com/download).
+3. **Visual Studio:** Visual Studio 2022/2026 with the *.NET desktop development* and *Desktop development with C++* workloads.
+
+### Build Everything
+Run the automated build script from PowerShell:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\build.ps1
+```
+
+### Launch the Desktop App
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\run.ps1
+```
+*(Or open `apps/desktop/RouletteStudio.slnx` in Visual Studio and press **F5**).*
+
+### Run the Real-Time Safety Test Suite
+To verify the allocation-free audio thread contract across 100,000 continuous audio blocks:
+```powershell
+cargo test --workspace -- --nocapture
+```
 
 ---
 
