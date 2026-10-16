@@ -4,7 +4,10 @@ This file is the short, mandatory entry point for every AI coding agent and cont
 
 ## Project context
 - Aetherband is an early-alpha desktop audio workstation and the future audio product in the Aether creative suite.
-- Current stack: Rust audio engine, C ABI under `bindings/c_abi/`, C#/.NET desktop UI using Avalonia.
+- Native/audio stack: Rust engine in `core/` and C ABI in `bindings/c_abi/`.
+- **Mandatory product direction:** Flutter/Dart is the target full-scale desktop UI and must be implemented through Dart FFI over the existing C ABI. This is not optional and must not be abandoned unless the owner explicitly changes the decision.
+- C#/.NET + Avalonia is the transitional, currently audio-connected frontend; keep it intact until Flutter has real engine integration, feature parity, passing Windows/macOS checks and owner review. Do not treat the mock-only Flutter workspace as production or connect it by bypassing the C ABI.
+- Canonical Flutter plan and history: `docs/FLUTTER_DESKTOP_MIGRATION.md` and `docs/AI_HANDOFF.md`; Dart/FFI rules: `.github/instructions/flutter.instructions.md`.
 - The repository is evolving. Verify current files, target frameworks, APIs, CI and project status rather than trusting stale documentation.
 - Do not describe planned or partially implemented features as working or production-ready.
 - The detailed implementation/verification snapshot and open engineering risks live in [`docs/ENGINEERING_STATUS.md`](docs/ENGINEERING_STATUS.md). Treat that document as a dated snapshot and re-check current source and CI.
@@ -27,7 +30,8 @@ This file is the short, mandatory entry point for every AI coding agent and cont
 - Treat ownership, thread affinity, queue capacity, shutdown and error paths as part of correctness. Prefer explicit bounded protocols and deferred resource reclamation.
 - Never use `unwrap()` / `expect()` or unchecked assumptions on callback-reachable paths unless the safety argument is explicit and reviewed.
 - Do not silently add dependencies. Explain purpose, licence, maintenance status and why existing functionality is insufficient.
-- C ABI changes require compatibility review and synchronized generated C# bindings (including csbindgen where applicable).
+- C ABI changes require compatibility review, a contract update, layout/error/ownership tests, and synchronized maintained bindings. `csbindgen` currently generates C# P/Invoke bindings only; Flutter requires its own Dart FFI adapter over the same C ABI.
+- Flutter UI must be implemented full scale as the long-term desktop frontend. Never reimplement DSP, decoding, the mixer, or the audio callback in Dart. Serialize calls for one engine handle until the native ABI explicitly guarantees safe concurrent callers.
 - Keep UI work asynchronous; do not block UI event handlers.
 - Do not hide failures by disabling tests, weakening assertions, suppressing warnings, or changing CI to pass without addressing the cause.
 - Never run destructive Git commands, overwrite user work, rotate credentials, publish releases, merge PRs, or change access/security settings without explicit authorization.
@@ -38,6 +42,7 @@ This file is the short, mandatory entry point for every AI coding agent and cont
 - C# / Avalonia: `.github/instructions/dotnet.instructions.md`
 - Audio callback / concurrency: `.github/instructions/audio-realtime.instructions.md`
 - Development workflow and safeguards: `docs/AI_WORKFLOW.md`
+- Mandatory Flutter migration plan and current status: `docs/FLUTTER_DESKTOP_MIGRATION.md` and `docs/AI_HANDOFF.md`
 - GitHub ruleset plan and application status: `docs/GITHUB_RULESETS.md`
 
 ## Completion report template
