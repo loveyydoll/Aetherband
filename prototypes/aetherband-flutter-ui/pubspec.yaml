@@ -1,0 +1,18 @@
+name: aetherband_flutter_ui
+description: Isolated Flutter UI prototype for Aetherband; demo interactions only.
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
