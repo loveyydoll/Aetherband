@@ -1,4 +1,4 @@
-# Aetherband 🎛️
+# 🌌 Aetherband 
 
 > **A modern, open-source desktop Digital Audio Workstation engineered for flow, speed, and hard real-time precision.**
 
