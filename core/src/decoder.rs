@@ -197,7 +197,12 @@ fn decode_worker(
     }
 
     let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .format(
+            &hint,
+            mss,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
         .map_err(|_| DecoderError::UnsupportedFormat)?;
 
     let mut format = probed.format;
@@ -296,7 +301,11 @@ fn decode_worker(
                 for &s in buf.chan(0) {
                     pending_l.push(s as f32 * scale);
                 }
-                let src_r = if source_channels > 1 { buf.chan(1) } else { buf.chan(0) };
+                let src_r = if source_channels > 1 {
+                    buf.chan(1)
+                } else {
+                    buf.chan(0)
+                };
                 for &s in src_r {
                     pending_r.push(s as f32 * scale);
                 }
