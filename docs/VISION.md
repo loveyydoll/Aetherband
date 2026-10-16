@@ -1,14 +1,14 @@
-# Product Vision: CustomDAW
+# Product Vision: Aetherband
 
 ## 1. Vision Statement
 
-**CustomDAW** is a modern, free, and open-source Digital Audio Workstation designed to bridge the gap between intuitive music creation and precision audio engineering. It combines:
+**Aetherband** is a modern, free, and open-source Digital Audio Workstation designed to bridge the gap between intuitive music creation and precision audio engineering. It combines:
 
 1. **The Accessibility of Modern Creative Tools:** A streamlined, discoverable workflow inspired by the immediacy of mobile sketchpads (like GarageBand) where song ideas can be captured in seconds without menu-diving or cognitive friction.
 2. **The Openness and Connected Workflow of Modern Cloud Tools:** A modular, lightweight project architecture designed for effortless sharing, asset portability, and future collaborative production (reminiscent of BandLab).
 3. **The Precision and Extensibility of Professional Desktop DAWs:** Deterministic, low-latency audio processing, sample-accurate timeline scheduling, robust track routing, and support for industry-standard plugins and hardware audio interfaces (comparable to Bitwig or Reaper).
 
-CustomDAW is developed under an open-source model (GPLv3), engineered for long-term maintainability, community contributions, and cross-platform performance.
+Aetherband is developed under an open-source model (GPLv3), engineered for long-term maintainability, community contributions, and cross-platform performance.
 
 ---
 
