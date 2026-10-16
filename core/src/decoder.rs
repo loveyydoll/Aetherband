@@ -335,7 +335,10 @@ fn decode_worker(
         }
     }
 
-    // Flush any remaining samples as a final block
+    // Flush any remaining samples as a final block. If the file ended exactly
+    // on a block boundary, the loop above has already emitted all audio blocks
+    // but none was marked final. Emit a zero-frame terminal marker so TrackPlayer
+    // can transition to EOF instead of remaining active forever.
     if !pending_l.is_empty() {
         let n = pending_l.len();
         let (out_l, out_r) = if let Some(ref mut rs) = resampler {
@@ -372,6 +375,20 @@ fn decode_worker(
                 return Ok(());
             }
             match producer.push(block.clone()) {
+                Ok(_) => break,
+                Err(_) => std::thread::sleep(std::time::Duration::from_millis(1)),
+            }
+        }
+    } else {
+        let mut terminal = DecodedBlock::silent(0);
+        terminal.start_frame = playhead;
+        terminal.is_last = true;
+
+        loop {
+            if stop_flag.load(Ordering::Relaxed) {
+                return Ok(());
+            }
+            match producer.push(terminal.clone()) {
                 Ok(_) => break,
                 Err(_) => std::thread::sleep(std::time::Duration::from_millis(1)),
             }
