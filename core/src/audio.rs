@@ -120,7 +120,7 @@ impl AudioProcessor {
                     // This branch is defensive; intentionally leak rather than run a
                     // destructor/deallocation on the real-time thread.
                     let _ = Box::into_raw(player);
-                    log::error!("Deferred track-retirement capacity exhausted");
+                    // This is unreachable while the command-loop capacity invariant holds.
                 }
             }
         }
@@ -391,7 +391,7 @@ mod tests {
         let _ = { let mut prod = producer; prod.push(block).unwrap(); prod };
 
         let track = TrackPlayer::new(TrackId(1), consumer, 1.0, 128);
-        processor.tracks_mut().add(Box::new(track)).unwrap();
+        assert!(processor.tracks_mut().add(Box::new(track)).is_ok());
 
         ui.cmd_producer.push(EngineCommand::Play).unwrap();
         let mut buffer = vec![0.0f32; 256];
