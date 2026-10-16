@@ -294,7 +294,8 @@ class _TimelineRuler extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bars = (width / (84 * zoom)).ceil();
+    final barWidth = 84 * zoom;
+    final bars = (width / barWidth).ceil();
     return SizedBox(
       height: 38,
       width: width,
@@ -302,7 +303,9 @@ class _TimelineRuler extends StatelessWidget {
         children: [
           for (var i = 0; i < bars; i++)
             Container(
-              width: 84 * zoom,
+              width: i == bars - 1
+                  ? math.max(0.0, width - i * barWidth)
+                  : barWidth,
               padding: const EdgeInsets.only(left: 6, top: 7),
               decoration: const BoxDecoration(
                 color: AetherColors.panel,
