@@ -24,13 +24,16 @@ official Flutter desktop guide:
 From this directory:
 
 ```sh
+flutter create --platforms=windows,macos .
 flutter pub get
 flutter analyze
 flutter test
 flutter run -d windows
 ```
 
-On macOS, use `flutter run -d macos`. Run only a target supported by the
+The `flutter create` command scaffolds the native desktop runner directories
+for this prototype; commit those generated runners only after the team reviews
+them. On macOS, use `flutter run -d macos`. Run only a target supported by the
 current host and installed toolchain.
 
 ## Architecture
