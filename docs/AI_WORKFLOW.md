@@ -48,7 +48,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 For .NET, first discover the current solution path and target framework, then run the matching restore/build/test commands. Do not copy stale solution names or SDK versions from historical documentation.
 
-## 4. Required completion report
+## 4. Current project-specific caution\n\nA Stop regression is currently reported: the UI timer/playhead resets but audio reportedly continues. Treat the symptom as unresolved until reproduced and covered by a regression test. Inspect the C# command return code, C-ABI result, Rust command queue, audio callback's Stop handler, telemetry, and decoder restart behavior. Do not assume a local UI state change means the engine acted. Do not claim this issue is fixed until automated tests and manual playback confirm silence and correct restart.\n\n## 5. Required completion report
 
 Every meaningful agent task should report:
 
@@ -60,6 +60,6 @@ Every meaningful agent task should report:
 
 Update `AGENTS.md` and relevant design docs when project status or verified implementation changes. Do not duplicate long status inventories across documents; link to the canonical handoff instead.
 
-## 5. Repository protection
+## 6. Repository protection
 
 See [`GITHUB_RULESETS.md`](GITHUB_RULESETS.md) for the recommended default-branch and CI protections, plus the distinction between version-controlled recommendations and settings actually active on GitHub.

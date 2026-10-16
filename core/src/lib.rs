@@ -1,4 +1,4 @@
-//! RouletteStudio Audio Core Library
+//! Aetherband Audio Core Library
 //!
 //! Owns the audio processing pipeline, DSP algorithms, audio driver I/O,
 //! lock-free concurrency queues, and multi-track playback.
@@ -175,11 +175,82 @@ impl DAWEngine {
             .is_ok()
     }
 
+    /// Stops playback, resets the playhead to zero, and restarts every track's
+    /// background decoder from the beginning of its file.
+    ///
+    /// This is the control-thread half of the Stop protocol required by issue #5:
+    /// - Audio thread receives `EngineCommand::Stop` → sets `is_playing = false`,
+    ///   playhead = 0, drains track consumers.
+    /// - Control thread stops the old StreamDecoders and spawns fresh ones so
+    ///   the next Play consumes audio from frame 0 again.
     pub fn stop(&mut self) -> bool {
-        self.ui_endpoints
+        let pushed = self
+            .ui_endpoints
             .cmd_producer
             .push(EngineCommand::Stop)
-            .is_ok()
+            .is_ok();
+
+        // Restart decoders so the next Play starts at the beginning of each file.
+        // This must happen on the control thread (joins worker threads, opens files).
+        self.restart_all_decoders();
+
+        pushed
+    }
+
+    /// Stops every live StreamDecoder and spawns a replacement that begins
+    /// decoding from the start of the file. The new consumer is delivered to
+    /// the audio thread via `RestartTrack` so the existing TrackPlayer keeps
+    /// its gain/pan/mute state.
+    fn restart_all_decoders(&mut self) {
+        // Snapshot the track list because we mutate `decoders`.
+        let tracks: Vec<TrackInfo> = self.tracks.clone();
+
+        for track in tracks {
+            // Stop and drop the old decoder (joins the worker).
+            if let Some(mut old) = self.decoders.remove(&track.id.0) {
+                old.stop();
+            }
+
+            // Spawn a fresh decoder from the same path.
+            let path = Path::new(&track.file_path);
+            match StreamDecoder::spawn(path, self.output_sample_rate) {
+                Ok(mut new_decoder) => {
+                    let consumer = new_decoder.take_consumer();
+                    // Box the consumer so we can smuggle it through the command queue
+                    // as a raw pointer (same pattern used by AddTrack).
+                    let boxed = Box::new(consumer);
+                    let consumer_ptr = Box::into_raw(boxed) as usize;
+
+                    if self
+                        .ui_endpoints
+                        .cmd_producer
+                        .push(EngineCommand::RestartTrack {
+                            track_id: track.id,
+                            consumer_ptr,
+                        })
+                        .is_err()
+                    {
+                        // Queue full — reclaim the consumer on this thread.
+                        drop(unsafe {
+                            Box::from_raw(consumer_ptr as *mut rtrb::Consumer<
+                                crate::ringbuf::DecodedBlock,
+                            >)
+                        });
+                        // Also drop the new decoder we just created.
+                        drop(new_decoder);
+                    } else {
+                        self.decoders.insert(track.id.0, new_decoder);
+                    }
+                }
+                Err(e) => {
+                    log::error!(
+                        "Failed to restart decoder for track {:?}: {}",
+                        track.id,
+                        e
+                    );
+                }
+            }
+        }
     }
 
     pub fn seek(&mut self, frame: i64) -> bool {
@@ -233,27 +304,7 @@ impl DAWEngine {
         // Spawn background decoder
         let mut decoder = StreamDecoder::spawn(path, self.output_sample_rate)?;
 
-        // NOTE: Because `AudioProcessor` owns the audio thread exclusively,
-        // we cannot push a TrackPlayer into it at runtime without a lock.
-        // The architectural solution is a setup queue — a one-time SPSC channel
-        // for installing new TrackPlayers before they start playing.
-        //
-        // For Phase 2, we use a simpler approach: the TrackPlayer and its
-        // Consumer are created here; a `AddTrack` command carries the boxed
-        // TrackPlayer across the boundary. The audio thread installs it via
-        // the existing command queue.
-        //
-        // Because the TrackPlayer is not Copy, we smuggle it as a raw pointer
-        // wrapped in a usize (pointer integer). This is safe because:
-        //  - The pointer is created here, sent once through the queue, and
-        //    immediately re-boxed on the audio side.
-        //  - The audio thread is the sole receiver so no aliasing occurs.
-        //
-        // This is an explicit, documented unsafe boundary consistent with ADR-004.
-
         // Take the consumer out of the decoder *before* we move decoder into the map.
-        // The decoder is then stored with consumer = None; it lives only for
-        // its stop_flag so the background thread can be cancelled later.
         let consumer = decoder.take_consumer();
 
         let player = Box::new(TrackPlayer::new(
@@ -296,7 +347,7 @@ impl DAWEngine {
     pub fn remove_track(&mut self, id: TrackId) -> bool {
         if let Some(pos) = self.tracks.iter().position(|t| t.id == id) {
             self.tracks.remove(pos);
-            if let Some(decoder) = self.decoders.remove(&id.0) {
+            if let Some(mut decoder) = self.decoders.remove(&id.0) {
                 decoder.stop();
             }
             let _ = self

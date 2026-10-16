@@ -105,3 +105,4 @@
 - **Consequences:**
   - Guarantees immediate host stability and zero licensing hurdles for the MVP.
   - Users get a complete, functional out-of-the-box production experience without requiring paid plugins.
+\n\n## Current implementation note — transport stabilization (2026-10-16)\n\nThe audio core uses a bounded SPSC command queue; the UI's immediate timer reset is not authoritative evidence that Stop was processed. A runtime report indicates that audio continues after the visible playhead resets. This is a bug to diagnose, not an intended design decision. Add regression tests and verify command acceptance, callback handling, output silence, decoder rewind/restart, and UI telemetry before closing the stabilization gate. Do not add locks, blocking calls, or heap allocation to the audio callback to work around it.\n

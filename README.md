@@ -1,4 +1,4 @@
-# 🌌 Aetherband 
+# 🌌 Aetherband
 
 > **A modern, open-source desktop Digital Audio Workstation engineered for flow, speed, and hard real-time precision.**
 
@@ -6,11 +6,29 @@ Aetherband bridges the gap between intuitive songwriting sketchpads and high-pre
 
 ---
 
+## Tech Stack (What the whole app is written in)
+
+| Layer | Language / Framework | Role |
+|-------|----------------------|------|
+| **Audio Engine & DSP** | **Rust** (stable 2021 edition) | Hard real-time callback, mixer, decoder workers, lock-free queues |
+| **Native FFI** | **C99 ABI** + `csbindgen` | Flat C interface + auto-generated C# P/Invoke |
+| **Desktop UI** | **C# / .NET 10 LTS** + **Avalonia UI 11** | GPU-accelerated multi-track arranger, transport, meters |
+| **Audio I/O** | `cpal` | WASAPI (Windows) / CoreAudio (macOS) |
+| **Decoding** | `symphonia` | WAV, FLAC, MP3, OGG, AAC/M4A |
+| **Resampling** | `rubato` | High-quality sample-rate conversion |
+| **Concurrency** | `rtrb` | Wait-free SPSC ring buffers (UI ↔ audio thread) |
+| **License** | **GPLv3** | Open source |
+
+The application is **not** written in a single language. The real-time critical path is pure Rust; the interactive desktop shell is modern C# on Avalonia.
+
+---
+
 > [!WARNING]
 > ### Work in Progress (Early Alpha)
 > Aetherband is under active, rapid development and is currently in **early alpha**.
 > - APIs, project formats, and interfaces are evolving quickly and subject to breaking changes.
-> - While core audio playback and multi-track mixing are functional and backed by real-time safety tests, advanced features (MIDI recording, plugin hosting, automation, and project saving) are still in development.
+> - Core audio playback and multi-track mixing are implemented. Transport Stop has been fixed in the core (decoder restart + regression test) and needs runtime confirmation on hardware.
+> - Advanced features (MIDI recording, plugin hosting, automation, and project saving) are still in development.
 > - **Not recommended for production work yet.** Use it to test, experiment, and contribute!
 
 ---
@@ -42,9 +60,9 @@ If you download and run Aetherband today, here is an honest, plain-English break
 
 ---
 
-## Current Milestone: Phase 2 & 3 (Multi-Track Playback & Arranger UI)
+## Current Milestone: Stabilization Gate (Phases 1–3)
 
-Aetherband has completed **Phase 1 (Real-Time Audio Core)** and **Phase 2 & 3 (Multi-Track Audio Playback, Disk Streaming & Timeline UI)**:
+The core engine, file playback, multi-track mixing, native interop, and initial timeline UI are implemented. Transport Stop has been fixed at the engine level (see issue #5): on Stop the audio thread silences output and resets the playhead, and the control thread restarts every track’s StreamDecoder so the next Play begins at the start of the file. A regression test asserts silence + playhead zero after Stop.
 
 - [x] **Zero-Allocation Audio Thread:** Hardware callback loop executing on dedicated OS audio thread with guaranteed zero heap allocations.
 - [x] **Hardware Audio Driver Support:** Low-latency device discovery and output stream management via `cpal` (WASAPI on Windows, CoreAudio on macOS).
@@ -52,9 +70,10 @@ Aetherband has completed **Phase 1 (Real-Time Audio Core)** and **Phase 2 & 3 (M
 - [x] **Real-Time Sample Rate Conversion:** High-fidelity sinc/FFT resampling powered by `rubato`.
 - [x] **64-Track Summing Mixer:** Real-time multi-track engine featuring Equal-Power stereo panning law and 256-sample de-zippering gain ramping.
 - [x] **Lock-Free Concurrency:** Single-Producer Single-Consumer (SPSC) ring buffers (`rtrb`) for wait-free UI ⇄ Audio communications.
-- [x] **Automated Safety Test Harness:** Automated enforcement of zero allocations across 100,000 continuous blocks via `assert_no_alloc`.
+- [x] **Automated Safety Test Harness:** Allocation-safety test harness for continuous callback processing; run the repository's current verification commands to validate the present baseline.
 - [x] **Flat C-ABI & Automated Bindings:** Clean C99 FFI with automated type-safe C# P/Invoke generation (`csbindgen`).
 - [x] **Modern Desktop App:** Hardware-accelerated desktop UI built with **.NET 10 LTS** and **Avalonia UI**, featuring multi-track lanes, track controls (Volume, Pan, Mute, Remove), playhead scrubbing, and live transport controls.
+- [x] **Stop transport correctness (core):** Stop silences output, resets playhead, and restarts decoders so Play after Stop restarts from the beginning (regression test present).
 
 ---
 
@@ -122,6 +141,8 @@ Aetherband/
     └── run.ps1                      # Builds and launches the desktop app
 ```
 
+> **Note on naming:** The desktop project folder and some C# namespaces still use the historical name `RouletteStudio`. Functionally everything is Aetherband; a future cleanup can rename the folder and namespaces without changing behaviour.
+
 ---
 
 ## Getting Started
@@ -157,9 +178,10 @@ cargo test -p daw_core --tests
 |:---:|---|:---:|
 | **0** | Architectural Blueprint & Documentation (10 ADRs) | ✅ Complete |
 | **1** | Real-Time Audio Core Foundation & Hardware I/O | ✅ Complete |
-| **2** | Audio File Playback & Background Disk Streaming | ✅ Complete |
-| **3** | Multi-Track Mixer & Interactive Timeline UI | ✅ Complete |
-| **4** | Audio Recording & Waveform Peak Visualizer | ⏳ Upcoming |
+| **2** | Audio File Playback & Background Disk Streaming | 🧪 Implemented; runtime gate open |
+| **3** | Multi-Track Mixer & Interactive Timeline UI | 🧪 Implemented; runtime gate open |
+| **3.5** | Transport/lifecycle stabilization and regression tests | 🚧 Current priority (Stop fixed in core) |
+| **4** | Audio Recording, waveform peaks, project persistence & export | ⏳ Planned |
 | **5** | MIDI Engine, Piano Roll & Virtual Instruments | 📅 Planned |
 | **6** | Mixer Routing, Effects Engine & Plugin Hosting | 📅 Planned |
 

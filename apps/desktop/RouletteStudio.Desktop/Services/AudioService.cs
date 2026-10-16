@@ -18,16 +18,30 @@ namespace RouletteStudio.Desktop.Services
         private bool _disposed;
 
         public bool IsInitialized => _engine != null;
+        public string? InitializationError { get; private set; }
 
         public AudioService()
         {
-            fixed (DAWEngine** ptr = &_engine)
+            try
             {
-                int result = NativeMethods.daw_engine_create(ptr);
-                if (result != 0)
+                fixed (DAWEngine** ptr = &_engine)
                 {
-                    _engine = null;
+                    int result = NativeMethods.daw_engine_create(ptr);
+                    if (result != 0)
+                    {
+                        _engine = null;
+                        InitializationError = $"Native audio engine initialization failed (error code {result}).";
+                    }
                 }
+            }
+            catch (Exception ex) when (
+                ex is DllNotFoundException ||
+                ex is EntryPointNotFoundException ||
+                ex is BadImageFormatException ||
+                ex is SEHException)
+            {
+                _engine = null;
+                InitializationError = $"Could not load or initialize the native Rust audio engine: {ex.Message}";
             }
         }
 

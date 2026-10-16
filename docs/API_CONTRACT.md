@@ -1,4 +1,4 @@
-# Core API Contract & FFI Specification: CustomDAW
+# Core API Contract & FFI Specification: Aetherband
 
 ## 1. Design Principles for the C-ABI Boundary
 
@@ -127,7 +127,7 @@ DAWResult daw_engine_poll_telemetry(DAWEngineHandle engine, DAWMeteringFrame* ou
 
 ---
 
-## 5. Threading and Concurrency Guarantees
+## 5. Transport semantics and acceptance\n\n- `daw_engine_stop` reports whether the Stop command was accepted into the command queue; it does not mean the audio callback has already processed it.\n- The UI must not treat a local playhead reset as confirmation that output is silent. Poll telemetry and reflect engine state.\n- A Stop regression has been reported: the displayed timer resets while audio reportedly continues. Keep Stop behavior unaccepted until automated and runtime regression tests prove silence, zero playhead, and successful restart.\n- A queue-full return must be surfaced rather than silently presenting a successful transport action.\n\n## 6. Threading and Concurrency Guarantees
 
 1. **`daw_engine_create` / `daw_engine_destroy`:** Must only be called from a single thread (typically the application main or initialization thread).
 2. **`daw_engine_send_command`:** Thread-safe for the UI thread. Internally writes to a Single-Producer Single-Consumer (SPSC) ring buffer.
@@ -136,7 +136,7 @@ DAWResult daw_engine_poll_telemetry(DAWEngineHandle engine, DAWMeteringFrame* ou
 
 ---
 
-## 6. Automated C# Binding Generation (`csbindgen`)
+## 7. Automated C# Binding Generation (`csbindgen`)
 
 To eliminate manual P/Invoke typos and synchronization bugs, `csbindgen` is executed as part of the core build:
 ```rust
@@ -144,7 +144,7 @@ To eliminate manual P/Invoke typos and synchronization bugs, `csbindgen` is exec
 csbindgen::Builder::new()
     .input_extern_file("bindings/c_abi/src/lib.rs")
     .csharp_class_name("NativeMethods")
-    .csharp_namespace("CustomDAW.Bindings")
+    .csharp_namespace("Aetherband.Bindings")
     .csharp_dll_name("daw_core")
     .generate_csharp_file("bindings/csharp/NativeMethods.g.cs")
     .unwrap();

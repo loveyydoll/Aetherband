@@ -1,4 +1,4 @@
-//! RouletteStudio C-ABI Foreign Function Interface
+//! Aetherband C-ABI Foreign Function Interface
 //!
 //! Exposes a flat, C99-compatible interface for consumption by C# (.NET 10) P/Invoke.
 

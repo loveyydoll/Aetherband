@@ -13,7 +13,7 @@
 - **FR-1.8 (P2): Sample-Rate Conversion:** The engine must dynamically resample audio assets matching the active hardware output rate using high-quality sinc interpolation.
 
 ### 1.2 Transport & Timeline
-- **FR-2.1 (P0): Transport Controls:** Support Play, Pause, Stop, and Seek commands with immediate audio response.
+- **FR-2.1 (P0): Transport Controls:** Play, Pause, Stop and Seek must produce immediate, observable engine behavior. Stop must silence the output, reset the playhead and allow a subsequent Play to restart from the beginning. This is currently a stabilization acceptance criterion; a reported Stop regression remains open.
 - **FR-2.2 (P1): Timeline & Musical Grid:** Support sample-accurate playhead tracking, beats-per-minute (BPM) tempo configuration, and musical time signatures (e.g., 4/4, 3/4).
 - **FR-2.3 (P1): Clip Arrangement:** Support placing, moving, splitting, trimming, and looping audio clips on discrete tracks.
 
@@ -64,7 +64,7 @@
 
 ---
 
-## 4. Priority Matrix
+## 4. Priority Matrix\n\n**Current stabilization finding (2026-10-16):** Runtime testing reports that Stop resets the visible timer/playhead but audio continues. Treat FR-1.2 and FR-2.1 as not accepted until a regression test and manual end-to-end test prove that the audio callback consumes Stop, outputs silence, and resets transport state.
 
 | Feature / Area | Priority | Target Milestone |
 | :--- | :--- | :--- |

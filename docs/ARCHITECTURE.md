@@ -10,9 +10,9 @@ The boundary between these tiers is a **Flat, Versioned C-ABI** exposed by `daw_
 
 ```mermaid
 flowchart TD
-    subgraph UI_Tier ["Presentation Tier (C# / .NET 8/9 / Avalonia UI)"]
+    subgraph UI_Tier ["Presentation Tier (C# / .NET 10 / Avalonia UI)"]
         View["Views & Controls\n• Timeline\n• Mixer Console\n• Transport Toolbar\n• Live VU Meters"]
-        ViewModel["ViewModels (ReactiveUI)\n• TrackViewModel\n• TransportViewModel\n• DeviceSettingsViewModel"]
+        ViewModel["ViewModels (MVVM)\n• TrackViewModel\n• TransportViewModel\n• DeviceSettingsViewModel"]
         AudioClient["AudioEngineClient (C# Singleton Wrapper)"]
         View --> ViewModel --> AudioClient
     end

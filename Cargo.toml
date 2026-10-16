@@ -8,6 +8,6 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-authors = ["arpeggi1 <rodrigoloureiro981@gmail.com>"]
+authors = ["loveyy <136571524+loveyydoll@users.noreply.github.com>"]
 license = "GPL-3.0-or-later"
-repository = "https://github.com/arpeggi1/RouletteStudio"
+repository = "https://github.com/loveyydoll/Aetherband"
