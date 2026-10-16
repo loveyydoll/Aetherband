@@ -7,7 +7,7 @@
 
 use crate::dsp::{GainRamp, LevelMeter, SineOscillator};
 use crate::ringbuf::{AudioEndpoints, EngineCommand, TelemetryFrame};
-use crate::track::TrackSlots;
+use crate::track::{TrackSlots, TrackPlayer, MAX_TRACKS};
 use rtrb::{Consumer, Producer};
 
 /// Hard real-time audio callback processor.
@@ -17,6 +17,9 @@ use rtrb::{Consumer, Producer};
 pub struct AudioProcessor {
     cmd_consumer: Consumer<EngineCommand>,
     telemetry_producer: Producer<TelemetryFrame>,
+    retired_tracks: Producer<Box<TrackPlayer>>,
+    // Fixed-capacity fallback when the control thread has not reclaimed returned players.
+    pending_retired: [Option<Box<TrackPlayer>>; MAX_TRACKS],
 
     // DSP
     oscillator: SineOscillator,
@@ -46,6 +49,8 @@ impl AudioProcessor {
         Self {
             cmd_consumer: endpoints.cmd_consumer,
             telemetry_producer: endpoints.telemetry_producer,
+            retired_tracks: endpoints.retired_tracks,
+            pending_retired: std::array::from_fn(|_| None),
             oscillator: SineOscillator::new(sample_rate, 440.0),
             master_gain: GainRamp::new(0.8),
             meter: LevelMeter::new(),
@@ -85,9 +90,54 @@ impl AudioProcessor {
     // ─────────────────────────────────────────────────────────────────────
 
     #[inline]
+    fn flush_pending_retired(&mut self) {
+        for slot in self.pending_retired.iter_mut() {
+            let Some(player) = slot.take() else { continue; };
+            match self.retired_tracks.push(player) {
+                Ok(()) => {}
+                Err(rtrb::PushError::Full(player)) => {
+                    *slot = Some(player);
+                    break;
+                }
+            }
+        }
+    }
+
+    #[inline]
+    fn has_pending_retirement_capacity(&self) -> bool {
+        self.pending_retired.iter().any(Option::is_none)
+    }
+
+    #[inline]
+    fn retire_track(&mut self, player: Box<TrackPlayer>) {
+        match self.retired_tracks.push(player) {
+            Ok(()) => {}
+            Err(rtrb::PushError::Full(player)) => {
+                if let Some(slot) = self.pending_retired.iter_mut().find(|slot| slot.is_none()) {
+                    *slot = Some(player);
+                } else {
+                    // The command loop checks capacity before popping another command.
+                    // This branch is defensive; intentionally leak rather than run a
+                    // destructor/deallocation on the real-time thread.
+                    let _ = Box::into_raw(player);
+                    // This is unreachable while the command-loop capacity invariant holds.
+                }
+            }
+        }
+    }
+
+    #[inline]
     fn handle_commands(&mut self) {
         use crate::ringbuf::EngineCommand::*;
-        while let Ok(cmd) = self.cmd_consumer.pop() {
+        // Bound control work per callback so a burst of UI commands cannot
+        // monopolize the real-time thread for an unbounded amount of time.
+        const MAX_COMMANDS_PER_BLOCK: usize = 128;
+        self.flush_pending_retired();
+        for _ in 0..MAX_COMMANDS_PER_BLOCK {
+            // If both retirement storage tiers are full, leave commands queued
+            // until the control thread reclaims retired players.
+            if !self.has_pending_retirement_capacity() { break; }
+            let Ok(cmd) = self.cmd_consumer.pop() else { break; };
             match cmd {
                 Play => {
                     self.is_playing = true;
@@ -133,11 +183,15 @@ impl AudioProcessor {
                     // `Box::into_raw`. It is sent through the SPSC queue exactly once and
                     // consumed exactly once here. No aliasing is possible because the
                     // control thread no longer holds the raw pointer after pushing the cmd.
-                    let player = unsafe { *Box::from_raw(player_ptr as *mut crate::track::TrackPlayer) };
-                    self.tracks.add(player);
+                    let player = unsafe { Box::from_raw(player_ptr as *mut TrackPlayer) };
+                    if let Err(player) = self.tracks.add(player) {
+                        self.retire_track(player);
+                    }
                 }
                 RemoveTrack { track_id } => {
-                    self.tracks.remove(track_id);
+                    if let Some(player) = self.tracks.remove(track_id) {
+                        self.retire_track(player);
+                    }
                 }
             }
         }
@@ -152,7 +206,14 @@ impl AudioProcessor {
     /// # Real-Time Safety
     /// Zero heap allocations. Zero blocking operations. Zero OS locks.
     pub fn process_interleaved(&mut self, output: &mut [f32], channels: usize) {
-        // 1. Pop all pending UI commands
+        // A malformed/unsupported channel count must never cause division by
+        // zero. Keep the callback allocation-free while guaranteeing silence.
+        if channels == 0 {
+            output.fill(0.0);
+            return;
+        }
+
+        // 1. Process a bounded number of pending UI commands.
         self.handle_commands();
 
         let frames = output.len() / channels;
@@ -193,6 +254,11 @@ impl AudioProcessor {
             if channels >= 2 {
                 output[f * channels] = l;
                 output[f * channels + 1] = r;
+                // Explicitly clear channels beyond stereo instead of leaving
+                // stale/uninitialized samples in the hardware output buffer.
+                for channel in 2..channels {
+                    output[f * channels + channel] = 0.0;
+                }
             } else {
                 output[f * channels] = (l + r) * 0.5;
             }
@@ -248,6 +314,32 @@ mod tests {
     }
 
     #[test]
+    fn zero_channel_count_clears_output_without_panicking() {
+        let (_, audio) = create_engine_queues(16, 16);
+        let mut processor = AudioProcessor::new(48000.0, audio);
+        let mut buffer = vec![1.0f32; 16];
+
+        processor.process_interleaved(&mut buffer, 0);
+
+        assert!(buffer.iter().all(|&sample| sample == 0.0));
+    }
+
+    #[test]
+    fn extra_output_channels_are_cleared() {
+        let (_, audio) = create_engine_queues(16, 16);
+        let mut processor = AudioProcessor::new(48000.0, audio);
+        // Four channels per frame; initialize all channels to non-silence.
+        let mut buffer = vec![1.0f32; 4 * 16];
+
+        processor.process_interleaved(&mut buffer, 4);
+
+        for frame in buffer.chunks_exact(4) {
+            assert_eq!(frame[2], 0.0);
+            assert_eq!(frame[3], 0.0);
+        }
+    }
+
+    #[test]
     fn test_test_tone_when_playing() {
         let (mut ui, audio) = create_engine_queues(16, 16);
         let mut processor = AudioProcessor::new(48000.0, audio);
@@ -299,7 +391,7 @@ mod tests {
         let _ = { let mut prod = producer; prod.push(block).unwrap(); prod };
 
         let track = TrackPlayer::new(TrackId(1), consumer, 1.0, 128);
-        processor.tracks_mut().add(track);
+        assert!(processor.tracks_mut().add(Box::new(track)).is_ok());
 
         ui.cmd_producer.push(EngineCommand::Play).unwrap();
         let mut buffer = vec![0.0f32; 256];

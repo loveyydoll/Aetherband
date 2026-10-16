@@ -1,0 +1,31 @@
+name: Rust
+
+on:
+  push:
+    branches: ["main", "fix/**"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Format, check, and test Rust workspace
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native audio build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes pkg-config libasound2-dev
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check workspace
+        run: cargo check --workspace --all-targets
+      - name: Test workspace
+        run: cargo test --workspace --all-targets

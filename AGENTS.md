@@ -7,6 +7,7 @@ This file is the short, mandatory entry point for every AI coding agent and cont
 - Current stack: Rust audio engine, C ABI under `bindings/c_abi/`, C#/.NET desktop UI using Avalonia.
 - The repository is evolving. Verify current files, target frameworks, APIs, CI and project status rather than trusting stale documentation.
 - Do not describe planned or partially implemented features as working or production-ready.
+- The detailed implementation/verification snapshot and open engineering risks live in [`docs/ENGINEERING_STATUS.md`](docs/ENGINEERING_STATUS.md). Treat that document as a dated snapshot and re-check current source and CI.
 
 ## Required workflow
 1. Read this file and the relevant files under `.github/instructions/` before editing.
@@ -15,7 +16,7 @@ This file is the short, mandatory entry point for every AI coding agent and cont
 4. Work on a focused branch and open a PR; do not make risky changes directly on `main`.
 5. Make the smallest coherent change. Do not mix unrelated refactors into a bug fix.
 6. Add or update tests for changed behaviour. If a test cannot be written or run, explain why.
-7. Update documentation and this handoff when implementation or verification status changes.
+7. Update documentation and the engineering-status snapshot when implementation or verification status changes.
 8. Review the final diff for regressions, unintended files, generated files, secrets, stale claims and unrelated edits.
 9. Report **Implemented**, **Not implemented**, **Verified**, **Not verified**, and **Known risks** separately.
 

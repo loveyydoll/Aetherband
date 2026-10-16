@@ -103,6 +103,21 @@ impl CpalBackend {
             .nth(index)
             .ok_or(DeviceError::DeviceNotFound(index))
     }
+
+    /// Queries the sample rate that will be used by the selected output.
+    ///
+    /// Call this before constructing the processor so its oscillator and any
+    /// sample-rate-dependent DSP are initialized for the actual device rate.
+    pub fn output_sample_rate(&self, device_index: Option<usize>) -> Result<u32, DeviceError> {
+        let device = match device_index {
+            Some(index) => self.get_device_by_index(index)?,
+            None => self.host.default_output_device().ok_or(DeviceError::NoDefaultDevice)?,
+        };
+        device
+            .default_output_config()
+            .map(|config| config.sample_rate().0)
+            .map_err(|e| DeviceError::FormatNotSupported(e.to_string()))
+    }
 }
 
 impl AudioBackend for CpalBackend {

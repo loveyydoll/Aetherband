@@ -4,6 +4,7 @@
 //! and the hard real-time audio thread.
 
 use rtrb::{Consumer, Producer, RingBuffer};
+use crate::track::TrackPlayer;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Track identifier
@@ -146,12 +147,16 @@ impl DecodedBlock {
 pub struct UIEndpoints {
     pub cmd_producer: Producer<EngineCommand>,
     pub telemetry_consumer: Consumer<TelemetryFrame>,
+    /// Track players retired by the audio thread; drop them on the control thread.
+    pub retired_tracks: Consumer<Box<TrackPlayer>>,
 }
 
 /// Audio-thread side of the engine communication queues.
 pub struct AudioEndpoints {
     pub cmd_consumer: Consumer<EngineCommand>,
     pub telemetry_producer: Producer<TelemetryFrame>,
+    /// Returns retired players to the control thread without freeing memory in the callback.
+    pub retired_tracks: Producer<Box<TrackPlayer>>,
 }
 
 /// Creates the lock-free ring buffer communication endpoints.
@@ -161,15 +166,21 @@ pub fn create_engine_queues(
 ) -> (UIEndpoints, AudioEndpoints) {
     let (cmd_producer, cmd_consumer) = RingBuffer::new(cmd_capacity);
     let (telemetry_producer, telemetry_consumer) = RingBuffer::new(telemetry_capacity);
+    // Capacity exceeds the command queue and active-track limit. If it ever fills,
+    // the audio processor keeps retired players in a fixed-size deferred array and
+    // pauses command consumption until the control thread reclaims them.
+    let (retired_producer, retired_consumer) = RingBuffer::new(cmd_capacity * 2);
 
     (
         UIEndpoints {
             cmd_producer,
             telemetry_consumer,
+            retired_tracks: retired_consumer,
         },
         AudioEndpoints {
             cmd_consumer,
             telemetry_producer,
+            retired_tracks: retired_producer,
         },
     )
 }
