@@ -9,6 +9,7 @@
 - [ADR-005: Encapsulated AudioBackend Trait over Direct cpal Coupling](#adr-005-encapsulated-audiobackend-trait-over-direct-cpal-coupling)
 - [ADR-006: Bundled Zip Container (.dawproject) for Project Files](#adr-006-bundled-zip-container-dawproject-for-project-files)
 - [ADR-007: High-Quality Internal DSP First; Defer External Plugin Hosting](#adr-007-high-quality-internal-dsp-first-defer-external-plugin-hosting)
+- [ADR-008: Flutter Desktop UI via the Existing C ABI](#adr-008-flutter-desktop-ui-via-the-existing-c-abi)
 
 ---
 
@@ -27,7 +28,7 @@
 ---
 
 ### ADR-002: Rust Audio/DSP Core with C# / Avalonia Desktop Frontend
-- **Status:** Approved
+- **Status:** Superseded for frontend direction by ADR-008; retained as historical record of the original implementation
 - **Date:** 2026-10-16
 - **Context:**
   Real-time audio requires deterministic execution without garbage-collection pauses. C# is the developer's strongest language, but managed runtimes are prone to GC pauses during low-latency audio callbacks. C++ is the legacy audio standard but is prone to memory safety bugs and complex build toolchains.
@@ -105,4 +106,28 @@
 - **Consequences:**
   - Guarantees immediate host stability and zero licensing hurdles for the MVP.
   - Users get a complete, functional out-of-the-box production experience without requiring paid plugins.
-\n\n## Current implementation note — transport stabilization (2026-10-16)\n\nThe audio core uses a bounded SPSC command queue; the UI's immediate timer reset is not authoritative evidence that Stop was processed. A runtime report indicates that audio continues after the visible playhead resets. This is a bug to diagnose, not an intended design decision. Add regression tests and verify command acceptance, callback handling, output silence, decoder rewind/restart, and UI telemetry before closing the stabilization gate. Do not add locks, blocking calls, or heap allocation to the audio callback to work around it.\n
+\n\n### ADR-008: Flutter Desktop UI via the Existing C ABI
+
+- **Status:** Approved by project owner
+- **Date:** 2026-10-17
+
+**Context:** Aetherband's first audio-connected desktop interface is C#/.NET + Avalonia. The project owner has explicitly selected Flutter as the long-term desktop UI and requires the Flutter implementation to reach full DAW scope. Abandoning it because the first implementation is a prototype or because integration is difficult is not an accepted default.
+
+**Decision:**
+- Implement the primary Windows/macOS desktop frontend in Flutter/Dart at full scale.
+- Integrate to the existing Rust engine exclusively through the flat C ABI in `bindings/c_abi/src/lib.rs`, using a dedicated Dart FFI adapter.
+- Keep the Rust engine and real-time audio path in Rust. Do not rewrite DSP/decoding/device callbacks in Dart.
+- Keep C#/Avalonia buildable while Flutter is made functionally equivalent to the currently supported native-audio workflows. Retire it only after parity, cross-platform tests, packaging verification and owner review.
+- The Flutter direction is mandatory unless the owner explicitly changes it. Mandatory direction does not waive tests, code review, ABI-safety or real-time audio requirements.
+
+**Consequences:**
+- One cross-language native contract remains the boundary between UI and engine. New native functionality must be exposed through reviewed ABI additions and synchronized documentation/tests.
+- `csbindgen` continues to serve the transitional C# frontend; Dart requires a separate `dart:ffi` wrapper and layout/error tests.
+- The migration is staged to protect real audio functionality: the current Flutter workspace remains mock-only until the engine adapter and workflow parity are verified.
+- Current implementation details, exact ABI inventory and migration acceptance gates live in [`FLUTTER_DESKTOP_MIGRATION.md`](FLUTTER_DESKTOP_MIGRATION.md) and [`AI_HANDOFF.md`](AI_HANDOFF.md).
+
+---
+
+## Historical note — transport stabilization (2026-10-16)
+
+Earlier documentation recorded a Stop/playhead inconsistency as an active bug. The maintainer subsequently reported that the core Stop fix and regression test were in place. Do not treat the older note as proof of a current unresolved bug; re-check the latest tests and runtime evidence before changing its status. This historical note does not alter the Rust real-time safety rules.
