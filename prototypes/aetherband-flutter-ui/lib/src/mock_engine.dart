@@ -32,8 +32,10 @@ class MockEngineController implements EngineController {
   bool _playing = false;
   double _position = 0;
 
+  @override
   Stream<EngineTelemetry> get telemetry => _telemetry.stream;
 
+  @override
   Future<void> play() async {
     _playing = true;
     _timer ??= Timer.periodic(const Duration(milliseconds: 33), (_) {
@@ -43,6 +45,7 @@ class MockEngineController implements EngineController {
     _emit();
   }
 
+  @override
   Future<void> stop() async {
     _playing = false;
     _position = 0;
@@ -62,6 +65,7 @@ class MockEngineController implements EngineController {
     ));
   }
 
+  @override
   Future<void> dispose() async {
     _playing = false;
     _timer?.cancel();

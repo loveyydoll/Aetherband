@@ -109,14 +109,17 @@ class BrowserPanel extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8),
               children: [
                 for (final item in currentItems)
-                  ListTile(
-                    dense: true,
-                    visualDensity: const VisualDensity(vertical: -3),
-                    leading: Icon(_itemIcon(category), size: 16, color: AetherColors.sage),
-                    title: Text(item, style: const TextStyle(fontSize: 11)),
-                    onTap: () => onPresetSelected(item),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                  Material(
+                    color: Colors.transparent,
+                    child: ListTile(
+                      dense: true,
+                      visualDensity: const VisualDensity(vertical: -3),
+                      leading: Icon(_itemIcon(category), size: 16, color: AetherColors.sage),
+                      title: Text(item, style: const TextStyle(fontSize: 11)),
+                      onTap: () => onPresetSelected(item),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    ),
                   ),
               ],
             ),
@@ -194,7 +197,7 @@ class InstrumentDock extends StatelessWidget {
                   margin: const EdgeInsets.only(right: 12),
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(color: AetherColors.background, borderRadius: BorderRadius.circular(4)),
-                  child: const Text('MOCK ENGINE / NO AUDIO', style: TextStyle(color: AetherColors.secondaryText, fontSize: 8, letterSpacing: 0.6)),
+                  child: const Text('INSTRUMENT PREVIEW', style: TextStyle(color: AetherColors.secondaryText, fontSize: 8, letterSpacing: 0.6)),
                 ),
               ],
             ),
