@@ -106,7 +106,9 @@
 - **Consequences:**
   - Guarantees immediate host stability and zero licensing hurdles for the MVP.
   - Users get a complete, functional out-of-the-box production experience without requiring paid plugins.
-\n\n### ADR-008: Flutter Desktop UI via the Existing C ABI
+
+
+### ADR-008: Flutter Desktop UI via the Existing C ABI
 
 - **Status:** Approved by project owner
 - **Date:** 2026-10-17
