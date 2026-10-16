@@ -80,7 +80,9 @@ impl TrackPlayer {
 
         while written < frames {
             // Ensure we have a current block
-            if self.current_block.is_none() || self.block_cursor >= self.current_block.as_ref().unwrap().valid_frames {
+            if self.current_block.is_none()
+                || self.block_cursor >= self.current_block.as_ref().unwrap().valid_frames
+            {
                 match self.stream_consumer.pop() {
                     Ok(block) => {
                         let is_last = block.is_last;
@@ -195,7 +197,9 @@ impl TrackSlots {
 
     /// Returns a mutable reference to a track slot by ID.
     pub fn get_mut(&mut self, id: TrackId) -> Option<&mut TrackPlayer> {
-        self.slots.iter_mut().find_map(|s| s.as_deref_mut().filter(|p| p.id == id))
+        self.slots
+            .iter_mut()
+            .find_map(|s| s.as_deref_mut().filter(|p| p.id == id))
     }
 
     /// Iterates mutably over all active track players.
@@ -206,13 +210,16 @@ impl TrackSlots {
     /// Resets all tracks (Stop / Seek operations).
     pub fn reset_all(&mut self) {
         for slot in self.slots.iter_mut() {
-            if let Some(p) = slot.as_deref_mut() { p.reset(); }
+            if let Some(p) = slot.as_deref_mut() {
+                p.reset();
+            }
         }
     }
 
     /// Returns the longest `total_frames` across all tracks (timeline duration).
     pub fn timeline_duration(&self) -> i64 {
-        self.slots.iter()
+        self.slots
+            .iter()
             .filter_map(|s| s.as_ref())
             .map(|p| p.total_frames)
             .max()
@@ -227,7 +234,10 @@ mod tests {
 
     fn make_track(id: u32, frames: usize) -> (TrackPlayer, rtrb::Producer<DecodedBlock>) {
         let (producer, consumer) = create_stream_queue(8);
-        (TrackPlayer::new(TrackId(id), consumer, 1.0, frames as i64), producer)
+        (
+            TrackPlayer::new(TrackId(id), consumer, 1.0, frames as i64),
+            producer,
+        )
     }
 
     #[test]
@@ -256,13 +266,29 @@ mod tests {
     }
 
     #[test]
+    fn zero_frame_terminal_block_marks_track_finished() {
+        let (mut player, mut producer) = make_track(7, 0);
+        let mut terminal = DecodedBlock::silent(0);
+        terminal.is_last = true;
+        producer.push(terminal).unwrap();
+
+        let mut left = vec![0.0f32; 64];
+        let mut right = vec![0.0f32; 64];
+        player.mix_into(&mut left, &mut right, 64);
+
+        assert!(player.finished);
+        assert!(left.iter().all(|sample| *sample == 0.0));
+        assert!(right.iter().all(|sample| *sample == 0.0));
+    }
+
+    #[test]
     fn test_track_plays_block_data() {
         let (mut player, mut prod) = make_track(1, 512);
 
         // Push a block of known values
         let mut block = DecodedBlock::silent(128);
         for i in 0..128 {
-            block.samples[i * 2] = 0.5;     // Left
+            block.samples[i * 2] = 0.5; // Left
             block.samples[i * 2 + 1] = 0.5; // Right
         }
         block.is_last = true;

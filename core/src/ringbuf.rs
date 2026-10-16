@@ -3,8 +3,8 @@
 //! Provides wait-free, non-blocking communication between the UI control thread
 //! and the hard real-time audio thread.
 
-use rtrb::{Consumer, Producer, RingBuffer};
 use crate::track::TrackPlayer;
+use rtrb::{Consumer, Producer, RingBuffer};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Track identifier
@@ -46,10 +46,7 @@ pub enum EngineCommand {
 
     // --- Test tone (diagnostic) ---
     /// Enable or disable the diagnostic test tone oscillator.
-    SetTestTone {
-        enabled: bool,
-        frequency_hz: f32,
-    },
+    SetTestTone { enabled: bool, frequency_hz: f32 },
 
     // --- Track mixing ---
     /// Set per-track volume with de-zippering over ramp_frames.
@@ -59,10 +56,7 @@ pub enum EngineCommand {
         ramp_frames: usize,
     },
     /// Set per-track pan position (0.0 = full left, 0.5 = centre, 1.0 = full right).
-    SetTrackPan {
-        track_id: TrackId,
-        pan: f32,
-    },
+    SetTrackPan { track_id: TrackId, pan: f32 },
     /// Mute or unmute a track.
     MuteTrack {
         track_id: TrackId,
@@ -188,9 +182,7 @@ pub fn create_engine_queues(
 /// Creates a disk-stream SPSC ring buffer pair for a single track.
 ///
 /// `block_count` is the number of `DecodedBlock` slots in the ring.
-pub fn create_stream_queue(
-    block_count: usize,
-) -> (Producer<DecodedBlock>, Consumer<DecodedBlock>) {
+pub fn create_stream_queue(block_count: usize) -> (Producer<DecodedBlock>, Consumer<DecodedBlock>) {
     RingBuffer::new(block_count)
 }
 

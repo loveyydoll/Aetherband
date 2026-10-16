@@ -99,9 +99,7 @@ impl CpalBackend {
             .host
             .output_devices()
             .map_err(|e| DeviceError::StreamBuildError(e.to_string()))?;
-        devices
-            .nth(index)
-            .ok_or(DeviceError::DeviceNotFound(index))
+        devices.nth(index).ok_or(DeviceError::DeviceNotFound(index))
     }
 
     /// Queries the sample rate that will be used by the selected output.
@@ -111,7 +109,10 @@ impl CpalBackend {
     pub fn output_sample_rate(&self, device_index: Option<usize>) -> Result<u32, DeviceError> {
         let device = match device_index {
             Some(index) => self.get_device_by_index(index)?,
-            None => self.host.default_output_device().ok_or(DeviceError::NoDefaultDevice)?,
+            None => self
+                .host
+                .default_output_device()
+                .ok_or(DeviceError::NoDefaultDevice)?,
         };
         device
             .default_output_config()
@@ -227,7 +228,10 @@ mod tests {
         // Machine should have at least one audio output or zero in CI headless
         println!("Discovered {} audio output device(s)", list.len());
         for dev in list {
-            println!("  [{}] {} (default: {})", dev.index, dev.name, dev.is_default);
+            println!(
+                "  [{}] {} (default: {})",
+                dev.index, dev.name, dev.is_default
+            );
         }
     }
 }

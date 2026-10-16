@@ -38,11 +38,15 @@ pub enum EngineError {
 }
 
 impl From<DeviceError> for EngineError {
-    fn from(e: DeviceError) -> Self { EngineError::Device(e) }
+    fn from(e: DeviceError) -> Self {
+        EngineError::Device(e)
+    }
 }
 
 impl From<DecoderError> for EngineError {
-    fn from(e: DecoderError) -> Self { EngineError::Decoder(e) }
+    fn from(e: DecoderError) -> Self {
+        EngineError::Decoder(e)
+    }
 }
 
 impl std::fmt::Display for EngineError {
@@ -138,7 +142,9 @@ impl DAWEngine {
 
         let (ui_endpoints, audio_endpoints) = create_engine_queues(1024, 2048);
         let processor = AudioProcessor::new(sample_rate as f32, audio_endpoints);
-        let active_stream = self.backend.start_output_stream(Some(device_index), processor)?;
+        let active_stream = self
+            .backend
+            .start_output_stream(Some(device_index), processor)?;
 
         self.output_sample_rate = active_stream.sample_rate();
         self.ui_endpoints = ui_endpoints;
@@ -156,19 +162,31 @@ impl DAWEngine {
     // ── Transport controls ────────────────────────────────────────────────
 
     pub fn play(&mut self) -> bool {
-        self.ui_endpoints.cmd_producer.push(EngineCommand::Play).is_ok()
+        self.ui_endpoints
+            .cmd_producer
+            .push(EngineCommand::Play)
+            .is_ok()
     }
 
     pub fn pause(&mut self) -> bool {
-        self.ui_endpoints.cmd_producer.push(EngineCommand::Pause).is_ok()
+        self.ui_endpoints
+            .cmd_producer
+            .push(EngineCommand::Pause)
+            .is_ok()
     }
 
     pub fn stop(&mut self) -> bool {
-        self.ui_endpoints.cmd_producer.push(EngineCommand::Stop).is_ok()
+        self.ui_endpoints
+            .cmd_producer
+            .push(EngineCommand::Stop)
+            .is_ok()
     }
 
     pub fn seek(&mut self, frame: i64) -> bool {
-        self.ui_endpoints.cmd_producer.push(EngineCommand::Seek(frame)).is_ok()
+        self.ui_endpoints
+            .cmd_producer
+            .push(EngineCommand::Seek(frame))
+            .is_ok()
     }
 
     // ── Master ────────────────────────────────────────────────────────────
@@ -188,7 +206,10 @@ impl DAWEngine {
     pub fn set_test_tone(&mut self, enabled: bool, frequency_hz: f32) -> bool {
         self.ui_endpoints
             .cmd_producer
-            .push(EngineCommand::SetTestTone { enabled, frequency_hz })
+            .push(EngineCommand::SetTestTone {
+                enabled,
+                frequency_hz,
+            })
             .is_ok()
     }
 
@@ -238,7 +259,7 @@ impl DAWEngine {
         let player = Box::new(TrackPlayer::new(
             id,
             consumer,
-            0.8,           // initial gain
+            0.8, // initial gain
             output_frames,
         ));
 
@@ -255,7 +276,9 @@ impl DAWEngine {
         // The audio thread reconstructs the Box without moving out of it, so the
         // allocation remains owned by TrackSlots and is not freed in the callback.
         let raw = Box::into_raw(player) as usize;
-        if self.ui_endpoints.cmd_producer
+        if self
+            .ui_endpoints
+            .cmd_producer
             .push(EngineCommand::AddTrack { player_ptr: raw })
             .is_err()
         {
@@ -276,7 +299,9 @@ impl DAWEngine {
             if let Some(decoder) = self.decoders.remove(&id.0) {
                 decoder.stop();
             }
-            let _ = self.ui_endpoints.cmd_producer
+            let _ = self
+                .ui_endpoints
+                .cmd_producer
                 .push(EngineCommand::RemoveTrack { track_id: id });
             true
         } else {
@@ -292,25 +317,31 @@ impl DAWEngine {
     // ── Per-track mixing controls ─────────────────────────────────────────
 
     pub fn set_track_volume(&mut self, track_id: TrackId, gain: f32) -> bool {
-        self.ui_endpoints.cmd_producer.push(EngineCommand::SetTrackVolume {
-            track_id,
-            target_gain: gain.clamp(0.0, 2.0),
-            ramp_frames: 256,
-        }).is_ok()
+        self.ui_endpoints
+            .cmd_producer
+            .push(EngineCommand::SetTrackVolume {
+                track_id,
+                target_gain: gain.clamp(0.0, 2.0),
+                ramp_frames: 256,
+            })
+            .is_ok()
     }
 
     pub fn set_track_pan(&mut self, track_id: TrackId, pan: f32) -> bool {
-        self.ui_endpoints.cmd_producer.push(EngineCommand::SetTrackPan {
-            track_id,
-            pan: pan.clamp(0.0, 1.0),
-        }).is_ok()
+        self.ui_endpoints
+            .cmd_producer
+            .push(EngineCommand::SetTrackPan {
+                track_id,
+                pan: pan.clamp(0.0, 1.0),
+            })
+            .is_ok()
     }
 
     pub fn mute_track(&mut self, track_id: TrackId, muted: bool) -> bool {
-        self.ui_endpoints.cmd_producer.push(EngineCommand::MuteTrack {
-            track_id,
-            muted,
-        }).is_ok()
+        self.ui_endpoints
+            .cmd_producer
+            .push(EngineCommand::MuteTrack { track_id, muted })
+            .is_ok()
     }
 
     // ── Telemetry ─────────────────────────────────────────────────────────
