@@ -58,10 +58,7 @@ pub enum EngineCommand {
     /// Set per-track pan position (0.0 = full left, 0.5 = centre, 1.0 = full right).
     SetTrackPan { track_id: TrackId, pan: f32 },
     /// Mute or unmute a track.
-    MuteTrack {
-        track_id: TrackId,
-        muted: bool,
-    },
+    MuteTrack { track_id: TrackId, muted: bool },
 
     // --- Track lifecycle ---
     /// Install a new `TrackPlayer` on the audio thread.
