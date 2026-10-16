@@ -14,7 +14,7 @@ Aetherband bridges the gap between intuitive songwriting sketchpads and high-pre
 | **Native FFI** | **C99 ABI** + `csbindgen` | Flat C interface + auto-generated C# P/Invoke |
 | **Desktop UI** | **C# / .NET 10 LTS** + **Avalonia UI 11** | GPU-accelerated multi-track arranger, transport, meters |
 | **Audio I/O** | `cpal` | WASAPI (Windows) / CoreAudio (macOS) |
-| **Decoding** | `symphonia` | WAV, FLAC, MP3, OGG, AAC/M4A |
+| **Decoding** | `symphonia` | WAV tested; FLAC, MP3, OGG, AAC/M4A expected from decoder support but not yet verified end-to-end |
 | **Resampling** | `rubato` | High-quality sample-rate conversion |
 | **Concurrency** | `rtrb` | Wait-free SPSC ring buffers (UI ↔ audio thread) |
 | **License** | **GPLv3** | Open source |
@@ -27,7 +27,7 @@ The application is **not** written in a single language. The real-time critical 
 > ### Work in Progress (Early Alpha)
 > Aetherband is under active, rapid development and is currently in **early alpha**.
 > - APIs, project formats, and interfaces are evolving quickly and subject to breaking changes.
-> - Core audio playback and multi-track mixing are implemented. Transport Stop has been fixed in the core (decoder restart + regression test) and needs runtime confirmation on hardware.
+> - Core audio playback and multi-track mixing are implemented. Transport Stop has been fixed in the core (decoder restart + regression test); keep hardware/runtime verification status explicit.
 > - Advanced features (MIDI recording, plugin hosting, automation, and project saving) are still in development.
 > - **Not recommended for production work yet.** Use it to test, experiment, and contribute!
 
@@ -38,7 +38,7 @@ The application is **not** written in a single language. The real-time critical 
 If you download and run Aetherband today, here is an honest, plain-English breakdown of what is working versus what is still being built:
 
 ### What You Can Do Right Now:
-- **Import Multiple Audio Files:** Load common audio file formats (**WAV, FLAC, MP3, OGG, AAC/M4A**) onto separate tracks by clicking `+ Add Audio Track`.
+- **Import Audio Files:** WAV playback has been tested. FLAC, MP3, OGG, and AAC/M4A may work through the existing `symphonia` decoding pipeline, but have not yet been verified end-to-end.
 - **Automatic Format & Sample Rate Conversion:** Mix audio files of different sample rates (e.g. 44.1 kHz, 48 kHz, 96 kHz) together—the engine resamples them seamlessly in the background.
 - **Multi-Track Playback:** Play, pause, and stop playback of all loaded tracks simultaneously in sync.
 - **Track Mixing Controls:**
@@ -62,11 +62,11 @@ If you download and run Aetherband today, here is an honest, plain-English break
 
 ## Current Milestone: Stabilization Gate (Phases 1–3)
 
-The core engine, file playback, multi-track mixing, native interop, and initial timeline UI are implemented. Transport Stop has been fixed at the engine level (see issue #5): on Stop the audio thread silences output and resets the playhead, and the control thread restarts every track’s StreamDecoder so the next Play begins at the start of the file. A regression test asserts silence + playhead zero after Stop.
+The core engine, file playback, multi-track mixing, native interop, and initial timeline UI are implemented. Transport Stop has been fixed at the engine level (see issue #5): on Stop the audio thread silences output and resets the playhead, and the control thread restarts every track’s StreamDecoder so the next Play begins at the start of the file. A regression test asserts silence + playhead zero after Stop. Runtime/hardware verification should be reported separately from automated test coverage.
 
 - [x] **Zero-Allocation Audio Thread:** Hardware callback loop executing on dedicated OS audio thread with guaranteed zero heap allocations.
 - [x] **Hardware Audio Driver Support:** Low-latency device discovery and output stream management via `cpal` (WASAPI on Windows, CoreAudio on macOS).
-- [x] **Background Disk Streaming & Decoding:** Non-blocking file decoding worker utilizing `symphonia` supporting **WAV, FLAC, MP3, OGG, and AAC/M4A**.
+- [x] **Background Disk Streaming & Decoding:** Non-blocking file decoding worker utilizing `symphonia`. WAV playback has been tested; FLAC, MP3, OGG, and AAC/M4A are expected candidates based on decoder support but remain unverified end-to-end.
 - [x] **Real-Time Sample Rate Conversion:** High-fidelity sinc/FFT resampling powered by `rubato`.
 - [x] **64-Track Summing Mixer:** Real-time multi-track engine featuring Equal-Power stereo panning law and 256-sample de-zippering gain ramping.
 - [x] **Lock-Free Concurrency:** Single-Producer Single-Consumer (SPSC) ring buffers (`rtrb`) for wait-free UI ⇄ Audio communications.
@@ -180,7 +180,7 @@ cargo test -p daw_core --tests
 | **1** | Real-Time Audio Core Foundation & Hardware I/O | ✅ Complete |
 | **2** | Audio File Playback & Background Disk Streaming | 🧪 Implemented; runtime gate open |
 | **3** | Multi-Track Mixer & Interactive Timeline UI | 🧪 Implemented; runtime gate open |
-| **3.5** | Transport/lifecycle stabilization and regression tests | 🚧 Current priority (Stop fixed in core) |
+| **3.5** | Transport/lifecycle stabilization and regression tests | 🧪 Mostly implemented; confirm current CI/runtime evidence |
 | **4** | Audio Recording, waveform peaks, project persistence & export | ⏳ Planned |
 | **5** | MIDI Engine, Piano Roll & Virtual Instruments | 📅 Planned |
 | **6** | Mixer Routing, Effects Engine & Plugin Hosting | 📅 Planned |

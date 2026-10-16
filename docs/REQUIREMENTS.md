@@ -7,13 +7,13 @@
 - **FR-1.2 (P0): Stream Lifecycle Management:** The engine must reliably open, start, pause, stop, and close audio streams without crashing or leaving devices in a locked state.
 - **FR-1.3 (P0): Device Disconnection Handling:** When an active audio output device is unplugged or switched by the OS, the engine must safely pause playback and notify the UI without crashing.
 - **FR-1.4 (P0): Real-Time Test Signal Generation:** The engine must provide an internal pure Sine Wave oscillator with adjustable frequency (20 Hz – 20 kHz) and amplitude (-60 dB to 0 dB) for pipeline verification.
-- **FR-1.5 (P1): Audio File Decoding & Streaming:** The engine must decode and stream uncompressed (WAV, AIFF) and compressed (FLAC, MP3) audio files from disk through an asynchronous ring-buffer.
+- **FR-1.5 (P1): Audio File Decoding & Streaming:** The engine must decode and stream audio files from disk through an asynchronous ring-buffer. WAV playback has been tested; FLAC, MP3, AIFF, OGG, and AAC/M4A are candidates based on the decoding stack and must be confirmed against the implemented decoder configuration and end-to-end tests.
 - **FR-1.6 (P1): Multi-Track Summing & Panning:** The engine must sum multiple simultaneous audio tracks into a master stereo bus using standard pan laws (Equal Power -3 dB).
 - **FR-1.7 (P2): Audio Recording:** The engine must record incoming audio from an input device, writing uncompressed 24-bit/32-bit float WAV data to disk on a background thread.
 - **FR-1.8 (P2): Sample-Rate Conversion:** The engine must dynamically resample audio assets matching the active hardware output rate using high-quality sinc interpolation.
 
 ### 1.2 Transport & Timeline
-- **FR-2.1 (P0): Transport Controls:** Play, Pause, Stop and Seek must produce immediate, observable engine behavior. Stop must silence the output, reset the playhead and allow a subsequent Play to restart from the beginning. This is currently a stabilization acceptance criterion; a reported Stop regression remains open.
+- **FR-2.1 (P0): Transport Controls:** Play, Pause, Stop and Seek must produce immediate, observable engine behavior. Stop must silence the output, reset the playhead and allow a subsequent Play to restart from the beginning. The Stop fix is reported complete; keep acceptance/verification evidence current and do not describe the original regression as active unless reproduced.
 - **FR-2.2 (P1): Timeline & Musical Grid:** Support sample-accurate playhead tracking, beats-per-minute (BPM) tempo configuration, and musical time signatures (e.g., 4/4, 3/4).
 - **FR-2.3 (P1): Clip Arrangement:** Support placing, moving, splitting, trimming, and looping audio clips on discrete tracks.
 
