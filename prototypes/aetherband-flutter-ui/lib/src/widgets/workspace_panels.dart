@@ -194,7 +194,7 @@ class InstrumentDock extends StatelessWidget {
                   margin: const EdgeInsets.only(right: 12),
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(color: AetherColors.background, borderRadius: BorderRadius.circular(4)),
-                  child: const Text('MOCK ENGINE / NO AUDIO', style: TextStyle(color: AetherColors.secondaryText, fontSize: 8, letterSpacing: 0.6)),
+                  child: const Text('INSTRUMENT PREVIEW', style: TextStyle(color: AetherColors.secondaryText, fontSize: 8, letterSpacing: 0.6)),
                 ),
               ],
             ),
