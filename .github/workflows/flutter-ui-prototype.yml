@@ -1,0 +1,57 @@
+name: Flutter UI prototype
+
+on:
+  pull_request:
+    paths:
+      - 'prototypes/aetherband-flutter-ui/**'
+      - '.github/workflows/flutter-ui-prototype.yml'
+  push:
+    branches:
+      - 'prototype/flutter-ui'
+    paths:
+      - 'prototypes/aetherband-flutter-ui/**'
+      - '.github/workflows/flutter-ui-prototype.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Flutter checks (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: prototypes/aetherband-flutter-ui
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate desktop runners for the CI host
+        run: flutter create --platforms=windows,macos .
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze Dart code
+        run: flutter analyze
+
+      - name: Run widget tests
+        run: flutter test
+
+      - name: Build Windows desktop
+        if: runner.os == 'Windows'
+        run: flutter build windows --debug
+
+      - name: Build macOS desktop
+        if: runner.os == 'macOS'
+        run: flutter build macos --debug
