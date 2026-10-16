@@ -21,14 +21,13 @@ else
   echo "WARNING: Desktop .csproj not found; .NET build skipped." >&2
 fi
 
-mapfile -t TEST_PROJECTS < <(find "$ROOT" -type f -name "*Tests.csproj" -not -path "*/bin/*" -not -path "*/obj/*" | sort)
-if ((${#TEST_PROJECTS[@]})); then
-  for project in "${TEST_PROJECTS[@]}"; do
+TEST_PROJECT_COUNT="$(find "$ROOT" -type f -name "*Tests.csproj" -not -path "*/bin/*" -not -path "*/obj/*" | wc -l | tr -d ' ')"
+if [[ "$TEST_PROJECT_COUNT" -gt 0 ]]; then
+  while IFS= read -r project; do
     echo "== .NET tests: $project =="
     dotnet test "$project" --configuration Debug
-  done
+  done < <(find "$ROOT" -type f -name "*Tests.csproj" -not -path "*/bin/*" -not -path "*/obj/*" | sort)
 else
   echo "No *Tests.csproj projects found; .NET test step skipped."
 fi
-
 echo "Verification commands completed successfully."
