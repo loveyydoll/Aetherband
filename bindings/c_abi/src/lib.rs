@@ -38,6 +38,7 @@ pub struct DAWMeteringFrame {
     pub rms_left: f32,
     pub rms_right: f32,
     pub playhead_frame: i64,
+    pub total_duration_frames: i64,
     pub is_playing: u8,
     pub device_error_flag: u8,
 }
@@ -50,6 +51,7 @@ impl From<TelemetryFrame> for DAWMeteringFrame {
             rms_left: f.rms_left,
             rms_right: f.rms_right,
             playhead_frame: f.playhead_frame,
+            total_duration_frames: f.total_duration_frames,
             is_playing: if f.is_playing { 1 } else { 0 },
             device_error_flag: f.device_error_flag,
         }
@@ -277,6 +279,118 @@ pub unsafe extern "C" fn daw_engine_select_device(engine: *mut DAWEngine, index:
             Ok(()) => 0,
             Err(_) => -2,
         }
+    } else {
+        -1
+    }
+}
+
+// ── Multi-track playback and mixing FFI ───────────────────────────────────────
+
+/// Loads an audio file into a new track, spawning a background stream decoder.
+///
+/// On success, writes the allocated track ID to `out_track_id` and returns 0.
+/// Returns negative error code on failure.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_load_track(
+    engine: *mut DAWEngine,
+    path_utf8: *const c_char,
+    out_track_id: *mut u32,
+) -> i32 {
+    if engine.is_null() || path_utf8.is_null() || out_track_id.is_null() {
+        return -1;
+    }
+
+    let c_str = match std::ffi::CStr::from_ptr(path_utf8).to_str() {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+
+    if let Some(eng) = to_core_mut(engine) {
+        match eng.load_track(std::path::Path::new(c_str)) {
+            Ok(track_id) => {
+                *out_track_id = track_id.0;
+                0
+            }
+            Err(_) => -2,
+        }
+    } else {
+        -1
+    }
+}
+
+/// Removes a track by ID.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_remove_track(engine: *mut DAWEngine, track_id: u32) -> i32 {
+    if let Some(eng) = to_core_mut(engine) {
+        if eng.remove_track(daw_core::ringbuf::TrackId(track_id)) {
+            0
+        } else {
+            -4 // Track not found
+        }
+    } else {
+        -1
+    }
+}
+
+/// Sets track volume (linear gain).
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_set_track_volume(
+    engine: *mut DAWEngine,
+    track_id: u32,
+    gain: f32,
+) -> i32 {
+    if let Some(eng) = to_core_mut(engine) {
+        if eng.set_track_volume(daw_core::ringbuf::TrackId(track_id), gain) {
+            0
+        } else {
+            -3
+        }
+    } else {
+        -1
+    }
+}
+
+/// Sets track pan position (0.0 = full left, 0.5 = center, 1.0 = full right).
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_set_track_pan(
+    engine: *mut DAWEngine,
+    track_id: u32,
+    pan: f32,
+) -> i32 {
+    if let Some(eng) = to_core_mut(engine) {
+        if eng.set_track_pan(daw_core::ringbuf::TrackId(track_id), pan) {
+            0
+        } else {
+            -3
+        }
+    } else {
+        -1
+    }
+}
+
+/// Mutes or unmutes a track.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_mute_track(
+    engine: *mut DAWEngine,
+    track_id: u32,
+    muted: u8,
+) -> i32 {
+    if let Some(eng) = to_core_mut(engine) {
+        if eng.mute_track(daw_core::ringbuf::TrackId(track_id), muted != 0) {
+            0
+        } else {
+            -3
+        }
+    } else {
+        -1
+    }
+}
+
+/// Queries the number of active loaded tracks.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_get_track_count(engine: *mut DAWEngine) -> i32 {
+    if let Some(eng) = to_core_ref(engine) {
+        eng.tracks().len() as i32
     } else {
         -1
     }

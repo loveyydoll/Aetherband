@@ -94,6 +94,45 @@ namespace RouletteStudio.Desktop.Native
         [DllImport(__DllName, EntryPoint = "daw_engine_select_device", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         internal static extern int daw_engine_select_device(DAWEngine* engine, uint index);
 
+        /// <summary>
+        ///  Loads an audio file into a new track, spawning a background stream decoder.
+        ///
+        ///  On success, writes the allocated track ID to `out_track_id` and returns 0.
+        ///  Returns negative error code on failure.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "daw_engine_load_track", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern int daw_engine_load_track(DAWEngine* engine, byte* path_utf8, uint* out_track_id);
+
+        /// <summary>
+        ///  Removes a track by ID.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "daw_engine_remove_track", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern int daw_engine_remove_track(DAWEngine* engine, uint track_id);
+
+        /// <summary>
+        ///  Sets track volume (linear gain).
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "daw_engine_set_track_volume", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern int daw_engine_set_track_volume(DAWEngine* engine, uint track_id, float gain);
+
+        /// <summary>
+        ///  Sets track pan position (0.0 = full left, 0.5 = center, 1.0 = full right).
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "daw_engine_set_track_pan", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern int daw_engine_set_track_pan(DAWEngine* engine, uint track_id, float pan);
+
+        /// <summary>
+        ///  Mutes or unmutes a track.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "daw_engine_mute_track", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern int daw_engine_mute_track(DAWEngine* engine, uint track_id, byte muted);
+
+        /// <summary>
+        ///  Queries the number of active loaded tracks.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "daw_engine_get_track_count", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern int daw_engine_get_track_count(DAWEngine* engine);
+
 
     }
 
@@ -117,6 +156,7 @@ namespace RouletteStudio.Desktop.Native
         public float rms_left;
         public float rms_right;
         public long playhead_frame;
+        public long total_duration_frames;
         public byte is_playing;
         public byte device_error_flag;
     }

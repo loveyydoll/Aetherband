@@ -11,5 +11,19 @@ rtrb = "0.3"
 thiserror = "2.0"
 log = "0.4"
 
+# Audio decoding: pure Rust, memory-safe, no C dependencies
+symphonia = { version = "0.5", features = [
+    "mp3",    # MPEG Layer 3
+    "aac",    # AAC
+    "flac",   # Free Lossless Audio Codec
+    "pcm",    # WAV / AIFF uncompressed PCM
+    "ogg",    # OGG container
+    "vorbis", # Ogg Vorbis
+    "isomp4", # M4A / AAC in MPEG-4 container
+] }
+
+# High-quality sample-rate conversion (non-realtime worker thread only)
+rubato = "0.15"
+
 [dev-dependencies]
 assert_no_alloc = "1.1"

@@ -22,6 +22,12 @@ fn test_audio_callback_zero_allocations() {
     // Prime the processor
     ui.cmd_producer.push(EngineCommand::Play).unwrap();
     ui.cmd_producer
+        .push(EngineCommand::SetTestTone {
+            enabled: true,
+            frequency_hz: 440.0,
+        })
+        .unwrap();
+    ui.cmd_producer
         .push(EngineCommand::SetMasterVolume {
             target_gain: 0.8,
             ramp_frames: 256,

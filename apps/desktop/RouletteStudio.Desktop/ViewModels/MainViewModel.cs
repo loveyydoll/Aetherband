@@ -40,7 +40,16 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     private long _playheadFrames;
 
     [ObservableProperty]
+    private long _totalDurationFrames;
+
+    [ObservableProperty]
     private string _playheadTimeText = "00:00.00";
+
+    [ObservableProperty]
+    private string _durationTimeText = "00:00.00";
+
+    [ObservableProperty]
+    private double _timelineProgress;
 
     [ObservableProperty]
     private ObservableCollection<AudioDeviceItem> _devices = new();
@@ -49,10 +58,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     private AudioDeviceItem? _selectedDevice;
 
     [ObservableProperty]
-    private bool _testToneEnabled = true;
+    private bool _testToneEnabled = false;
 
     [ObservableProperty]
     private float _toneFrequency = 440f;
+
+    [ObservableProperty]
+    private ObservableCollection<TrackViewModel> _tracks = new();
 
     public MainViewModel()
     {
@@ -150,6 +162,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         IsPlaying = false;
         PlayheadFrames = 0;
         PlayheadTimeText = "00:00.00";
+        TimelineProgress = 0;
     }
 
     [RelayCommand]
@@ -159,6 +172,38 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         {
             ToneFrequency = f;
         }
+    }
+
+    public void AddTrackFromFile(string path)
+    {
+        if (!_audioService.IsInitialized) return;
+
+        if (_audioService.LoadTrack(path, out uint trackId))
+        {
+            string fileName = System.IO.Path.GetFileName(path);
+            var trackVm = new TrackViewModel(
+                trackId,
+                fileName,
+                path,
+                (id, gain) => _audioService.SetTrackVolume(id, gain),
+                (id, pan) => _audioService.SetTrackPan(id, pan),
+                (id, muted) => _audioService.MuteTrack(id, muted),
+                vm => RemoveTrack(vm)
+            );
+            Tracks.Add(trackVm);
+            StatusText = $"Loaded track: {fileName}";
+        }
+        else
+        {
+            StatusText = $"Failed to load audio file: {System.IO.Path.GetFileName(path)}";
+        }
+    }
+
+    private void RemoveTrack(TrackViewModel vm)
+    {
+        _audioService.RemoveTrack(vm.Id);
+        Tracks.Remove(vm);
+        StatusText = $"Removed track: {vm.Name}";
     }
 
     private void OnMeterTick(object? sender, EventArgs e)
@@ -171,12 +216,27 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             RmsLeft = Math.Clamp(state.RmsLeft, 0f, 1f);
             RmsRight = Math.Clamp(state.RmsRight, 0f, 1f);
             PlayheadFrames = state.PlayheadFrame;
+            TotalDurationFrames = state.TotalDurationFrames;
 
             // Calculate standard mm:ss.ms time display at 48kHz
             double seconds = state.PlayheadFrame / 48000.0;
             int mins = (int)(seconds / 60);
             double secs = seconds % 60;
             PlayheadTimeText = $"{mins:D2}:{secs:00.00}";
+
+            // Total duration display
+            if (state.TotalDurationFrames > 0)
+            {
+                double totalSeconds = state.TotalDurationFrames / 48000.0;
+                int totalMins = (int)(totalSeconds / 60);
+                double totalSecs = totalSeconds % 60;
+                DurationTimeText = $"{totalMins:D2}:{totalSecs:00.00}";
+                TimelineProgress = Math.Clamp((double)state.PlayheadFrame / state.TotalDurationFrames, 0.0, 1.0);
+            }
+            else
+            {
+                TimelineProgress = 0.0;
+            }
         }
         else if (!IsPlaying)
         {

@@ -7,7 +7,7 @@ namespace RouletteStudio.Desktop.Services
 {
     public record AudioDeviceItem(uint Index, string Name, uint SampleRate, ushort Channels, bool IsDefault);
 
-    public record MeteringState(float PeakLeft, float PeakRight, float RmsLeft, float RmsRight, long PlayheadFrame, bool IsPlaying);
+    public record MeteringState(float PeakLeft, float PeakRight, float RmsLeft, float RmsRight, long PlayheadFrame, long TotalDurationFrames, bool IsPlaying);
 
     /// <summary>
     /// Safe, high-level C# service wrapping the native Rust audio engine.
@@ -61,9 +61,58 @@ namespace RouletteStudio.Desktop.Services
                 NativeMethods.daw_engine_set_test_tone(_engine, enabled ? (byte)1 : (byte)0, freqHz);
         }
 
+        public bool LoadTrack(string filePath, out uint trackId)
+        {
+            trackId = 0;
+            if (_engine == null) return false;
+
+            byte[] utf8Bytes = System.Text.Encoding.UTF8.GetBytes(filePath + "\0");
+            fixed (byte* pathPtr = utf8Bytes)
+            {
+                uint id = 0;
+                int res = NativeMethods.daw_engine_load_track(_engine, pathPtr, &id);
+                if (res == 0)
+                {
+                    trackId = id;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public bool RemoveTrack(uint trackId)
+        {
+            if (_engine == null) return false;
+            return NativeMethods.daw_engine_remove_track(_engine, trackId) == 0;
+        }
+
+        public void SetTrackVolume(uint trackId, float gain)
+        {
+            if (_engine != null)
+                NativeMethods.daw_engine_set_track_volume(_engine, trackId, gain);
+        }
+
+        public void SetTrackPan(uint trackId, float pan)
+        {
+            if (_engine != null)
+                NativeMethods.daw_engine_set_track_pan(_engine, trackId, pan);
+        }
+
+        public void MuteTrack(uint trackId, bool muted)
+        {
+            if (_engine != null)
+                NativeMethods.daw_engine_mute_track(_engine, trackId, muted ? (byte)1 : (byte)0);
+        }
+
+        public int GetTrackCount()
+        {
+            if (_engine == null) return 0;
+            return NativeMethods.daw_engine_get_track_count(_engine);
+        }
+
         public bool PollTelemetry(out MeteringState state)
         {
-            state = new MeteringState(0, 0, 0, 0, 0, false);
+            state = new MeteringState(0, 0, 0, 0, 0, 0, false);
             if (_engine == null) return false;
 
             DAWMeteringFrame frame;
@@ -76,6 +125,7 @@ namespace RouletteStudio.Desktop.Services
                     frame.rms_left,
                     frame.rms_right,
                     frame.playhead_frame,
+                    frame.total_duration_frames,
                     frame.is_playing != 0
                 );
                 return true;

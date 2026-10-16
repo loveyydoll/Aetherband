@@ -5,28 +5,84 @@
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Track identifier
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Unique identifier for an audio track, stable across the entire session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TrackId(pub u32);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Commands (UI/Control thread → Audio thread)
+// ─────────────────────────────────────────────────────────────────────────────
+
 /// Commands sent from the UI/Control thread to the real-time Audio thread.
-#[derive(Debug, Clone, Copy, PartialEq)]
+///
+/// # Note on derives
+/// This enum cannot be `Copy` or `Clone` because `AddTrack` carries a raw
+/// pointer (a `Box<TrackPlayer>` smuggled as `usize`). Cloning that value
+/// would create two owners of the same heap block and cause a double-free.
+/// We implement `Debug` manually for the pointer-carrying variants.
+#[derive(Debug)]
 pub enum EngineCommand {
+    // --- Transport ---
     /// Start audio playback.
     Play,
-    /// Pause audio playback.
+    /// Pause audio playback without resetting the playhead.
     Pause,
     /// Stop audio playback and rewind playhead to 0.
     Stop,
-    /// Seek playhead to sample index.
+    /// Seek playhead to an absolute sample index.
     Seek(i64),
+
+    // --- Master ---
     /// Set master volume target gain with de-zippering frame duration.
     SetMasterVolume {
         target_gain: f32,
         ramp_frames: usize,
     },
+
+    // --- Test tone (diagnostic) ---
     /// Enable or disable the diagnostic test tone oscillator.
     SetTestTone {
         enabled: bool,
         frequency_hz: f32,
     },
+
+    // --- Track mixing ---
+    /// Set per-track volume with de-zippering over ramp_frames.
+    SetTrackVolume {
+        track_id: TrackId,
+        target_gain: f32,
+        ramp_frames: usize,
+    },
+    /// Set per-track pan position (0.0 = full left, 0.5 = centre, 1.0 = full right).
+    SetTrackPan {
+        track_id: TrackId,
+        pan: f32,
+    },
+    /// Mute or unmute a track.
+    MuteTrack {
+        track_id: TrackId,
+        muted: bool,
+    },
+
+    // --- Track lifecycle ---
+    /// Install a new `TrackPlayer` on the audio thread.
+    ///
+    /// `player_ptr` is a `Box<TrackPlayer>` cast to `usize` via `Box::into_raw`.
+    /// The audio thread is the **sole** receiver and immediately re-boxes it with
+    /// `Box::from_raw`. No aliasing occurs. This is documented in ADR-004.
+    AddTrack { player_ptr: usize },
+
+    /// Remove a track from the audio thread by ID.
+    RemoveTrack { track_id: TrackId },
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Telemetry (Audio thread → UI/Control thread)
+// ─────────────────────────────────────────────────────────────────────────────
 
 /// Telemetry and metering frame sent from the real-time Audio thread to the UI thread.
 #[repr(C)]
@@ -42,19 +98,57 @@ pub struct TelemetryFrame {
     pub rms_right: f32,
     /// Current playhead position in absolute audio samples.
     pub playhead_frame: i64,
+    /// Total length of the longest track in samples (0 if no tracks loaded).
+    pub total_duration_frames: i64,
     /// Whether the transport is currently playing.
     pub is_playing: bool,
     /// Non-zero if an audio device error occurred.
     pub device_error_flag: u8,
 }
 
-/// Pair of producers for sending commands to the audio thread and receiving telemetry from it.
+// ─────────────────────────────────────────────────────────────────────────────
+// Disk-stream buffer shared between decoder worker and audio thread
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A pre-decoded stereo audio block ready to be consumed by the audio thread.
+///
+/// Carries exactly `capacity` stereo frames stored as **interleaved** L/R samples
+/// in a heap-allocated backing buffer that is allocated **once** at startup.
+#[derive(Clone)]
+pub struct DecodedBlock {
+    /// Interleaved stereo samples [L0, R0, L1, R1, …]
+    pub samples: Vec<f32>,
+    /// The playhead position (in samples) of the first frame in this block.
+    pub start_frame: i64,
+    /// Actual number of valid stereo frames in `samples` (may be < capacity on EOF).
+    pub valid_frames: usize,
+    /// True when this block contains the final frames of the file.
+    pub is_last: bool,
+}
+
+impl DecodedBlock {
+    /// Creates a silent block with capacity for `frames` stereo frames.
+    pub fn silent(frames: usize) -> Self {
+        Self {
+            samples: vec![0.0f32; frames * 2],
+            start_frame: 0,
+            valid_frames: frames,
+            is_last: false,
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Endpoint bundles
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// UI-thread side of the engine communication queues.
 pub struct UIEndpoints {
     pub cmd_producer: Producer<EngineCommand>,
     pub telemetry_consumer: Consumer<TelemetryFrame>,
 }
 
-/// Pair of consumers/producers used exclusively on the real-time audio thread.
+/// Audio-thread side of the engine communication queues.
 pub struct AudioEndpoints {
     pub cmd_consumer: Consumer<EngineCommand>,
     pub telemetry_producer: Producer<TelemetryFrame>,
@@ -80,6 +174,19 @@ pub fn create_engine_queues(
     )
 }
 
+/// Creates a disk-stream SPSC ring buffer pair for a single track.
+///
+/// `block_count` is the number of `DecodedBlock` slots in the ring.
+pub fn create_stream_queue(
+    block_count: usize,
+) -> (Producer<DecodedBlock>, Consumer<DecodedBlock>) {
+    RingBuffer::new(block_count)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests
+// ─────────────────────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,7 +200,7 @@ mod tests {
 
         // Audio pops command
         let cmd = audio.cmd_consumer.pop();
-        assert_eq!(cmd, Ok(EngineCommand::Play));
+        assert!(matches!(cmd, Ok(EngineCommand::Play)));
 
         // Audio pushes telemetry
         let frame = TelemetryFrame {
@@ -108,5 +215,14 @@ mod tests {
         // UI pops telemetry
         let received = ui.telemetry_consumer.pop();
         assert_eq!(received, Ok(frame));
+    }
+
+    #[test]
+    fn test_track_id_equality() {
+        let a = TrackId(1);
+        let b = TrackId(1);
+        let c = TrackId(2);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
     }
 }

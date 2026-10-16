@@ -74,75 +74,97 @@
             </Grid>
         </Border>
 
-        <!-- MAIN STAGE -->
-        <Grid Grid.Row="1" ColumnDefinitions="*,260" Margin="20">
-            <!-- LEFT: PROVING GROUND WORKBENCH -->
-            <Border Grid.Column="0" Background="#1A1A20" CornerRadius="10" BorderBrush="#2A2A34" BorderThickness="1" Padding="24" Margin="0,0,16,0">
+        <!-- MAIN STAGE: TRACKS & TIMELINE + MASTER STRIP -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,260" Margin="16">
+            <!-- LEFT: MULTI-TRACK ARRANGER & TIMELINE -->
+            <Border Grid.Column="0" Background="#18181E" CornerRadius="8" BorderBrush="#2A2A34" BorderThickness="1" Margin="0,0,14,0" ClipToBounds="True">
                 <Grid RowDefinitions="Auto,Auto,*">
-                    <!-- WORKBENCH HEADER -->
-                    <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,20">
-                        <TextBlock Text="Phase 1: Real-Time Engine Proving Ground" FontSize="18" FontWeight="Bold" Foreground="#F4F4F5" />
-                        <TextBlock Text="Zero-allocation audio callback loop running on native OS thread via lock-free SPSC queues." FontSize="13" Foreground="#A1A1AA" />
-                    </StackPanel>
-
-                    <!-- TEST TONE GENERATOR CARD -->
-                    <Border Grid.Row="1" Background="#141418" CornerRadius="8" Padding="18" BorderBrush="#2D2D38" BorderThickness="1">
-                        <StackPanel Spacing="16">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="Diagnostic Test Tone Generator" FontWeight="Bold" FontSize="15" Foreground="#F4F4F5" />
-                                    <TextBlock Text="Pure sine wave oscillator processed entirely in Rust" FontSize="12" Foreground="#71717A" />
-                                </StackPanel>
-                                <ToggleSwitch Grid.Column="1" IsChecked="{Binding TestToneEnabled}" OnContent="Active" OffContent="Muted" />
-                            </Grid>
-
-                            <Separator Background="#2A2A34" Height="1" />
-
-                            <!-- FREQUENCY CONTROLS -->
-                            <StackPanel Spacing="8">
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <TextBlock Text="Oscillator Frequency" FontSize="13" Foreground="#D4D4D8" />
-                                    <TextBlock Grid.Column="1" Text="{Binding ToneFrequency, StringFormat={}{0:F0} Hz}" FontWeight="Bold" Foreground="#38BDF8" />
-                                </Grid>
-                                <Slider Minimum="55" Maximum="1760" Value="{Binding ToneFrequency}" />
-
-                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
-                                    <Button Content="A2 (110 Hz)" Command="{Binding SetFrequencyCommand}" CommandParameter="110" />
-                                    <Button Content="A3 (220 Hz)" Command="{Binding SetFrequencyCommand}" CommandParameter="220" />
-                                    <Button Content="A4 (440 Hz)" Command="{Binding SetFrequencyCommand}" CommandParameter="440" />
-                                    <Button Content="A5 (880 Hz)" Command="{Binding SetFrequencyCommand}" CommandParameter="880" />
-                                    <Button Content="1 kHz" Command="{Binding SetFrequencyCommand}" CommandParameter="1000" />
-                                </StackPanel>
+                    <!-- ARRANGER HEADER & TOOLBAR -->
+                    <Border Grid.Row="0" Background="#141418" BorderBrush="#25252E" BorderThickness="0,0,0,1" Padding="14,10">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <Button Content="+ Add Audio Track" Click="OnAddTrackClicked" 
+                                        Background="#2563EB" Foreground="#FFFFFF" FontWeight="SemiBold"
+                                        Padding="12,6" CornerRadius="6" />
+                                <TextBlock Text="{Binding Tracks.Count, StringFormat={}{0} Tracks}" 
+                                           VerticalAlignment="Center" FontSize="12" Foreground="#71717A" />
                             </StackPanel>
-                        </StackPanel>
+
+                            <!-- TIMELINE TIME RANGE / POSITION -->
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <TextBlock Text="Position:" FontSize="11" Foreground="#71717A" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding PlayheadTimeText}" FontFamily="Consolas, monospace" FontSize="12" FontWeight="Bold" Foreground="#38BDF8" VerticalAlignment="Center" />
+                                <TextBlock Text="/" FontSize="11" Foreground="#52525B" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding DurationTimeText}" FontFamily="Consolas, monospace" FontSize="12" Foreground="#A1A1AA" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Grid>
                     </Border>
 
-                    <!-- REAL-TIME GUARANTEES DISPLAY -->
-                    <StackPanel Grid.Row="2" VerticalAlignment="Bottom" Spacing="8" Margin="0,20,0,0">
-                        <TextBlock Text="SYSTEM STATUS &amp; REAL-TIME SAFETY" FontSize="11" FontWeight="Bold" LetterSpacing="1" Foreground="#71717A" />
-                        <Grid ColumnDefinitions="*,*,*" Margin="0,4,0,0">
-                            <Border Grid.Column="0" Background="#141418" Padding="12" CornerRadius="6" Margin="0,0,6,0">
-                                <StackPanel Spacing="2">
-                                    <TextBlock Text="HEAP ALLOCATIONS" FontSize="10" Foreground="#71717A" />
-                                    <TextBlock Text="ZERO (0)" FontWeight="Bold" FontSize="14" Foreground="#4ADE80" />
-                                </StackPanel>
-                            </Border>
-
-                            <Border Grid.Column="1" Background="#141418" Padding="12" CornerRadius="6" Margin="3,0,3,0">
-                                <StackPanel Spacing="2">
-                                    <TextBlock Text="THREAD LOCKS" FontSize="10" Foreground="#71717A" />
-                                    <TextBlock Text="WAIT-FREE (SPSC)" FontWeight="Bold" FontSize="14" Foreground="#38BDF8" />
-                                </StackPanel>
-                            </Border>
-
-                            <Border Grid.Column="2" Background="#141418" Padding="12" CornerRadius="6" Margin="6,0,0,0">
-                                <StackPanel Spacing="2">
-                                    <TextBlock Text="TELEMETRY RATE" FontSize="10" Foreground="#71717A" />
-                                    <TextBlock Text="60 FPS (16 ms)" FontWeight="Bold" FontSize="14" Foreground="#FACC15" />
-                                </StackPanel>
-                            </Border>
+                    <!-- SCRUBBER / TIMELINE RULER BAR -->
+                    <Border Grid.Row="1" Background="#101014" Height="26" BorderBrush="#25252E" BorderThickness="0,0,0,1" Padding="12,0">
+                        <Grid>
+                            <ProgressBar Minimum="0" Maximum="1" Value="{Binding TimelineProgress}" 
+                                         Height="4" Background="#1E1E24" Foreground="#38BDF8" 
+                                         VerticalAlignment="Center" CornerRadius="2" />
                         </Grid>
-                    </StackPanel>
+                    </Border>
+
+                    <!-- TRACK LIST & TIMELINE LANES -->
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Spacing="6" Margin="10">
+                            <!-- EMPTY STATE WHEN NO TRACKS LOADED -->
+                            <Border IsVisible="{Binding !Tracks.Count}" Background="#121216" CornerRadius="8" Padding="32" Margin="0,20" BorderBrush="#22222A" BorderThickness="1" HorizontalAlignment="Center">
+                                <StackPanel HorizontalAlignment="Center" Spacing="10">
+                                    <TextBlock Text="🎵" FontSize="36" HorizontalAlignment="Center" />
+                                    <TextBlock Text="No Audio Tracks Loaded" FontWeight="Bold" FontSize="16" Foreground="#F4F4F5" HorizontalAlignment="Center" />
+                                    <TextBlock Text="Click '+ Add Audio Track' to load WAV, FLAC, MP3, OGG, or AAC files." FontSize="12" Foreground="#71717A" HorizontalAlignment="Center" />
+                                    <Button Content="Load Audio File" Click="OnAddTrackClicked" HorizontalAlignment="Center" Margin="0,6,0,0" Padding="14,6" CornerRadius="6" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- TRACK ITEMS -->
+                            <ItemsControl ItemsSource="{Binding Tracks}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#141418" CornerRadius="6" BorderBrush="#282832" BorderThickness="1" Margin="0,0,0,6" Padding="10">
+                                            <Grid ColumnDefinitions="260,*">
+                                                <!-- TRACK HEADER STRIP (CONTROLS) -->
+                                                <Grid Grid.Column="0" RowDefinitions="Auto,Auto,Auto" Margin="0,0,12,0">
+                                                    <!-- TRACK NAME & REMOVE -->
+                                                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+                                                        <TextBlock Grid.Column="0" Text="{Binding Name}" FontWeight="Bold" FontSize="13" Foreground="#F4F4F5" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                        <Button Grid.Column="1" Command="{Binding RemoveCommand}" Content="✕" FontSize="10" Background="Transparent" Foreground="#71717A" Padding="4,2" />
+                                                    </Grid>
+
+                                                    <!-- MUTE & PAN CONTROLS -->
+                                                    <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,6">
+                                                        <ToggleButton Grid.Column="0" IsChecked="{Binding IsMuted}" Content="M" FontWeight="Bold" FontSize="11" Width="26" Height="24" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" CornerRadius="4" />
+                                                        <Slider Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding Pan}" Margin="8,0" Height="20" VerticalAlignment="Center" />
+                                                        <TextBlock Grid.Column="2" Text="{Binding PanText}" FontSize="10" FontFamily="Consolas, monospace" Foreground="#A1A1AA" Width="32" TextAlignment="Right" VerticalAlignment="Center" />
+                                                    </Grid>
+
+                                                    <!-- VOLUME FADER -->
+                                                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto">
+                                                        <Slider Grid.Column="0" Minimum="0" Maximum="1.5" Value="{Binding Volume}" Height="20" VerticalAlignment="Center" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding VolumeDbText}" FontSize="10" FontFamily="Consolas, monospace" Foreground="#38BDF8" Width="48" TextAlignment="Right" VerticalAlignment="Center" />
+                                                    </Grid>
+                                                </Grid>
+
+                                                <!-- TIMELINE WAVEFORM / LANE RECTANGLE -->
+                                                <Border Grid.Column="1" Background="#0C0C10" CornerRadius="4" BorderBrush="#202028" BorderThickness="1" ClipToBounds="True">
+                                                    <Grid>
+                                                        <!-- TRACK WAVEFORM PLACEHOLDER LANE -->
+                                                        <Rectangle Fill="#1E293B" Height="40" Margin="4" RadiusX="3" RadiusY="3" HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+                                                        <TextBlock Text="{Binding Name}" FontSize="11" Foreground="#475569" Margin="12,0" VerticalAlignment="Center" />
+                                                    </Grid>
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
                 </Grid>
             </Border>
 

@@ -6,18 +6,19 @@ RouletteStudio bridges the gap between intuitive songwriting sketchpads and high
 
 ---
 
-## 🚀 Current Status: Phase 1 Active
+## 🚀 Current Status: Phase 2 & 3 Active
 
-RouletteStudio is currently in **Phase 1: Real-Time Audio Core Foundation & Desktop Proving Ground**.
+RouletteStudio has completed **Phase 1: Real-Time Audio Core Foundation** and **Phase 2 & 3: Multi-Track Playback, Disk Streaming, and Visual Timeline**.
 
 - [x] Allocation-free real-time audio callback running on high-priority OS threads.
 - [x] Hardware audio device discovery and streaming via `cpal` (WASAPI on Windows, CoreAudio on macOS).
-- [x] Pure Sine Wave oscillator test tone generator with sample-accurate frequency modulation.
-- [x] De-zippered anti-zipper linear gain ramping over 256 samples for click-free volume fading.
+- [x] Background lock-free audio decoding using `symphonia` (WAV, FLAC, MP3, OGG, AAC/M4A).
+- [x] High-quality real-time sample rate conversion via `rubato`.
+- [x] Multi-track summing mixer with Equal-Power panning law and smooth de-zippering gain ramps.
 - [x] Wait-free lock-free Single-Producer Single-Consumer (SPSC) ring buffers (`rtrb`).
 - [x] Automated real-time safety verification harness enforcing zero heap allocations via `assert_no_alloc` over 100,000 blocks.
 - [x] Flat C-ABI interop layer with automated type-safe C# P/Invoke binding generation (`csbindgen`).
-- [x] Modern hardware-accelerated desktop application running in **.NET 10 LTS** with **Avalonia UI**, live stereo VU meters, and transport controls.
+- [x] Hardware-accelerated desktop application running in **.NET 10 LTS** with **Avalonia UI**, interactive multi-track lane arranger, track strips (Volume, Pan, Mute, Remove), playhead scrubber, and live stereo VU meters.
 
 ---
 
