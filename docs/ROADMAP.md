@@ -1,114 +1,99 @@
-# Development Roadmap: CustomDAW
+# Aetherband Development Roadmap
 
-## 1. Roadmap Overview & Milestones
+**Project status (2026-10-16): Early alpha — stabilization and verification gate.**
 
-The roadmap follows an incremental, test-driven progression designed to prove the hardest systems-engineering problems (real-time audio safety and cross-language FFI) before building higher-level features.
+This roadmap describes the implemented baseline and the order of work from here. A feature is not considered complete merely because it compiles: playback behavior, lifecycle handling, automated regression coverage, and runtime verification must also be demonstrated.
 
-```
-Phase 0: Planning & Setup ──► Phase 1: Real-Time Core ──► Phase 2: Desktop MVP
-                                                                 │
-Phase 5: Extensibility   ◄── Phase 4: Recording & Mix ◄── Phase 3: Timeline & Disk
-```
+## Current state
 
----
+- [x] Rust audio engine and CPAL output stream.
+- [x] C-ABI boundary and generated C# P/Invoke bindings.
+- [x] Avalonia desktop shell on .NET 10.
+- [x] Background decoding/streaming for WAV, FLAC, MP3, OGG and AAC/M4A (subject to decoder support).
+- [x] Multi-track mixing controls: volume, pan, mute and remove.
+- [x] Master gain and stereo peak/RMS telemetry.
+- [x] Device enumeration/selection UI and Windows build/run scripts.
+- [x] Rust CI formatting, workspace check and test workflow; user-reported local verification script passed.
+- [ ] **Stabilization gate:** resolve and regression-test the reported Stop behavior (the UI playhead resets, but audio reportedly continues), then verify Play/Pause/Stop and track lifecycle end-to-end.
+- [ ] Audit decoder/track reset and restart semantics, queue saturation, device switching, end-of-file, and shutdown.
+- [ ] Align all docs and acceptance criteria with the implementation; this documentation pass is in progress.
 
-## 2. Phase Breakdown
+## Phase 1 — Real-time audio foundation
 
-### Phase 0 — Planning and Validation (Current Phase)
-- **Goals:** Establish architecture, project requirements, C-ABI contracts, and environment setup.
-- **Prerequisites:** None.
-- **Deliverables:**
-  - Architecture documents in `docs/`.
-  - Toolchain installation guidelines for Windows.
-  - Initial repository layout and `.gitignore`.
-- **Exit Criteria:** Architectural documents reviewed and approved; local developer tools installed.
+**Status: Implemented; continue regression verification.**
 
----
+Implemented: CPAL output, callback-driven processing, bounded command handling, SPSC queues, master gain smoothing, stereo metering, and an allocation-safety test harness.
 
-### Phase 1 — Real-Time Audio Core Foundation
-- **Goals:** Build the pure Rust audio engine core, stream I/O abstraction, and real-time safety harness.
-- **Prerequisites:** Phase 0 completion.
-- **Deliverables:**
-  - `core/` Rust workspace with `cpal` audio backend.
-  - Hardware device enumeration and default stream initialization (WASAPI on Windows, CoreAudio on macOS).
-  - Allocation-free real-time audio callback executing a pure Sine Wave generator with click-free gain ramping.
-  - Lock-free Single-Producer Single-Consumer (SPSC) ring buffers (`rtrb`) for commands and metering.
-  - Automated headless test suite with `assert_no_alloc`.
-- **Acceptance Criteria:**
-  - `cargo test` passes 100%.
-  - Headless test executes 100,000 continuous audio blocks without a single dynamic memory allocation.
-  - Audio callback runs under 2.0 ms execution time at 128-sample buffer.
-- **Risks:** Operating system audio permissions and driver differences.
+Exit gate: formatting, workspace checks, all tests, and the real-time allocation test pass. Runtime verification must confirm silence while stopped, no callback allocation, and clean shutdown on supported hardware.
 
----
+## Phase 2 — File playback and native/managed integration
 
-### Phase 2 — Desktop MVP (First Cross-Language Integration)
-- **Goals:** Connect the Rust audio core to the C# Avalonia desktop user interface.
-- **Prerequisites:** Phase 1 completion.
-- **Deliverables:**
-  - `bindings/c_abi` native library export (`daw_core.dll` / `libdaw_core.dylib`).
-  - Automated C# P/Invoke bindings generated via `csbindgen`.
-  - Avalonia desktop application with:
-    - Audio device selection dialog.
-    - Transport toolbar (Play, Pause, Stop buttons).
-    - Master volume slider with de-zippering gain ramping.
-    - 60 FPS real-time stereo VU meter.
-    - Stereo WAV file playback button.
-- **Acceptance Criteria:**
-  - Desktop app builds and launches on Windows and macOS.
-  - Changing volume rapidly generates zero clicks, pops, or audio dropouts.
-  - VU meter animates smoothly in sync with audio output.
-  - Exiting the application shuts down the audio stream cleanly without crashing or hanging.
-- **Risks:** FFI data alignment or missing native DLL path during runtime.
+**Status: Implemented; runtime stabilization remains open.**
 
----
+Implemented: Rust decoder workers, sample-rate conversion, track playback, C-ABI exports, generated C# bindings, and .NET/Avalonia integration.
 
-### Phase 3 — Multi-Track Timeline & Disk Streaming
-- **Goals:** Enable multi-track arrangement, asynchronous disk streaming, and waveform rendering.
-- **Prerequisites:** Phase 2 completion.
-- **Deliverables:**
-  - Background disk reader worker thread (`symphonia` decoder).
-  - Double-buffered audio streaming into pre-allocated memory arenas.
-  - Sample-accurate arrangement timeline engine.
-  - Avalonia timeline view with horizontal zooming, track headers, and vector waveform rendering.
-- **Acceptance Criteria:**
-  - Simultaneous playback of 16 stereo audio tracks at 48 kHz / 24-bit with under 30% CPU load.
-  - Smooth timeline scrolling at 60+ FPS during active audio playback.
+Exit gate:
+- Import supported files and play multiple tracks together.
+- Stop immediately silences all tracks and resets the playhead; Play after Stop restarts from the beginning.
+- Pause halts output without rewinding; Play resumes according to the documented transport behavior.
+- End-of-file, remove-track, repeated stop, and app shutdown are safe.
+- Device selection does not leave stale streams or invalid telemetry.
 
----
+## Phase 3 — Arranger and track controls
 
-### Phase 4 — Audio Recording, Mixer & Project Serialization
-- **Goals:** Support microphone/line recording, mixing console, and saving/loading projects.
-- **Prerequisites:** Phase 3 completion.
-- **Deliverables:**
-  - Low-latency audio input recording path with background disk writer.
-  - Multi-channel mixer with faders, mute, solo, and Equal Power pan laws.
-  - `.dawproject` file serializer/deserializer (ZIP bundle with `project.json` and `assets/`).
-  - Autosave and crash recovery system.
-  - Offline master bounce export to 24-bit WAV.
-- **Acceptance Criteria:**
-  - Record external microphone input into an audio track, save project to disk, restart app, reload, and verify identical playback.
-  - Offline bounce renders a 3-minute arrangement to a stereo WAV file in under 10 seconds.
+**Status: Core UI implemented; acceptance verification remains open.**
 
----
+Implemented: timeline/track presentation, playhead/timer, track volume, pan, mute, remove, master volume and meters.
 
-### Phase 5 — MIDI, Software Instruments, and Plugins
-- **Goals:** Expand into composing with MIDI, virtual instruments, and third-party plugins.
-- **Prerequisites:** Phase 4 completion.
-- **Deliverables:**
-  - Sample-accurate MIDI event scheduling and piano roll editor.
-  - Built-in polyphonic subtractive synthesizer and drum sampler.
-  - Studio DSP effect suite (Parametric EQ, Compressor, Delay, Reverb).
-  - Plugin hosting abstraction starting with **CLAP** (CLever Audio Plugin), followed by **VST3**.
-- **Acceptance Criteria:**
-  - Record MIDI from a USB keyboard, quantize notes, play through internal synth, and host an external CLAP plugin.
+Still to verify/improve: visible waveform peaks, accurate playhead timing for non-48-kHz devices, scrub/seek semantics, and consistent UI state when native command submission fails.
 
----
+## Phase 3.5 — Stabilization gate (current priority)
 
-### Phase 6 — Native Mobile Companion DAW (Separate Standalone Effort)
-- **Goals:** Build the mobile companion DAW for iOS, iPadOS, and Android reusing the `daw_core` Rust engine and opening `.dawproject` files.
-- **Prerequisites:** Desktop DAW mature and stable (Phase 4+).
-- **Deliverables:**
-  - Standalone mobile repository or mobile workspace consuming `daw_core`.
-  - Swift / SwiftUI frontend on iOS/iPadOS; Kotlin / Jetpack Compose on Android.
-  - Touch-first arrangement, drum pads, and mobile audio session management.
+Do not start new major audio features until this gate is green.
+
+1. Reproduce the Stop bug with the diagnostic test tone disabled and with one imported track.
+2. Add a Rust regression test that issues Play, confirms non-silent output, issues Stop, and confirms subsequent output is silent and telemetry reports stopped/playhead zero.
+3. Inspect native command return codes and ensure the UI does not claim a command succeeded when the command queue rejects it.
+4. Confirm the audio callback consumes Stop and resets track cursors without blocking or allocating.
+5. Test Stop while playing, while paused, at EOF, immediately after Play, with multiple tracks, and repeatedly.
+6. Test Play after Stop. Decoder streaming must restart or rewind correctly; draining a ring buffer alone does not rewind a decoder worker.
+7. Run `cargo fmt --all -- --check`, `cargo check --workspace --all-targets`, `cargo test --workspace --all-targets`, the repository verification script, and the .NET build/tests.
+8. Repeat runtime checks on Windows; record platform-specific results rather than implying untested macOS support.
+
+**Acceptance:** Stop is silent and repeatable, playhead resets from authoritative telemetry, Play restarts correctly, and all automated checks pass.
+
+## Phase 4 — Recording, project persistence and export
+
+**Status: Planned.**
+
+- Audio input capture and background file writer.
+- Save/load projects and asset management.
+- Waveform peak generation and caching.
+- Offline WAV bounce/export.
+- Autosave and recovery after the core lifecycle is stable.
+
+## Phase 5 — MIDI and instruments
+
+**Status: Planned.**
+
+- MIDI event model and piano roll.
+- Built-in instruments and drum sampler.
+- Instrument/effect graph and internal DSP.
+- MIDI keyboard input and timing tests.
+
+## Phase 6 — Effects, routing and plugin hosting
+
+**Status: Planned; sequence may be refined as architecture matures.**
+
+- Mixer buses, sends/returns and automation.
+- Built-in EQ, compression, delay and reverb.
+- Plugin architecture, prioritizing an open format before adding other formats.
+- Crash isolation and plugin compatibility testing.
+
+## UI revamp sequencing
+
+A visual redesign is welcome after the core transport and engine APIs stop changing. Keep it scoped to presentation and interaction, and do not let it delay the stabilization gate or change audio-thread safety guarantees.
+
+## Definition of done
+
+Every milestone needs: implementation, tests, docs updated in the same change, successful relevant CI, and explicit runtime verification where hardware or UI behavior is involved. Mark unknowns as unknown; never promote planned or partially verified work to complete.
