@@ -56,7 +56,7 @@ If you download and run Aetherband today, here is an honest, plain-English break
 ### What It Cannot Do Yet (Under Active Development):
 - **No Saving or Loading Projects:** You cannot save your session to disk yet (session state resets when closing the app).
 - **No Audio Recording:** Microphone/instrument audio recording via inputs is planned for Phase 4.
-- **No Visual Waveform Peaks (Yet):** Track lanes currently show clip markers, but not drawn peak/RMS waveform outlines yet.
+- **Flutter waveform integration:** The existing Avalonia app has an offline waveform peak-generation path, but the Flutter prototype still displays synthetic demo waveforms and is not yet connected to real file/peak data.
 - **No MIDI, Virtual Instruments, or Piano Roll:** MIDI keyboard input, software synths, and sequencing will come in Phase 5.
 - **No VST3 / CLAP / AU Plugins:** Audio effect and instrument plugin hosting will be introduced in Phase 6.
 - **No Automation Curves:** Volume/pan cannot be automated along a curve yet.
@@ -211,6 +211,7 @@ cargo test -p daw_core --tests
 | **2** | Audio File Playback & Background Disk Streaming | 🧪 Implemented; runtime gate open |
 | **3** | Multi-Track Mixer & Interactive Timeline UI | 🧪 Implemented; runtime gate open |
 | **3.5** | Transport/lifecycle stabilization and regression tests | 🧪 Mostly implemented; confirm current CI/runtime evidence |
+| **UI** | Mandatory full-scale Flutter desktop frontend via C ABI | 🔄 In progress; current UI prototype is mock-only |
 | **4** | Audio Recording, waveform peaks, project persistence & export | ⏳ Planned |
 | **5** | MIDI Engine, Piano Roll & Virtual Instruments | 📅 Planned |
 | **6** | Mixer Routing, Effects Engine & Plugin Hosting | 📅 Planned |
