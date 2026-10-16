@@ -252,14 +252,15 @@ impl DAWEngine {
         });
 
         // Smuggle the player as a raw pointer through the command queue.
-        // The audio thread re-boxes it in the AddTrack handler (see audio.rs).
+        // The audio thread reconstructs the Box without moving out of it, so the
+        // allocation remains owned by TrackSlots and is not freed in the callback.
         let raw = Box::into_raw(player) as usize;
         if self.ui_endpoints.cmd_producer
             .push(EngineCommand::AddTrack { player_ptr: raw })
             .is_err()
         {
-            // Queue full: reclaim and drop the player to avoid leak
-            let _ = unsafe { Box::from_raw(raw as *mut TrackPlayer) };
+            // Queue full: reclaim and drop the player on this control thread.
+            drop(unsafe { Box::from_raw(raw as *mut TrackPlayer) });
             self.decoders.remove(&id.0);
             self.tracks.pop();
             return Err(EngineError::TrackLimitReached);
@@ -316,6 +317,12 @@ impl DAWEngine {
 
     /// Polls the latest telemetry frame from the audio thread.
     pub fn poll_telemetry(&mut self) -> Option<TelemetryFrame> {
+        // Reclaim removed/rejected players on the control thread, never in the
+        // real-time callback. Drain all available retired ownership each poll.
+        while let Ok(player) = self.ui_endpoints.retired_tracks.pop() {
+            drop(player);
+        }
+
         let mut latest = None;
         while let Ok(frame) = self.ui_endpoints.telemetry_consumer.pop() {
             latest = Some(frame);
