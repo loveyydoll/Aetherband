@@ -1,5 +1,5 @@
 # ==============================================================================
-# CustomDAW .gitignore (Rust + .NET / C# + Visual Studio + Audio Project Caches)
+# RouletteStudio .gitignore (Rust + .NET 10 / C# + Visual Studio + Audio Caches)
 # ==============================================================================
 
 # --- Rust Build Artifacts ---
