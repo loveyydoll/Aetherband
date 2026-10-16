@@ -1,4 +1,4 @@
-# 🌌 Aetherband 
+# 🌌 Aetherband
 
 > **A modern, open-source desktop Digital Audio Workstation engineered for flow, speed, and hard real-time precision.**
 
@@ -10,7 +10,7 @@ Aetherband bridges the gap between intuitive songwriting sketchpads and high-pre
 > ### Work in Progress (Early Alpha)
 > Aetherband is under active, rapid development and is currently in **early alpha**.
 > - APIs, project formats, and interfaces are evolving quickly and subject to breaking changes.
-> - While core audio playback and multi-track mixing are functional and backed by real-time safety tests, advanced features (MIDI recording, plugin hosting, automation, and project saving) are still in development.
+> - Core audio playback and multi-track mixing are implemented, but transport/lifecycle behavior is still being stabilized. A Stop regression has been reported (the playhead resets while audio reportedly continues) and must be fixed and regression-tested. Advanced features (MIDI recording, plugin hosting, automation, and project saving) are still in development.
 > - **Not recommended for production work yet.** Use it to test, experiment, and contribute!
 
 ---
@@ -42,9 +42,9 @@ If you download and run Aetherband today, here is an honest, plain-English break
 
 ---
 
-## Current Milestone: Phase 2 & 3 (Multi-Track Playback & Arranger UI)
+## Current Milestone: Stabilization Gate (Phases 1–3)
 
-Aetherband has completed **Phase 1 (Real-Time Audio Core)** and **Phase 2 & 3 (Multi-Track Audio Playback, Disk Streaming & Timeline UI)**:
+The core engine, file playback, multi-track mixing, native interop, and initial timeline UI are implemented. They are not considered fully accepted until transport behavior and lifecycle regression tests pass. The current known issue is that Stop resets the visible playhead but reportedly does not silence audio.
 
 - [x] **Zero-Allocation Audio Thread:** Hardware callback loop executing on dedicated OS audio thread with guaranteed zero heap allocations.
 - [x] **Hardware Audio Driver Support:** Low-latency device discovery and output stream management via `cpal` (WASAPI on Windows, CoreAudio on macOS).
@@ -52,7 +52,7 @@ Aetherband has completed **Phase 1 (Real-Time Audio Core)** and **Phase 2 & 3 (M
 - [x] **Real-Time Sample Rate Conversion:** High-fidelity sinc/FFT resampling powered by `rubato`.
 - [x] **64-Track Summing Mixer:** Real-time multi-track engine featuring Equal-Power stereo panning law and 256-sample de-zippering gain ramping.
 - [x] **Lock-Free Concurrency:** Single-Producer Single-Consumer (SPSC) ring buffers (`rtrb`) for wait-free UI ⇄ Audio communications.
-- [x] **Automated Safety Test Harness:** Automated enforcement of zero allocations across 100,000 continuous blocks via `assert_no_alloc`.
+- [x] **Automated Safety Test Harness:** Allocation-safety test harness for continuous callback processing; run the repository's current verification commands to validate the present baseline.
 - [x] **Flat C-ABI & Automated Bindings:** Clean C99 FFI with automated type-safe C# P/Invoke generation (`csbindgen`).
 - [x] **Modern Desktop App:** Hardware-accelerated desktop UI built with **.NET 10 LTS** and **Avalonia UI**, featuring multi-track lanes, track controls (Volume, Pan, Mute, Remove), playhead scrubbing, and live transport controls.
 
@@ -157,9 +157,9 @@ cargo test -p daw_core --tests
 |:---:|---|:---:|
 | **0** | Architectural Blueprint & Documentation (10 ADRs) | ✅ Complete |
 | **1** | Real-Time Audio Core Foundation & Hardware I/O | ✅ Complete |
-| **2** | Audio File Playback & Background Disk Streaming | ✅ Complete |
-| **3** | Multi-Track Mixer & Interactive Timeline UI | ✅ Complete |
-| **4** | Audio Recording & Waveform Peak Visualizer | ⏳ Upcoming |
+| **2** | Audio File Playback & Background Disk Streaming | 🧪 Implemented; runtime gate open |
+| **3** | Multi-Track Mixer & Interactive Timeline UI | 🧪 Implemented; runtime gate open |
+| **3.5** | Transport/lifecycle stabilization and regression tests | 🚧 Current priority |\n| **4** | Audio Recording, waveform peaks, project persistence & export | ⏳ Planned |
 | **5** | MIDI Engine, Piano Roll & Virtual Instruments | 📅 Planned |
 | **6** | Mixer Routing, Effects Engine & Plugin Hosting | 📅 Planned |
 
