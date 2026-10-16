@@ -7,7 +7,7 @@
 
 use crate::dsp::{GainRamp, LevelMeter, SineOscillator};
 use crate::ringbuf::{AudioEndpoints, EngineCommand, TelemetryFrame};
-use crate::track::{TrackSlots, TrackPlayer, MAX_TRACKS};
+use crate::track::{TrackPlayer, TrackSlots, MAX_TRACKS};
 use rtrb::{Consumer, Producer};
 
 /// Hard real-time audio callback processor.
@@ -92,7 +92,9 @@ impl AudioProcessor {
     #[inline]
     fn flush_pending_retired(&mut self) {
         for slot in self.pending_retired.iter_mut() {
-            let Some(player) = slot.take() else { continue; };
+            let Some(player) = slot.take() else {
+                continue;
+            };
             match self.retired_tracks.push(player) {
                 Ok(()) => {}
                 Err(rtrb::PushError::Full(player)) => {
@@ -136,8 +138,12 @@ impl AudioProcessor {
         for _ in 0..MAX_COMMANDS_PER_BLOCK {
             // If both retirement storage tiers are full, leave commands queued
             // until the control thread reclaims retired players.
-            if !self.has_pending_retirement_capacity() { break; }
-            let Ok(cmd) = self.cmd_consumer.pop() else { break; };
+            if !self.has_pending_retirement_capacity() {
+                break;
+            }
+            let Ok(cmd) = self.cmd_consumer.pop() else {
+                break;
+            };
             match cmd {
                 Play => {
                     self.is_playing = true;
@@ -156,14 +162,24 @@ impl AudioProcessor {
                     // Track seek is handled by the control thread restarting
                     // the decoder from the new position
                 }
-                SetMasterVolume { target_gain, ramp_frames } => {
+                SetMasterVolume {
+                    target_gain,
+                    ramp_frames,
+                } => {
                     self.master_gain.set_target(target_gain, ramp_frames);
                 }
-                SetTestTone { enabled, frequency_hz } => {
+                SetTestTone {
+                    enabled,
+                    frequency_hz,
+                } => {
                     self.test_tone_enabled = enabled;
                     self.oscillator.set_frequency(frequency_hz);
                 }
-                SetTrackVolume { track_id, target_gain, ramp_frames } => {
+                SetTrackVolume {
+                    track_id,
+                    target_gain,
+                    ramp_frames,
+                } => {
                     if let Some(track) = self.tracks.get_mut(track_id) {
                         track.gain.set_target(target_gain, ramp_frames);
                     }
@@ -248,8 +264,16 @@ impl AudioProcessor {
         // 5. Apply master gain (with de-zippering) and write to hardware buffer
         for f in 0..frames {
             let gain = self.master_gain.next_gain();
-            let l = if f < meter_frames { self.scratch_left[f] * gain } else { 0.0 };
-            let r = if f < meter_frames { self.scratch_right[f] * gain } else { 0.0 };
+            let l = if f < meter_frames {
+                self.scratch_left[f] * gain
+            } else {
+                0.0
+            };
+            let r = if f < meter_frames {
+                self.scratch_right[f] * gain
+            } else {
+                0.0
+            };
 
             if channels >= 2 {
                 output[f * channels] = l;
@@ -345,7 +369,12 @@ mod tests {
         let mut processor = AudioProcessor::new(48000.0, audio);
 
         ui.cmd_producer.push(EngineCommand::Play).unwrap();
-        ui.cmd_producer.push(EngineCommand::SetTestTone { enabled: true, frequency_hz: 440.0 }).unwrap();
+        ui.cmd_producer
+            .push(EngineCommand::SetTestTone {
+                enabled: true,
+                frequency_hz: 440.0,
+            })
+            .unwrap();
 
         let mut buffer = vec![0.0f32; 256];
         processor.process_interleaved(&mut buffer, 2);
@@ -388,7 +417,11 @@ mod tests {
             block.samples[i * 2 + 1] = 0.5;
         }
         block.is_last = true;
-        let _ = { let mut prod = producer; prod.push(block).unwrap(); prod };
+        let _ = {
+            let mut prod = producer;
+            prod.push(block).unwrap();
+            prod
+        };
 
         let track = TrackPlayer::new(TrackId(1), consumer, 1.0, 128);
         assert!(processor.tracks_mut().add(Box::new(track)).is_ok());
