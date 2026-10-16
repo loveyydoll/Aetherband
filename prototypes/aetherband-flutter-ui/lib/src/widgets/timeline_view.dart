@@ -36,9 +36,9 @@ class TimelineView extends StatelessWidget {
   final void Function(TrackModel, bool) onSoloChanged;
   final void Function(TrackModel, double) onVolumeChanged;
 
-  static const double _headerWidth = 210;
-  static const double _rulerHeight = 38;
-  static const double _laneHeight = 70;
+  static const double _headerWidth = 196;
+  static const double _rulerHeight = 34;
+  static const double _minimumLaneHeight = 64;
 
   @override
   Widget build(BuildContext context) {
@@ -46,6 +46,16 @@ class TimelineView extends StatelessWidget {
       builder: (context, constraints) {
         final baseWidth = math.max(1400.0, constraints.maxWidth / zoom).toDouble();
         final contentWidth = baseWidth * zoom;
+        final availableHeight = constraints.hasBoundedHeight
+            ? constraints.maxHeight
+            : _rulerHeight + tracks.length * _minimumLaneHeight;
+        final contentHeight = math.max(
+          availableHeight,
+          _rulerHeight + tracks.length * _minimumLaneHeight,
+        ).toDouble();
+        final laneHeight = tracks.isEmpty
+            ? _minimumLaneHeight
+            : ((contentHeight - _rulerHeight) / tracks.length).toDouble();
         final playheadX =
             (playheadSeconds * tempo / 240 * 84 * zoom).clamp(0.0, contentWidth).toDouble();
 
@@ -67,8 +77,8 @@ class TimelineView extends StatelessWidget {
                         right: BorderSide(color: AetherColors.raised),
                       ),
                     ),
-                    child: const Text(
-                      'TRACKS / 06',
+                    child: Text(
+                      'TRACKS / ${tracks.length.toString().padLeft(2, '0')}',
                       style: TextStyle(
                         color: AetherColors.secondaryText,
                         fontSize: 10,
@@ -86,6 +96,7 @@ class TimelineView extends StatelessWidget {
                       onMute: () => onMuteChanged(track, !track.muted),
                       onSolo: () => onSoloChanged(track, !track.solo),
                       onVolumeChanged: (value) => onVolumeChanged(track, value),
+                      height: laneHeight,
                     ),
                 ],
               ),
@@ -96,7 +107,7 @@ class TimelineView extends StatelessWidget {
                   scrollDirection: Axis.horizontal,
                   child: SizedBox(
                     width: contentWidth,
-                    height: _rulerHeight + tracks.length * _laneHeight,
+                    height: contentHeight,
                     child: Stack(
                       children: [
                         Column(
@@ -107,6 +118,7 @@ class TimelineView extends StatelessWidget {
                                 key: ValueKey('lane-${track.id}'),
                                 track: track,
                                 width: contentWidth,
+                                laneHeight: laneHeight,
                                 zoom: zoom,
                                 selectedClipId: selectedClipId,
                                 onClipSelected: (clip) => onClipSelected(track, clip),
@@ -143,6 +155,7 @@ class _TrackHeader extends StatelessWidget {
     required this.onMute,
     required this.onSolo,
     required this.onVolumeChanged,
+    required this.height,
     super.key,
   });
 
@@ -152,6 +165,7 @@ class _TrackHeader extends StatelessWidget {
   final VoidCallback onMute;
   final VoidCallback onSolo;
   final ValueChanged<double> onVolumeChanged;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
@@ -160,8 +174,8 @@ class _TrackHeader extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Container(
-          height: _TimelineTrackConstants.laneHeight,
-          padding: const EdgeInsets.fromLTRB(10, 8, 8, 7),
+          height: height,
+          padding: const EdgeInsets.fromLTRB(9, 5, 7, 4),
           decoration: BoxDecoration(
             border: Border(
               right: BorderSide(color: track.color.withValues(alpha: 0.8), width: 3),
@@ -188,22 +202,37 @@ class _TrackHeader extends StatelessWidget {
                   Text(track.kind, style: const TextStyle(color: AetherColors.secondaryText, fontSize: 8, letterSpacing: 0.6)),
                 ],
               ),
+              const SizedBox(height: 4),
               const Spacer(),
-              Row(
-                children: [
-                  _MiniButton(label: 'M', active: track.muted, color: AetherColors.magenta, onTap: onMute),
-                  const SizedBox(width: 4),
-                  _MiniButton(label: 'S', active: track.solo, color: AetherColors.sage, onTap: onSolo),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Slider(
-                      value: track.volume.clamp(0.0, 1.0).toDouble(),
-                      onChanged: onVolumeChanged,
-                      min: 0,
-                      max: 1,
+              SizedBox(
+                height: 23,
+                child: Row(
+                  children: [
+                    _MiniButton(label: 'M', active: track.muted, color: AetherColors.magenta, onTap: onMute),
+                    const SizedBox(width: 3),
+                    _MiniButton(label: 'S', active: track.solo, color: AetherColors.sage, onTap: onSolo),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 2,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4),
+                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 7),
+                        ),
+                        child: SizedBox(
+                          height: 23,
+                          child: Slider(
+                            value: track.volume.clamp(0.0, 1.0).toDouble(),
+                            onChanged: onVolumeChanged,
+                            min: 0,
+                            max: 1,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
@@ -211,10 +240,6 @@ class _TrackHeader extends StatelessWidget {
       ),
     );
   }
-}
-
-abstract final class _TimelineTrackConstants {
-  static const double laneHeight = 70;
 }
 
 class _MiniButton extends StatelessWidget {
@@ -233,8 +258,8 @@ class _MiniButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 24,
-      height: 21,
+      width: 21,
+      height: 18,
       child: Material(
         color: active ? color.withValues(alpha: 0.2) : AetherColors.background,
         borderRadius: BorderRadius.circular(4),
@@ -297,6 +322,7 @@ class _TimelineLane extends StatelessWidget {
   const _TimelineLane({
     required this.track,
     required this.width,
+    required this.laneHeight,
     required this.zoom,
     required this.selectedClipId,
     required this.onClipSelected,
@@ -306,6 +332,7 @@ class _TimelineLane extends StatelessWidget {
 
   final TrackModel track;
   final double width;
+  final double laneHeight;
   final double zoom;
   final String? selectedClipId;
   final ValueChanged<ClipModel> onClipSelected;
@@ -315,16 +342,16 @@ class _TimelineLane extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: width,
-      height: 70,
+      height: laneHeight,
       child: Stack(
         children: [
           Positioned.fill(child: CustomPaint(painter: TimelineGridPainter(zoom: zoom))),
           for (final clip in track.clips)
             Positioned(
               left: clip.start * zoom,
-              top: 9,
+              top: (laneHeight - math.min(50.0, laneHeight - 14)) / 2,
               width: math.max(48.0, clip.width * zoom).toDouble(),
-              height: 50,
+              height: math.min(50.0, laneHeight - 14),
               child: ClipTile(
                 clip: clip,
                 isSelected: clip.id == selectedClipId,
