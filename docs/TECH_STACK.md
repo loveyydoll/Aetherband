@@ -70,6 +70,18 @@ Maintain a professional, compact, arrangement-first DAW workspace with a lightwe
 
 See [`FLUTTER_DESKTOP_MIGRATION.md`](FLUTTER_DESKTOP_MIGRATION.md), [`DECISIONS.md`](DECISIONS.md) (ADR-008), and [`AI_HANDOFF.md`](AI_HANDOFF.md) for implementation stages and history.
 
+## C# retirement decision
+
+**Likely final state:** C# / Avalonia and its C#-specific binding-generation path will be removed from the shipped product and likely from the repository after Flutter reaches verified parity. A permanent dual-frontend arrangement is not the default plan.
+
+This is not an immediate deletion task. Keep the existing app buildable until:
+- Flutter uses the real C ABI and covers every currently supported audio-connected workflow.
+- Windows and macOS audio, device switching, transport, track controls, telemetry, errors and shutdown are tested.
+- Flutter becomes the default documented build/run and CI/release path.
+- The owner reviews and approves the parity evidence.
+
+Then remove the Avalonia project, C#-only generated binding wiring, .NET-only CI and obsolete scripts in a separate reviewed change. Keep Rust, the C ABI, the canonical C header, Dart FFI and native ABI tests. Search every build script, workflow, docs link and release process before removal.
+
 ## 6. Migration acceptance gates
 
 Flutter becomes the default documented desktop app only after it:
