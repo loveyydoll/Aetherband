@@ -6,11 +6,12 @@ All notable changes to Aetherband are recorded here. This project follows a ligh
 
 ### Added
 - Foundational spatial-audio metadata: channel layouts and Cartesian source positions. These types are not yet connected to playback or project persistence.
+- An allocation-free equal-power stereo gain utility with deterministic tests for hard-left, centre, hard-right, and invalid inputs. It is not yet wired into the mixer.
 - Architecture plan for the shared creative engine, visual programming, extensible synthesis, and staged spatial-audio work.
 - A release-recording policy that distinguishes commits, merged pull requests, and published releases.
 
 ### Not yet released
-- Multichannel rendering, spatial panning in the audio callback, binaural/HRTF monitoring, Dolby Atmos authoring/export, modular synthesis, and user-authored DSP are not delivered by this work.
+- Multichannel rendering/routing, spatial panning in the audio callback, binaural/HRTF monitoring, Dolby Atmos authoring/export, modular synthesis, and user-authored DSP are not delivered by this work.
 
 ## Release history
 
