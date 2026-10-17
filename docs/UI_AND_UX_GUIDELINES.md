@@ -19,7 +19,7 @@ Use the existing theme as the baseline unless a task explicitly proposes a desig
 - Thin, low-contrast separators; clear spacing and alignment; restrained rounded corners.
 - Compact desktop typography with clear hierarchy. Important transport and timeline labels must remain readable at normal desktop scale.
 
-Current tokens live in `prototypes/aetherband-flutter-ui/lib/src/theme.dart`. Reuse `AetherColors` and `AetherTheme` instead of introducing local hex colours or a competing theme. If a token is missing, add it centrally and explain why. Do not recolour the entire application as part of an unrelated feature.
+Current tokens live in `apps/desktop/lib/src/theme.dart`. Reuse `AetherColors` and `AetherTheme` instead of introducing local hex colours or a competing theme. If a token is missing, add it centrally and explain why. Do not recolour the entire application as part of an unrelated feature.
 
 ## Workspace and information hierarchy
 
@@ -84,7 +84,7 @@ The timeline is a precision editing surface, not just a visual illustration.
 
 - Flutter/Dart owns presentation, input handling, layout, view state and user feedback.
 - Rust owns audio I/O, decoding, mixing, DSP, scheduling and real-time callback behaviour.
-- Dart native interop belongs behind the existing adapter/controller in `prototypes/aetherband-flutter-ui/lib/src/native_engine.dart` and `engine_controller.dart`. Inspect the current implementation before changing it.
+- Dart native interop belongs behind the existing adapter/controller in `apps/desktop/lib/src/native_engine.dart` and `engine_controller.dart`. Inspect the current implementation before changing it.
 - Do not call private Rust symbols directly or route continuous audio buffers through widgets, isolates or platform channels.
 - Do not create a second desktop frontend or reintroduce the retired C#/.NET/Avalonia UI unless the project owner explicitly changes that decision.
 - Before adding a control, verify that the required C ABI operation exists. If it does not, decide whether to implement the full vertical slice or clearly mark the UI affordance as unavailable; never fabricate engine state.
