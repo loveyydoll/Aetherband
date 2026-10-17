@@ -94,7 +94,7 @@ These are current implementation conventions, not yet a single exhaustive typed 
 - Telemetry polling is a bounded, periodic control-side operation; it must not run from a paint/build callback.
 - Stop polling and prevent new control calls before destroying the engine.
 - The audio callback communicates through bounded native queues; it does not call Dart/Flutter.
-- Device selection currently recreates the stream and queues. Verify how it affects active tracks before presenting it as a production-safe UI action.
+- Device selection builds a replacement queue/processor, recreates decoders at the selected output rate, and re-installs existing track IDs plus stored gain/pan/mute settings before committing the new pipeline. This path still requires automated testing and real-device verification; do not call it production-safe until those pass.
 - The current Flutter app is not feature complete: device controls and track import/control operations still need full UI integration and end-to-end tests.
 
 ## Verification checklist
