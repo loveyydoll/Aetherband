@@ -426,6 +426,44 @@ mod tests {
         assert!(frame2.peak_left > 0.0);
     }
 
+    /// Pause must silence output without rewinding; Play must resume from the current
+    /// transport position. This tests the callback command path, not a hardware device.
+    #[test]
+    fn pause_silences_and_play_resumes_transport() {
+        let (mut ui, audio) = create_engine_queues(32, 32);
+        let mut processor = AudioProcessor::new(48000.0, audio);
+        let mut buffer = vec![0.0f32; 256];
+
+        ui.cmd_producer
+            .push(EngineCommand::SetTestTone {
+                enabled: true,
+                frequency_hz: 440.0,
+            })
+            .unwrap();
+        ui.cmd_producer.push(EngineCommand::Play).unwrap();
+        processor.process_interleaved(&mut buffer, 2);
+        assert!(buffer.iter().any(|sample| *sample != 0.0));
+        let playing = ui.telemetry_consumer.pop().unwrap();
+        assert!(playing.is_playing);
+        let playhead_before_pause = playing.playhead_frame;
+        assert!(playhead_before_pause > 0);
+
+        ui.cmd_producer.push(EngineCommand::Pause).unwrap();
+        buffer.fill(1.0);
+        processor.process_interleaved(&mut buffer, 2);
+        assert!(buffer.iter().all(|sample| *sample == 0.0));
+        let paused = ui.telemetry_consumer.pop().unwrap();
+        assert!(!paused.is_playing);
+        assert_eq!(paused.playhead_frame, playhead_before_pause);
+
+        ui.cmd_producer.push(EngineCommand::Play).unwrap();
+        processor.process_interleaved(&mut buffer, 2);
+        assert!(buffer.iter().any(|sample| *sample != 0.0));
+        let resumed = ui.telemetry_consumer.pop().unwrap();
+        assert!(resumed.is_playing);
+        assert!(resumed.playhead_frame > playhead_before_pause);
+    }
+
     #[test]
     fn test_track_audio_plays_through_mixer() {
         let (mut ui, audio) = create_engine_queues(16, 16);
