@@ -119,10 +119,13 @@ The number and duration of beta, RC, and other testing releases will depend on f
 
 Aetherband separates the creative interface from the work that must run close to the audio hardware.
 
-- **Rust** — native audio engine and real-time-sensitive processing.
-- **C ABI** — a small, versioned boundary between the engine and UI.
-- **Dart FFI** — the Flutter-side adapter for native calls and ownership rules.
-- **Flutter** — the desktop presentation layer and interactive creative workspace.
+| Technology | Role | Current status |
+|---|---|---|
+| **Rust** | Native audio engine, decoding, mixing, DSP and real-time callback | Core implementation exists; correctness and platform behavior still require regression testing |
+| **C ABI** | Versioned boundary between native engine and desktop UI | ABI 0.2.0; exported functions are documented in [API_CONTRACT.md](docs/API_CONTRACT.md) |
+| **Dart FFI** | Native library loading, ABI validation, engine lifecycle and telemetry | Initial lifecycle/transport/telemetry path implemented; device and track workflows remain incomplete |
+| **Flutter / Dart** | Windows/macOS desktop UI and creative workspace | Intended sole desktop frontend; demo clips and several controls remain presentation-only |
+| **CPAL / Symphonia / rtrb** | Audio device I/O, media decoding and bounded cross-thread communication | Used by the Rust engine; exact supported formats and runtime behavior must be verified per platform |
 
 ### Why Flutter?
 
