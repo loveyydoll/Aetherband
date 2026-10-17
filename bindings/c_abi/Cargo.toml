@@ -12,5 +12,3 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 [dependencies]
 daw_core = { path = "../../core" }
 
-[build-dependencies]
-csbindgen = "1.9"

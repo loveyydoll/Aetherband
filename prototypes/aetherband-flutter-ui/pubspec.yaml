@@ -1,5 +1,5 @@
-name: aetherband_flutter_ui
-description: Isolated Flutter UI prototype for Aetherband; demo interactions only.
+name: aetherband_desktop
+description: Aetherband Flutter desktop application with Rust audio through Dart FFI.
 publish_to: "none"
 version: 0.1.0
 
@@ -9,6 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  ffi: ^2.1.3
 
 dev_dependencies:
   flutter_test:

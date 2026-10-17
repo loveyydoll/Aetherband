@@ -1,207 +1,193 @@
-# 🌌 Aetherband
+# Aetherband
 
-> **A modern, open-source desktop Digital Audio Workstation engineered for flow, speed, and hard real-time precision.**
+> **Make sound your own. Keep the tools open.**
 
-Aetherband bridges the gap between intuitive songwriting sketchpads and high-precision production environments. It combines the immediate, distraction-free workflow of modern creative apps with the reliability, timing discipline, and low-latency control demanded by serious audio work.
+Aetherband is an experimental, free and open-source digital audio workstation built for people who want room to explore—not just another closed box for making music. The long-term vision is an open creative platform where recording, arranging, sound design, and mixing can grow together, with a distinctive workspace and an audio engine that stays open to inspection and contribution.
 
----
+**Status: early alpha · actively evolving · not yet recommended for production sessions**
 
-## Tech Stack (What the whole app is written in)
+Aetherband is being built in the open. Expect incomplete workflows, changing interfaces, and breaking changes while the foundations take shape. We will distinguish what exists from what we want to build; planned features are not promises of a release date.
 
-| Layer | Language / Framework | Role |
-|-------|----------------------|------|
-| **Audio Engine & DSP** | **Rust** (stable 2021 edition) | Hard real-time callback, mixer, decoder workers, lock-free queues |
-| **Native FFI** | **C99 ABI** + `csbindgen` | Flat C interface + auto-generated C# P/Invoke |
-| **Desktop UI** | **C# / .NET 10 LTS** + **Avalonia UI 11** | GPU-accelerated multi-track arranger, transport, meters |
-| **Audio I/O** | `cpal` | WASAPI (Windows) / CoreAudio (macOS) |
-| **Decoding** | `symphonia` | WAV tested; FLAC, MP3, OGG, AAC/M4A expected from decoder support but not yet verified end-to-end |
-| **Resampling** | `rubato` | High-quality sample-rate conversion |
-| **Concurrency** | `rtrb` | Wait-free SPSC ring buffers (UI ↔ audio thread) |
-| **License** | **GPLv3** | Open source |
+- **Vision:** a flexible creative workspace for musicians, producers, sound explorers, and the people who build audio tools.
+- **License:** GPL-3.0
+- **Architecture:** Rust audio engine · versioned C ABI · Dart FFI · Flutter desktop UI
+- **Current focus:** stabilize the Flutter-to-engine connection and establish a trustworthy baseline before expanding the DAW.
 
-The application is **not** written in a single language. The real-time critical path is pure Rust; the interactive desktop shell is modern C# on Avalonia.
+> A note on the vision: Aetherband aims to become a capable DAW. It is not yet a replacement for established production software, and the features in the roadmap below should be read as goals—not as functionality that is already available.
 
 ---
 
-> [!WARNING]
-> ### Work in Progress (Early Alpha)
-> Aetherband is under active, rapid development and is currently in **early alpha**.
-> - APIs, project formats, and interfaces are evolving quickly and subject to breaking changes.
-> - Core audio playback and multi-track mixing are implemented. Transport Stop has been fixed in the core (decoder restart + regression test); keep hardware/runtime verification status explicit.
-> - Advanced features (MIDI recording, plugin hosting, automation, and project saving) are still in development.
-> - **Not recommended for production work yet.** Use it to test, experiment, and contribute!
+## Why Aetherband?
+
+Creative tools shape how we think. We want Aetherband to become a place where the interface can adapt to the work, where the internals are not a black box, and where musicians and developers can influence the instrument they are building together.
+
+### An open creative platform
+
+Aetherband is intended to be more than a list of DAW features. The project aims to make its architecture, development decisions, and future direction visible, so people can learn from it, contribute to it, and eventually shape their own workflows around it.
+
+### A workspace with its own character
+
+The Flutter frontend gives the project room to experiment with custom timeline lanes, clip interactions, meters, editors, and instrument panels. The goal is a cohesive, expressive workspace—not a claim that the interface is already finished or faster than every alternative.
+
+## Long-term creative engine direction\n\nAetherband's longer-term direction includes an extensible synthesis environment, visual programming, and spatial-audio foundations. The architecture and staged delivery plan are documented in [Creative Engine and Spatial Audio Direction](docs/CREATIVE_ENGINE_AND_SPATIAL_AUDIO.md). These are planned capabilities; spatial rendering, immersive delivery, and programmable DSP are not currently complete features.\n\n## Development roadmap
+
+The audio engine is written in Rust. The long-term architecture keeps real-time audio work in the native engine and separates it from the Flutter presentation layer. That boundary makes the system easier to reason about, test, and evolve.
+
+### Open by design
+
+The project is licensed under GPL-3.0. We want contributors to be able to inspect the implementation, reproduce builds, discuss trade-offs, and help decide what Aetherband becomes. No proprietary lock-in is part of the vision.
 
 ---
 
-## What Can It Do Right Now? (For the Average User)
+## What works today?
 
-If you download and run Aetherband today, here is an honest, plain-English breakdown of what is working versus what is still being built:
+Aetherband is in an early stage. The distinction between existing code, verified behavior, and planned product features matters.
 
-### What You Can Do Right Now:
-- **Import Audio Files:** WAV playback has been tested. FLAC, MP3, OGG, and AAC/M4A may work through the existing `symphonia` decoding pipeline, but have not yet been verified end-to-end.
-- **Automatic Format & Sample Rate Conversion:** Mix audio files of different sample rates (e.g. 44.1 kHz, 48 kHz, 96 kHz) together—the engine resamples them seamlessly in the background.
-- **Multi-Track Playback:** Play, pause, and stop playback of all loaded tracks simultaneously in sync.
-- **Track Mixing Controls:**
-  - Adjust volume faders per track with real-time dB readouts and click-free volume smoothing.
-  - Pan tracks left, right, or center with an equal-power stereo balance law.
-  - Mute/unmute individual tracks on the fly.
-  - Remove unwanted tracks from the session.
-- **Master Bus Control & Metering:** Control master volume and monitor real-time stereo peak/RMS VU meters updating smoothly at 60 FPS.
-- **Audio Device Selection:** Switch output devices (headphones, speakers, audio interfaces) directly from the top transport bar without restarting.
+### Current foundations
 
-### What It Cannot Do Yet (Under Active Development):
-- **No Saving or Loading Projects:** You cannot save your session to disk yet (session state resets when closing the app).
-- **No Audio Recording:** Microphone/instrument audio recording via inputs is planned for Phase 4.
-- **No Visual Waveform Peaks (Yet):** Track lanes currently show clip markers, but not drawn peak/RMS waveform outlines yet.
-- **No MIDI, Virtual Instruments, or Piano Roll:** MIDI keyboard input, software synths, and sequencing will come in Phase 5.
-- **No VST3 / CLAP / AU Plugins:** Audio effect and instrument plugin hosting will be introduced in Phase 6.
-- **No Automation Curves:** Volume/pan cannot be automated along a curve yet.
-- **No Exporting to WAV/MP3 ("Bounce/Render"):** Offline mixdown rendering is not yet implemented.
+- A Rust audio-engine workspace and a C ABI for communication with the desktop UI.
+- Native engine functionality for multi-track playback and mixing.
+- C ABI exports for engine lifecycle, transport, telemetry, audio-device operations, test tone, and track controls. Not every exported operation is yet connected to a complete user-facing workflow.
+- A Flutter desktop frontend prototype and a Dart FFI integration for the initial engine lifecycle, transport, and telemetry path.
+- Regression coverage for the **Stop/rewind transport fix**. The Flutter migration does not intentionally change that transport implementation.
+
+### Known gaps
+
+- The Flutter frontend is still an early prototype; some arrangement content is demonstrative rather than a real session.
+- Device selection, audio import and track management need complete end-to-end integration and verification in the Flutter application.
+- Recording, MIDI editing, built-in instruments, effects, automation, third-party plugin hosting, project save/load, and export must not be considered complete unless they are implemented and tested.
+- Windows and macOS native-library packaging, playback, and clean shutdown need repeatable verification.
+- The current CI checks need to pass before the migration can be described as stable.
+
+**Please treat the current build as experimental.** Do not use it as the only copy of important sessions or irreplaceable recordings.
 
 ---
 
-## Current Milestone: Stabilization Gate (Phases 1–3)
+## Product principles
 
-The core engine, file playback, multi-track mixing, native interop, and initial timeline UI are implemented. Transport Stop has been fixed at the engine level (see issue #5): on Stop the audio thread silences output and resets the playhead, and the control thread restarts every track’s StreamDecoder so the next Play begins at the start of the file. A regression test asserts silence + playhead zero after Stop. Runtime/hardware verification should be reported separately from automated test coverage.
-
-- [x] **Zero-Allocation Audio Thread:** Hardware callback loop executing on dedicated OS audio thread with guaranteed zero heap allocations.
-- [x] **Hardware Audio Driver Support:** Low-latency device discovery and output stream management via `cpal` (WASAPI on Windows, CoreAudio on macOS).
-- [x] **Background Disk Streaming & Decoding:** Non-blocking file decoding worker utilizing `symphonia`. WAV playback has been tested; FLAC, MP3, OGG, and AAC/M4A are expected candidates based on decoder support but remain unverified end-to-end.
-- [x] **Real-Time Sample Rate Conversion:** High-fidelity sinc/FFT resampling powered by `rubato`.
-- [x] **64-Track Summing Mixer:** Real-time multi-track engine featuring Equal-Power stereo panning law and 256-sample de-zippering gain ramping.
-- [x] **Lock-Free Concurrency:** Single-Producer Single-Consumer (SPSC) ring buffers (`rtrb`) for wait-free UI ⇄ Audio communications.
-- [x] **Automated Safety Test Harness:** Allocation-safety test harness for continuous callback processing; run the repository's current verification commands to validate the present baseline.
-- [x] **Flat C-ABI & Automated Bindings:** Clean C99 FFI with automated type-safe C# P/Invoke generation (`csbindgen`).
-- [x] **Modern Desktop App:** Hardware-accelerated desktop UI built with **.NET 10 LTS** and **Avalonia UI**, featuring multi-track lanes, track controls (Volume, Pan, Mute, Remove), playhead scrubbing, and live transport controls.
-- [x] **Stop transport correctness (core):** Stop silences output, resets playhead, and restarts decoders so Play after Stop restarts from the beginning (regression test present).
+- **Explore first.** Make room for experimentation and unexpected workflows.
+- **Keep the audio thread safe.** UI work, file I/O, allocation, locks, and blocking calls do not belong in the real-time audio callback.
+- **No fake success.** If a native operation is unavailable or fails, report the failure rather than pretending it worked.
+- **Make work recoverable.** The intended editing model is non-destructive, with clear ownership of project state and source media.
+- **Build in the open.** Prefer transparent decisions, reproducible builds, useful tests, and community discussion.
+- **Show the evidence.** Clearly distinguish implemented, automated-tested, manually verified, experimental, and planned behavior.
 
 ---
 
-## Highlights
+## Roadmap
 
-- **Hard Real-Time Audio Engine:** Engineered in pure **Rust** with zero-allocation audio callbacks and wait-free concurrency (`rtrb`), eliminating dropouts, clicks, and priority inversions.
-- **Hardware-Accelerated UI:** Built in **C# (.NET 10 LTS)** with **Avalonia UI**, delivering fluid 60–120 FPS timeline scrolling and vector waveforms on Windows and macOS.
-- **Desktop-First Precision:** Designed specifically for desktop workflows—dense mixer strips, multi-monitor layouts, keyboard shortcuts, and sample-accurate editing.
-- **Self-Contained Projects:** Portable `.dawproject` format planned to bundle project metadata and audio assets, eliminating "missing audio file" headaches.
-- **Open-Source & Extensible:** Free software under the GPLv3 license, built with a clean modular separation between core DSP and UI presentation.
+These are **versioned development milestones**, not delivery-date promises. Alpha 1.0 is not a stable release: it marks the end of the initial alpha roadmap and a transition into broader testing. Beta releases, release candidates, and further testing builds may follow before a separate Stable 1.0. Each milestone should be considered complete only when its exit criteria are met. Scope and sequencing may change as testing and contributor feedback reveal what the project needs.
 
----
+| Version | Direction | Intended outcome | Exit criteria |
+|---|---|---|---|
+| **Alpha 0.1 — Connect the Engine** | Stabilize Flutter + native integration | Flutter is the desktop frontend, connected to the Rust engine through the versioned C ABI and Dart FFI. | Windows and macOS builds verified; ABI/version and error handling tested; engine lifecycle and clean shutdown verified; CI green. |
+| **Alpha 0.2 — Bring Audio In** | Audio import and session basics | Load and remove real audio tracks, show real transport state, and establish a basic session model. | Import/play/pause/stop/remove regression tests; session round-trip tests; failures represented honestly in the UI. |
+| **Alpha 0.3 — Shape the Arrangement** | Timeline and waveforms | Work with clips in a visual timeline, with waveform peaks, zoom, scroll, selection, and basic non-destructive edits. | Editing-model tests, large-session profiling, and DPI/layout checks. |
+| **Alpha 0.4 — Capture Ideas** | Recording and export | Record from an input and render audio to a usable output file. | Device tests, background disk writing, interruption/error recovery, and export validation. |
+| **Alpha 0.5 — Work the Mix** | Mixing workflow | Develop reliable track/master controls, metering, undo/redo foundations, shortcuts, and preferences. | Mixer tests and measured performance with realistic sessions. |
+| **Alpha 0.6 — Compose** | MIDI and built-in instruments | Add a MIDI event model, piano roll, MIDI input/recording, and foundations for native instruments and drums. | MIDI editing/playback tests, timing checks, and deterministic project persistence. |
+| **Alpha 0.7 — Shape Sound** | Effects and automation | Add native effects, parameter automation, and a researched plugin-hosting prototype. | DSP correctness, automation timing tests, and a documented fault-isolation plan before third-party plugin support. |
+| **Alpha 0.8 — Open the Ecosystem** | Plugin and project interchange | Evaluate CLAP first, assess VST3 feasibility and licensing, and investigate project interchange. | Compatibility matrix, plugin validation, crash-containment strategy, and reproducible project tests. |
+| **Alpha 0.9 — Make It Dependable** | Performance and release readiness | Improve CPU/memory behavior, accessibility, keyboard workflow, packaging, documentation, and compatibility. | Stress tests, release checklist for supported systems, issue triage, and no known critical data-loss or audio-safety defects. |
+| **Alpha 1.0 — Testing Baseline** | Complete the initial alpha roadmap and prepare for wider testing | Establish a coherent baseline for testing supported workflows; this is not a stable or production-ready release. | Core supported workflows are documented; known limitations and data risks are published; test builds can be reproduced; no placeholders are presented as finished features. |
 
-## Architecture at a Glance
 
-```
-┌────────────────────────────────────────────────────────┐
-│                   Aetherband                            │
-├───────────────────────────┬────────────────────────────┤
-│  Desktop Presentation     │  Shared Audio Engine       │
-│  (C# .NET 10 + Avalonia)  │  (Rust Core Library)       │
-├───────────────────────────┼────────────────────────────┤
-│ • GPU-Accelerated Skia    │ • Hardware Callback Loop   │
-│ • ReactiveUI / MVVM       │ • Lock-Free SPSC Queues    │
-│ • Multi-Track Arranger    │ • Equal-Power Pan Mixer    │
-│ • Track Control Strips    │ • Symphonia Disk Streaming │
-│ • Live Stereo VU Meters   │ • Rubato Resampling (SRC)  │
-└─────────────▲─────────────┴─────────────▲──────────────┘
-              │                           │
-              └───────[ Flat C-ABI ]──────┘
-                 (csbindgen P/Invoke)
-```
+### After Alpha 1.0
 
-- **Core & DSP:** Rust (`cpal` backend, `symphonia` decoder, `rubato` SRC, `rtrb` lock-free queues)
-- **Desktop Frontend:** C# (.NET 10 LTS) + Avalonia UI (v11+)
-- **Interoperability:** Flat C99 ABI with automated type-safe bindings (`csbindgen`)
+Alpha 1.0 does **not** mean Aetherband is stable. Development can continue through multiple testing stages, and version numbers alone do not guarantee reliability.
+
+- **Beta releases** — broaden testing of implemented workflows, usability, compatibility, performance, and bug fixes.
+- **Release candidates (RCs)** — validate a specific proposed release against published release criteria.
+- **Stable 1.0** — a separate milestone, reached only when the supported workflows meet documented quality, reliability, compatibility, and data-integrity requirements.
+
+The number and duration of beta, RC, and other testing releases will depend on findings from real use and testing. No fixed schedule is implied.
 
 ---
 
-## Repository Structure
+## Architecture
 
-```
-Aetherband/
-├── Cargo.toml                       # Root Rust workspace (core + bindings)
-├── core/                            # Pure Rust audio engine & DSP library
-│   ├── src/
-│   │   ├── audio.rs                 # Allocation-free audio callback processor & mixer
-│   │   ├── decoder.rs               # Background disk streaming & file decoder (symphonia)
-│   │   ├── device.rs                # Hardware discovery & cpal stream backend
-│   │   ├── dsp.rs                   # Sine oscillator, gain ramp, level meter
-│   │   ├── ringbuf.rs               # Lock-free SPSC queues (rtrb)
-│   │   ├── track.rs                 # Real-time TrackPlayer & TrackSlots
-│   │   └── lib.rs                   # High-level DAWEngine controller
-│   └── tests/
-│       └── realtime_safety.rs       # 100,000-block zero-allocation test harness
-├── bindings/
-│   └── c_abi/                       # Flat C-ABI export layer (daw_core.dll)
-│       └── build.rs                 # Runs csbindgen to generate C# bindings
-├── apps/
-│   └── desktop/                     # Avalonia UI desktop application (.NET 10)
-│       └── RouletteStudio.Desktop/   # Existing desktop project folder (legacy name; product is Aetherband)
-├── docs/                            # Comprehensive architectural blueprints & specifications
-└── tools/                           # Automated build and execution scripts
-    ├── build.ps1                    # One-command Rust + C# build script
-    └── run.ps1                      # Builds and launches the desktop app
-```
+Aetherband separates the creative interface from the work that must run close to the audio hardware.
 
-> **Note on naming:** The desktop project folder and some C# namespaces still use the historical name `RouletteStudio`. Functionally everything is Aetherband; a future cleanup can rename the folder and namespaces without changing behaviour.
+- **Rust** — native audio engine and real-time-sensitive processing.
+- **C ABI** — a small, versioned boundary between the engine and UI.
+- **Dart FFI** — the Flutter-side adapter for native calls and ownership rules.
+- **Flutter** — the desktop presentation layer and interactive creative workspace.
+
+### Why Flutter?
+
+Flutter gives Aetherband control over a highly customized interface and a shared Windows/macOS presentation layer. Its rendering and iteration model offer useful opportunities for custom timeline and editor work.
+
+Flutter is **not automatically faster** than other UI frameworks. Large arrangements, waveform rendering, meters, memory use, accessibility, and platform behavior must be measured and tested. The reason for choosing Flutter is the balance of interface flexibility, rapid visual iteration, cross-platform UI development, and a clear boundary around the native engine—not a blanket performance claim.
+
+### Why keep audio in Rust?
+
+The audio engine must remain independent of UI rendering and Dart garbage collection. Real-time callbacks must not perform UI work, file I/O, allocation, or blocking FFI operations. UI commands and telemetry cross the ABI; continuous audio processing stays in the native engine.
+
+### Trade-offs we accept
+
+- Dart FFI adds ABI, ownership, and lifecycle complexity. Keep declarations reviewed, versioned, and tested against the actual C ABI.
+- Native libraries must be built and packaged for each supported platform and architecture.
+- Desktop polish is work: keyboard shortcuts, accessibility, scaling, file dialogs, window behavior, and clean shutdown require platform-specific verification.
+- Rendering performance must be profiled with realistic sessions; virtualization and bounded UI work may be necessary.
+- Migrating the frontend costs time and can temporarily leave feature gaps. The Flutter frontend is the intended desktop target; feature parity must be earned through implementation and tests.
 
 ---
 
-## Getting Started
+## Build and verify
 
-### Prerequisites
-1. **Rust Toolchain:** [rustup.rs](https://rustup.rs/) (stable MSVC on Windows).
-2. **.NET 10 SDK:** [.NET 10 Download](https://dotnet.microsoft.com/download).
-3. **Visual Studio:** Visual Studio 2022/2026 with *.NET desktop development* and *Desktop development with C++* workloads.
+The commands below are starting points for local development; successful execution depends on having the required Rust and Flutter toolchains installed and the native library available for the host platform.
 
-### Build Everything
-Run the automated build script from PowerShell:
-```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\build.ps1
+### Rust engine and C ABI
+
+From the repository root:
+
+```sh
+cargo fmt --all -- --check
+cargo check --workspace --all-targets
+cargo test --workspace --all-targets
+cargo build -p daw_core_ffi
 ```
 
-### Launch the Desktop App
-```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\run.ps1
+### Flutter desktop
+
+From `prototypes/aetherband-flutter-ui/`:
+
+```sh
+flutter pub get
+flutter analyze
+flutter test
+flutter run -d windows
 ```
-*(Or open `apps/desktop/RouletteStudio.slnx` in Visual Studio and press **F5**).*
 
-### Run the Audio Core Test Suite
-Run all unit tests and verify the 100,000-block zero-allocation guarantee:
-```powershell
-cargo test -p daw_core --tests
-```
+Use `flutter run -d macos` on macOS. Build the native engine library for the host platform and make it available at the location expected by the FFI adapter.
+
+**Before reporting a feature as working**, test the relevant path end to end. A successful compile alone does not prove that audio playback, recording, device changes, or shutdown behaves correctly on real hardware.
 
 ---
 
-## Roadmap Overview
+## Contributing
 
-| Phase | Milestone | Status |
-|:---:|---|:---:|
-| **0** | Architectural Blueprint & Documentation (10 ADRs) | ✅ Complete |
-| **1** | Real-Time Audio Core Foundation & Hardware I/O | ✅ Complete |
-| **2** | Audio File Playback & Background Disk Streaming | 🧪 Implemented; runtime gate open |
-| **3** | Multi-Track Mixer & Interactive Timeline UI | 🧪 Implemented; runtime gate open |
-| **3.5** | Transport/lifecycle stabilization and regression tests | 🧪 Mostly implemented; confirm current CI/runtime evidence |
-| **4** | Audio Recording, waveform peaks, project persistence & export | ⏳ Planned |
-| **5** | MIDI Engine, Piano Roll & Virtual Instruments | 📅 Planned |
-| **6** | Mixer Routing, Effects Engine & Plugin Hosting | 📅 Planned |
+Aetherband is for musicians who want to shape their tools and developers who want to help build them.
 
----
+- Read the architecture and current milestone before starting a large change.
+- Prefer focused pull requests with a clear purpose and tests.
+- Do not change real-time audio behavior without considering callback safety and regression coverage.
+- Keep UI prototypes clearly distinguished from native functionality.
+- Include reproduction steps for bugs, especially for device, transport, and shutdown issues.
+- Discuss substantial architectural or product changes before investing in a large implementation.
 
-## Documentation
+Useful contributions include Rust audio engineering, Flutter interaction design, testing on Windows and macOS, accessibility, documentation, and feedback from real music-making workflows.
 
-Detailed blueprints and architectural specifications:
-
-- [**VISION.md**](docs/VISION.md) — Product vision, target audience, and core principles.
-- [**REQUIREMENTS.md**](docs/REQUIREMENTS.md) — Real-time performance and functional requirements.
-- [**ARCHITECTURE.md**](docs/ARCHITECTURE.md) — System boundaries, thread boundaries, and data flow.
-- [**AUDIO_ENGINE.md**](docs/AUDIO_ENGINE.md) — Real-time thread contract, latency calculations, and mixer design.
-- [**API_CONTRACT.md**](docs/API_CONTRACT.md) — Flat C-ABI definitions and C# interop contract.
-- [**ROADMAP.md**](docs/ROADMAP.md) — Complete 6-phase development roadmap.
-- [**DECISIONS.md**](docs/DECISIONS.md) — Architecture Decision Records (ADRs).
-- [**AI_WORKFLOW.md**](docs/AI_WORKFLOW.md) — AI pair-programming safety procedures.
+Bug reports and thoughtful feature discussions are welcome. Please include your operating system, steps to reproduce, expected behavior, and actual behavior. Do not attach private recordings or sensitive project files unless you are comfortable sharing them publicly.
 
 ---
 
-## License
+## Join the experiment
 
-Aetherband is licensed under the [GNU General Public License v3.0 (GPLv3)](LICENSE).
+Aetherband is not finished—and it is not trying to pretend otherwise. It is an open effort to explore what a creative audio workspace can become when musicians and developers can both look inside and help shape it.
+
+**Make sound your own. Keep the tools open.**
+
+[Explore the repository](https://github.com/loveyydoll/Aetherband) · [Report a bug or propose an idea](https://github.com/loveyydoll/Aetherband/issues)
+
+Aetherband is licensed under **GPL-3.0**. Contributions are welcome.
