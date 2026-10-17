@@ -1,31 +1,45 @@
 <div align="center">
 
-<img src="assets/branding/aetherband-primary.svg" alt="Aetherband primary logo" width="520">
+<img src="assets/branding/aetherband-primary.svg" alt="Aetherband — official primary logo" width="440">
 
-# Aetherband
+<br>
+
+**Make sound your own. Keep the tools open.**
+
+*An experimental, free and open-source digital audio workstation.*
+
+<br>
+
+[![Development status](https://img.shields.io/badge/status-early%20alpha-B567A8?style=flat-square)](#what-works-today)
+[![License](https://img.shields.io/badge/license-GPL--3.0-55515C?style=flat-square)](LICENSE)
+[![Engine](https://img.shields.io/badge/engine-Rust-55515C?style=flat-square)](#architecture)
+[![Desktop](https://img.shields.io/badge/desktop-Flutter-55515C?style=flat-square)](#architecture)
+
+[Why Aetherband?](#why-aetherband) · [Current progress](#what-works-today) · [Roadmap](#roadmap) · [Build](#build-and-verify) · [Contribute](#contributing)
 
 </div>
 
-> **Make sound your own. Keep the tools open.**
+---
+
+## At a glance
 
 Aetherband is an experimental, free and open-source digital audio workstation built for people who want room to explore—not just another closed box for making music. The long-term vision is an open creative platform where recording, arranging, sound design, and mixing can grow together, with a distinctive workspace and an audio engine that stays open to inspection and contribution.
 
-**Status: early alpha · actively evolving · not yet recommended for production sessions**
+> [!IMPORTANT]
+> **Early alpha — not yet recommended for production sessions.** Workflows are incomplete, interfaces may change, and breaking changes are expected. Roadmap features are goals, not promises or claims of current functionality.
 
-Aetherband is being built in the open. Expect incomplete workflows, changing interfaces, and breaking changes while the foundations take shape. We will distinguish what exists from what we want to build; planned features are not promises of a release date.
-
-- **Vision:** a flexible creative workspace for musicians, producers, sound explorers, and the people who build audio tools.
-- **License:** GPL-3.0
-- **Architecture:** Rust audio engine · versioned C ABI · Dart FFI · Flutter desktop UI
-- **Current focus:** make the Flutter desktop application a reliable primary UI by stabilizing its Rust-engine connection, removing misleading controls, and verifying end-to-end workflows.
-
-> A note on the vision: Aetherband aims to become a capable DAW. It is not yet a replacement for established production software, and the features in the roadmap below should be read as goals—not as functionality that is already available.
+| | |
+| --- | --- |
+| **Vision** | A flexible creative workspace for musicians, producers, sound explorers, and audio-tool builders |
+| **Architecture** | Rust audio engine · versioned C ABI · Dart FFI · Flutter desktop UI |
+| **Current focus** | Stabilizing the Flutter desktop application's Rust-engine connection, removing misleading controls, and verifying end-to-end workflows |
+| **License** | GPL-3.0 |
 
 ---
 
 ## Visual identity
 
-The primary Aetherband logo is stored as an editable, scalable SVG at [`assets/branding/aetherband-primary.svg`](assets/branding/aetherband-primary.svg). It is the original artwork designed in Figma, not a generated approximation. Use the logo on dark or light backgrounds with sufficient contrast; the symbol and wordmark should remain legible at smaller sizes. The visual identity is evolving alongside the project.
+The official [primary wordmark](assets/branding/aetherband-primary.svg) is the original Figma artwork. The [standalone symbol](assets/branding/aetherband-symbol.svg) is intended for compact uses such as app icons, avatars, and navigation. Both are scalable SVGs; avoid stretching or redrawing them, and ensure sufficient contrast with the background.
 
 ## Why Aetherband?
 
