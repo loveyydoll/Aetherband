@@ -45,6 +45,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   StreamSubscription<EngineTelemetry>? _telemetrySubscription;
   EngineTelemetry _telemetry = const EngineTelemetry(
     playheadSeconds: 0,
+    sampleRateHz: 0,
     peakLeft: 0,
     peakRight: 0,
     isPlaying: false,
@@ -55,7 +56,6 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   String _browserCategory = 'Instruments';
   String _preset = 'Soft Focus';
   bool _browserOpen = true;
-  bool _isRecording = false;
   bool _showMixer = false;
   double _zoom = 1;
 
@@ -118,6 +118,15 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  void _showFeatureUnavailable(String feature) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$feature is not implemented yet; no recording or project changes were made.'),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
   void _handleMenuCommand(_MenuAction action) {
     switch (action.id) {
       case 'view.browser':
@@ -133,7 +142,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         unawaited(_stop());
         return;
       case 'transport.record':
-        setState(() => _isRecording = !_isRecording);
+        _showFeatureUnavailable('Audio recording');
         return;
       default:
         ScaffoldMessenger.of(context).showSnackBar(
@@ -184,12 +193,12 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                 _MenuBar(onSelected: _handleMenuCommand),
                 _TopBar(
                   isPlaying: _telemetry.isPlaying,
-                  isRecording: _isRecording,
+                  isRecording: false,
                   browserOpen: _browserOpen,
                   mixerOpen: _showMixer,
                   onPlay: _togglePlay,
                   onStop: _stop,
-                  onRecord: () => setState(() => _isRecording = !_isRecording),
+                  onRecord: () => _showFeatureUnavailable('Audio recording'),
                   onBrowser: () => setState(() => _browserOpen = !_browserOpen),
                   onMixer: () => setState(() => _showMixer = !_showMixer),
                 ),
@@ -260,7 +269,11 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                   peakLeft: _telemetry.peakLeft,
                   peakRight: _telemetry.peakRight,
                 ),
-                const _StatusBar(),
+                _StatusBar(
+                  engineConnected: _engine != null && _engineError == null,
+                  isPlaying: _telemetry.isPlaying,
+                  engineError: _engineError,
+                ),
               ],
             );
           },
@@ -644,7 +657,15 @@ class _TimelineToolbar extends StatelessWidget {
 }
 
 class _StatusBar extends StatelessWidget {
-  const _StatusBar();
+  const _StatusBar({
+    required this.engineConnected,
+    required this.isPlaying,
+    required this.engineError,
+  });
+
+  final bool engineConnected;
+  final bool isPlaying;
+  final Object? engineError;
 
   @override
   Widget build(BuildContext context) {
@@ -652,15 +673,34 @@ class _StatusBar extends StatelessWidget {
       height: 22,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       color: AetherColors.background,
-      child: const Row(
+      child: Row(
         children: [
-          Icon(Icons.circle, color: AetherColors.sage, size: 6),
-          SizedBox(width: 6),
-          Text('UI PROTOTYPE', style: TextStyle(color: AetherColors.secondaryText, fontSize: 8, letterSpacing: 0.6)),
-          Spacer(),
-          Text('ENGINE DISCONNECTED · TRANSPORT IS SIMULATED', style: TextStyle(color: AetherColors.secondaryText, fontSize: 8, letterSpacing: 0.4)),
-          SizedBox(width: 8),
-          Text('WINDOWS / macOS', style: TextStyle(color: AetherColors.sage, fontSize: 8, letterSpacing: 0.5)),
+          Icon(
+            Icons.circle,
+            color: engineConnected ? AetherColors.sage : AetherColors.magenta,
+            size: 6,
+          ),
+          const SizedBox(width: 6),
+          const Text(
+            'FLUTTER ALPHA',
+            style: TextStyle(color: AetherColors.secondaryText, fontSize: 8, letterSpacing: 0.6),
+          ),
+          const Spacer(),
+          Text(
+            engineConnected
+                ? (isPlaying ? 'NATIVE ENGINE CONNECTED · PLAYING' : 'NATIVE ENGINE CONNECTED · DEMO CLIPS ONLY')
+                : 'ENGINE UNAVAILABLE · DEMO CLIPS ONLY',
+            style: const TextStyle(color: AetherColors.secondaryText, fontSize: 8, letterSpacing: 0.4),
+          ),
+          if (engineError != null) ...[
+            const SizedBox(width: 8),
+            const Icon(Icons.warning_amber_rounded, color: AetherColors.magenta, size: 11),
+          ],
+          const SizedBox(width: 8),
+          const Text(
+            'WINDOWS / macOS',
+            style: TextStyle(color: AetherColors.sage, fontSize: 8, letterSpacing: 0.5),
+          ),
         ],
       ),
     );
