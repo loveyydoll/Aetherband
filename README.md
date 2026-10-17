@@ -64,7 +64,7 @@ Aetherband is in an early stage. The distinction between existing code, verified
 
 ### Known gaps
 
-- The Flutter application is the main desktop UI, but the current workspace is still early alpha: demo tracks/clips are not evidence of a loaded or saved session. The directory name `prototypes/aetherband-flutter-ui/` is legacy organization, not a statement that Flutter is a disposable or secondary frontend.
+- The Flutter application is the main desktop UI, but the current workspace is still early alpha: demo tracks/clips are not evidence of a loaded or saved session. The directory name `apps/desktop/` is legacy organization, not a statement that Flutter is a disposable or secondary frontend.
 - Device selection, audio import, track management, and transport behavior still need end-to-end verification on supported desktop platforms.
 - Recording, MIDI editing, built-in instruments, effects, automation, third-party plugin hosting, project save/load, and export must not be considered complete unless they are implemented and tested.
 - Windows and macOS native-library packaging, playback, and clean shutdown need repeatable verification.
@@ -164,7 +164,7 @@ cargo build -p daw_core_ffi
 
 ### Flutter desktop
 
-From `prototypes/aetherband-flutter-ui/` (the current path; the directory name is legacy and does not make Flutter a secondary UI):
+From `apps/desktop/` (the current path; the directory name is legacy and does not make Flutter a secondary UI):
 
 ```sh
 flutter pub get

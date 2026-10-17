@@ -4,7 +4,7 @@
 
 - **Desktop presentation:** Flutter/Dart.
 - **Native engine:** Rust in `core/`.
-- **Interop:** versioned C ABI in `bindings/c_abi/`, called through the Dart FFI adapter at `prototypes/aetherband-flutter-ui/lib/src/native_engine.dart`.
+- **Interop:** versioned C ABI in `bindings/c_abi/`, called through the Dart FFI adapter at `apps/desktop/lib/src/native_engine.dart`.
 - **Audio I/O and decoding:** Rust (`cpal`, `symphonia` and related engine components).
 
 The former C#/.NET + Avalonia frontend is retired and removed from the desktop application. Do not recreate a second desktop UI unless the owner explicitly reverses this decision.
@@ -33,4 +33,4 @@ Flutter was selected for its UI flexibility, custom timeline and mixer rendering
 
 ## Verification
 
-From the repository root, run Rust formatting/checks/tests and build the C ABI library. From `prototypes/aetherband-flutter-ui/`, run `flutter pub get`, `flutter analyze`, and `flutter test`. Native loading and real audio playback require manual end-to-end verification on Windows and macOS.
+From the repository root, run Rust formatting/checks/tests and build the C ABI library. From `apps/desktop/`, run `flutter pub get`, `flutter analyze`, and `flutter test`. Native loading and real audio playback require manual end-to-end verification on Windows and macOS.

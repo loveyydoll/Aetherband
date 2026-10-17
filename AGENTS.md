@@ -6,7 +6,7 @@ This is the mandatory entry point for AI coding agents and contributors. Read it
 
 Aetherband is an early-alpha, open-source desktop DAW. The long-term direction is an expressive arrangement-first workspace with real native audio processing and room for advanced creative tools. The preferred pace is fast, experimental and feature-driven: ship coherent slices, label prototypes honestly, and refactor when there is a concrete reason.
 
-- **Desktop UI:** Flutter/Dart in `prototypes/aetherband-flutter-ui/`.
+- **Desktop UI:** Flutter/Dart in `apps/desktop/`.
 - **Audio engine/DSP:** Rust in `core/`.
 - **Native boundary:** versioned C ABI in `bindings/c_abi/`, consumed through Dart FFI.
 - **Target platforms:** Windows and macOS.
@@ -60,7 +60,7 @@ cargo test --workspace --all-targets
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-From `prototypes/aetherband-flutter-ui/`:
+From `apps/desktop/`:
 
 ```sh
 flutter pub get
