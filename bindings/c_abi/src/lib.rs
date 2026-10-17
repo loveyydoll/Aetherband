@@ -415,7 +415,6 @@ pub unsafe extern "C" fn daw_engine_get_track_count(engine: *mut DAWEngine) -> i
     }
 }
 
-
 #[cfg(test)]
 mod ffi_contract_tests {
     use super::*;
