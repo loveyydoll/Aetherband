@@ -7,6 +7,7 @@ pub mod audio;
 pub mod decoder;
 pub mod device;
 pub mod dsp;
+pub mod graph;
 pub mod ringbuf;
 pub mod spatial;
 pub mod track;
@@ -73,6 +74,9 @@ pub struct TrackInfo {
     pub info: AudioFileInfo,
     /// Duration converted to output sample-rate frames.
     pub output_frames: i64,
+    pub gain: f32,
+    pub pan: f32,
+    pub muted: bool,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -136,25 +140,78 @@ impl DAWEngine {
 
     /// Switches the active output device by index, restarting the audio stream.
     pub fn select_device(&mut self, device_index: usize) -> Result<(), EngineError> {
-        // Validate the target and obtain its real sample rate before tearing
-        // down the currently working stream.
+        // Prepare all decoders and players before starting the replacement stream.
+        // This means a device/configuration/decoder error leaves the old stream
+        // and its queues untouched.
         let sample_rate = self.backend.output_sample_rate(Some(device_index))?;
-        self.active_stream = None; // Drop old stream first
+        let (new_ui_endpoints, audio_endpoints) = create_engine_queues(1024, 2048);
+        let mut new_decoders = HashMap::new();
+        let mut new_track_infos = Vec::with_capacity(self.tracks.len());
+        let mut new_players = Vec::with_capacity(self.tracks.len());
 
-        let (ui_endpoints, audio_endpoints) = create_engine_queues(1024, 2048);
+        for track in &self.tracks {
+            let mut decoder = StreamDecoder::spawn(
+                Path::new(&track.file_path),
+                sample_rate,
+            )?;
+            let consumer = decoder.take_consumer();
+            let output_frames = if track.info.sample_rate > 0 {
+                (track.info.total_frames as f64 * sample_rate as f64
+                    / track.info.sample_rate as f64) as i64
+            } else {
+                0
+            };
+            let mut player = Box::new(TrackPlayer::new(
+                track.id,
+                consumer,
+                track.gain,
+                output_frames,
+            ));
+            player.pan = track.pan;
+            player.muted = track.muted;
+            new_players.push(player);
+            new_decoders.insert(track.id.0, decoder);
+            let mut updated = track.clone();
+            updated.output_frames = output_frames;
+            new_track_infos.push(updated);
+        }
+
+        // Start the replacement stream only after decoder setup succeeds. It may
+        // output silence briefly while the pre-built track players are installed.
         let processor = AudioProcessor::new(sample_rate as f32, audio_endpoints);
-        let active_stream = self
+        let new_stream = self
             .backend
             .start_output_stream(Some(device_index), processor)?;
 
-        self.output_sample_rate = active_stream.sample_rate();
-        self.ui_endpoints = ui_endpoints;
-        self.active_stream = Some(active_stream);
+        let mut new_ui_endpoints = new_ui_endpoints;
+        for player in new_players {
+            let raw = Box::into_raw(player) as usize;
+            if new_ui_endpoints
+                .cmd_producer
+                .push(EngineCommand::AddTrack { player_ptr: raw })
+                .is_err()
+            {
+                // The queue capacity is far above the supported track limit; this
+                // can only indicate an internal invariant failure. Do not attempt
+                // to reclaim raw pointers here because the running callback may
+                // already have taken ownership of them.
+                drop(new_stream);
+                return Err(EngineError::TrackLimitReached);
+            }
+        }
+
+        // Commit the new graph/queues together. Replacing the old stream stops its
+        // callback before the old queue endpoints and decoder workers are dropped.
+        let new_sample_rate = new_stream.sample_rate();
+        self.active_stream = Some(new_stream);
+        self.ui_endpoints = new_ui_endpoints;
+        self.decoders = new_decoders;
+        self.tracks = new_track_infos;
+        self.output_sample_rate = new_sample_rate;
         self.current_device_index = Some(device_index);
 
         Ok(())
     }
-
     /// Returns the active output stream's sample rate in Hz.
     pub fn output_sample_rate(&self) -> u32 {
         self.output_sample_rate
@@ -292,6 +349,9 @@ impl DAWEngine {
     ///
     /// The decoder immediately starts streaming decoded blocks into the audio thread.
     pub fn load_track(&mut self, path: &Path) -> Result<TrackId, EngineError> {
+        if self.tracks.len() >= track::MAX_TRACKS {
+            return Err(EngineError::TrackLimitReached);
+        }
         let info = probe_file(path)?;
         let id = next_track_id();
 
@@ -323,6 +383,9 @@ impl DAWEngine {
             file_path: path.display().to_string(),
             info,
             output_frames,
+            gain: 0.8,
+            pan: 0.5,
+            muted: false,
         });
 
         // Smuggle the player as a raw pointer through the command queue.
@@ -370,31 +433,45 @@ impl DAWEngine {
     // ── Per-track mixing controls ─────────────────────────────────────────
 
     pub fn set_track_volume(&mut self, track_id: TrackId, gain: f32) -> bool {
-        self.ui_endpoints
-            .cmd_producer
-            .push(EngineCommand::SetTrackVolume {
-                track_id,
-                target_gain: gain.clamp(0.0, 2.0),
-                ramp_frames: 256,
-            })
-            .is_ok()
+        let gain = gain.clamp(0.0, 2.0);
+        if self.ui_endpoints.cmd_producer.push(EngineCommand::SetTrackVolume {
+            track_id,
+            target_gain: gain,
+            ramp_frames: 256,
+        }).is_err() {
+            return false;
+        }
+        if let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) {
+            track.gain = gain;
+            true
+        } else {
+            false
+        }
     }
 
     pub fn set_track_pan(&mut self, track_id: TrackId, pan: f32) -> bool {
-        self.ui_endpoints
-            .cmd_producer
-            .push(EngineCommand::SetTrackPan {
-                track_id,
-                pan: pan.clamp(0.0, 1.0),
-            })
-            .is_ok()
+        let pan = pan.clamp(0.0, 1.0);
+        if self.ui_endpoints.cmd_producer.push(EngineCommand::SetTrackPan { track_id, pan }).is_err() {
+            return false;
+        }
+        if let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) {
+            track.pan = pan;
+            true
+        } else {
+            false
+        }
     }
 
     pub fn mute_track(&mut self, track_id: TrackId, muted: bool) -> bool {
-        self.ui_endpoints
-            .cmd_producer
-            .push(EngineCommand::MuteTrack { track_id, muted })
-            .is_ok()
+        if self.ui_endpoints.cmd_producer.push(EngineCommand::MuteTrack { track_id, muted }).is_err() {
+            return false;
+        }
+        if let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) {
+            track.muted = muted;
+            true
+        } else {
+            false
+        }
     }
 
     // ── Telemetry ─────────────────────────────────────────────────────────

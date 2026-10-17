@@ -21,5 +21,8 @@ abstract class EngineController {
   Future<void> play();
   Future<void> pause();
   Future<void> stop();
+  Future<int> loadTrack(String path);
+  Future<void> removeTrack(int trackId);
+  Future<int> getTrackCount();
   Future<void> dispose();
 }

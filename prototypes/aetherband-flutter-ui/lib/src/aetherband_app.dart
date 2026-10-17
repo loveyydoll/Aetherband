@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:file_selector/file_selector.dart';
 
 import 'engine_controller.dart';
 import 'native_engine.dart';
@@ -34,6 +35,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   EngineController? _engine;
   Object? _engineError;
   final List<TrackModel> _tracks = createDemoTracks();
+  final Map<String, int> _nativeTrackIds = <String, int>{};
   final Map<String, double> _knobValues = {
     'Tone': 0.62,
     'Motion': 0.44,
@@ -142,6 +144,70 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     );
   }
 
+
+  Future<void> _importAudio() async {
+    final engine = _engine;
+    if (engine == null) {
+      _showEngineUnavailable();
+      return;
+    }
+    const audioTypes = XTypeGroup(
+      label: 'Audio',
+      extensions: <String>['wav', 'aiff', 'aif', 'flac', 'mp3', 'ogg', 'm4a'],
+    );
+    try {
+      final file = await openFile(acceptedTypeGroups: <XTypeGroup>[audioTypes]);
+      if (file == null || !mounted) return;
+      final nativeId = await engine.loadTrack(file.path);
+      final name = file.name;
+      final id = 'native-$nativeId';
+      setState(() {
+        _nativeTrackIds[id] = nativeId;
+        _tracks.add(TrackModel(
+          id: id,
+          name: name,
+          kind: 'AUDIO',
+          color: AetherColors.sage,
+          clips: <ClipModel>[
+            ClipModel(
+              id: '$id-clip',
+              title: name,
+              start: 0,
+              width: 420,
+              color: AetherColors.sage,
+            ),
+          ],
+        ));
+        _selectedTrackId = id;
+        _selectedClipId = '$id-clip';
+        _engineError = null;
+      });
+    } catch (error) {
+      if (mounted) setState(() => _engineError = error);
+    }
+  }
+
+  Future<void> _removeSelectedTrack() async {
+    final engine = _engine;
+    final nativeId = _nativeTrackIds[_selectedTrackId];
+    if (engine == null || nativeId == null) {
+      _showFeatureUnavailable('Removing demo tracks');
+      return;
+    }
+    try {
+      await engine.removeTrack(nativeId);
+      if (!mounted) return;
+      setState(() {
+        _tracks.removeWhere((track) => track.id == _selectedTrackId);
+        _nativeTrackIds.remove(_selectedTrackId);
+        _selectedTrackId = _tracks.first.id;
+        _selectedClipId = null;
+      });
+    } catch (error) {
+      if (mounted) setState(() => _engineError = error);
+    }
+  }
+
   void _handleMenuCommand(_MenuAction action) {
     switch (action.id) {
       case 'view.browser':
@@ -149,6 +215,12 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         return;
       case 'view.mixer':
         setState(() => _showMixer = !_showMixer);
+        return;
+      case 'track.addAudio':
+        unawaited(_importAudio());
+        return;
+      case 'track.delete':
+        unawaited(_removeSelectedTrack());
         return;
       case 'transport.play':
         unawaited(_togglePlay());
