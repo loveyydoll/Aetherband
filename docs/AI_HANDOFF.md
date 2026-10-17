@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-10-17  
 **Current `main` commit at time of update:** `66fc6f9a39b283fdcf8dfd6b7279f02a663e0169`  
-**Mandatory direction:** Full-scale Flutter desktop UI, integrated with the existing Rust engine through the C ABI. See [`FLUTTER_DESKTOP_MIGRATION.md`](FLUTTER_DESKTOP_MIGRATION.md).
+**Mandatory direction:** Full-scale Flutter desktop UI, integrated with the existing Rust engine through the C ABI. C#/Avalonia is transitional and likely to be retired after verified parity and owner approval. See [`FLUTTER_DESKTOP_MIGRATION.md`](FLUTTER_DESKTOP_MIGRATION.md) and [`PRODUCT_ROADMAP.md`](PRODUCT_ROADMAP.md).
 
 This is the handoff for a new AI coding session. Read it with [`AGENTS.md`](../AGENTS.md) and the Flutter migration guide before planning work.
 
@@ -161,18 +161,19 @@ Prerequisite: Visual Studio's **Desktop development with C++** workload. For a m
 
 ## 9. Next engineering priorities
 
-1. Update/keep this handoff, `AGENTS.md`, README, architecture, stack, roadmap, API contract, status and changelog aligned with the mandatory Flutter decision.
+1. Use [`PRODUCT_ROADMAP.md`](PRODUCT_ROADMAP.md) as the extensive, dependency-aware backlog (14 milestones, including Flutter, engine integration, DAW features, release engineering and legacy UI retirement).
 2. Fix the independent Rust formatting failure and re-run workspace check/tests.
 3. Define the production app packaging/location strategy for Flutter without prematurely deleting Avalonia.
 4. Implement the Dart FFI adapter on the actual C ABI; add ABI-layout, error-code, lifecycle and telemetry tests.
 5. Connect the existing real engine operations (device discovery, load/remove audio track, transport, track volume/pan/mute, master volume and telemetry) and replace mock state for production.
 6. Implement full-scale arrangement/editor workflows and future engine features through reviewed C ABI additions.
-7. Make Flutter the default documented frontend only after the migration gates pass; retire Avalonia separately after feature parity and owner review.
+7. Make Flutter the default documented frontend only after the migration gates pass; retire Avalonia and its C#-only bindings separately after feature parity and owner review.
 
 ## 10. Files agents should read first
 
 - [`AGENTS.md`](../AGENTS.md) — non-negotiable repo/agent rules.
 - [`FLUTTER_DESKTOP_MIGRATION.md`](FLUTTER_DESKTOP_MIGRATION.md) — mandatory target architecture, staged plan and acceptance criteria.
+- [`PRODUCT_ROADMAP.md`](PRODUCT_ROADMAP.md) — extensive product/engineering backlog and migration retirement gates.
 - [`ENGINEERING_STATUS.md`](ENGINEERING_STATUS.md) — current engineering snapshot.
 - [`API_CONTRACT.md`](API_CONTRACT.md) — current C ABI inventory/layouts.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md), [`TECH_STACK.md`](TECH_STACK.md), [`ROADMAP.md`](ROADMAP.md), [`DECISIONS.md`](DECISIONS.md) — architecture/decision history.
