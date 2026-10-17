@@ -42,11 +42,11 @@ The C ABI exports device selection and track loading/removal/mix controls. The c
 
 **Next action:** define typed Dart bindings for the existing exports and their result semantics, then expose a small real audio-import/playback path. Do not add UI controls until each operation is connected to native state and reports errors truthfully.
 
-### 4. Device switching can discard the active playback graph
+### 4. Device switching previously discarded the active playback graph
 
 In `DAWEngine::select_device`, the current stream is dropped and a fresh queue/processor is created. The control-thread track metadata and decoder map remain, but the newly created processor starts with an empty track table. Unless the tracks are deliberately reinstalled, changing devices can leave metadata claiming tracks exist while the new callback has no corresponding players.
 
-**Required fix before presenting device switching as dependable:** define a control-thread-safe stream/graph rebuild that recreates the output stream and re-installs track players/decoder consumers while preserving IDs, gain, pan, mute and transport semantics—or explicitly disable device switching until that is implemented and tested. Do not simply recreate queues and silently lose the graph.
+**Implementation started on this branch:** device switching now prepares decoders and a replacement queue/processor, then queues new track players using the same IDs and stored gain/pan/mute values before committing the new stream. This is not yet verified; the code needs CI tests and real-device validation, including failure cases.
 
 ### 5. Callback ownership and realtime constraints need targeted review
 
@@ -105,3 +105,14 @@ Do not implement a large node graph, plugin host, granular/spectral engine, MIDI
 - Play/Pause/Stop/rewind and track removal have regression coverage.
 - Failures are surfaced rather than presented as success.
 - No claim of real-device verification without a manual Windows/macOS test record.
+
+## New implementation in this branch
+
+- Dart FFI now resolves the existing native track-load, track-remove and track-count exports before creating the engine handle, and the controller exposes these operations.
+- The Flutter File → Add Audio Track action opens a desktop audio-file picker and requests native decoding; the selected track is also represented in the timeline. Track removal calls the native engine for imported tracks. Existing demo tracks remain illustrative and are not native audio.
+- Device switching recreates decoders for the target sample rate and reinstalls the track graph rather than leaving the new processor empty. Track gain, pan and mute metadata are retained across the switch.
+- `core/src/graph.rs` introduces a control-thread typed graph model with Audio/Control/Event/Analysis ports, compatibility checks, cycle rejection and topological ordering. **It is a validated model only, not yet a DSP graph running in the callback.**
+
+## Verification still outstanding
+
+No Rust or Flutter commands were executed in this editing session. Required next checks include Rust formatting/tests, Dart dependency resolution/analyzer/widget tests, Windows/macOS builds, and manual playback plus device switching on a machine with real audio hardware. The first import UI uses a placeholder timeline width; deriving visual clip duration from native duration telemetry is a follow-up.
