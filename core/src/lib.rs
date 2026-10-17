@@ -136,65 +136,66 @@ impl DAWEngine {
 
     /// Switches the active output device by index, restarting the audio stream.
     pub fn select_device(&mut self, device_index: usize) -> Result<(), EngineError> {
-        // Prepare the replacement output pipeline before dropping the working
-        // stream. The new processor has its own queues, so every loaded track
-        // must be decoded for the new device rate and re-installed explicitly.
+        // Prepare all decoders and players before starting the replacement stream.
+        // This means a device/configuration/decoder error leaves the old stream
+        // and its queues untouched.
         let sample_rate = self.backend.output_sample_rate(Some(device_index))?;
-        let (mut new_ui_endpoints, audio_endpoints) = create_engine_queues(1024, 2048);
-        let processor = AudioProcessor::new(sample_rate as f32, audio_endpoints);
-        let new_stream = self
-            .backend
-            .start_output_stream(Some(device_index), processor)?;
-        let new_sample_rate = new_stream.sample_rate();
-
+        let (new_ui_endpoints, audio_endpoints) = create_engine_queues(1024, 2048);
         let mut new_decoders = HashMap::new();
         let mut new_track_infos = Vec::with_capacity(self.tracks.len());
+        let mut new_players = Vec::with_capacity(self.tracks.len());
 
         for track in &self.tracks {
             let mut decoder = StreamDecoder::spawn(
                 Path::new(&track.file_path),
-                new_sample_rate,
+                sample_rate,
             )?;
             let consumer = decoder.take_consumer();
             let output_frames = if track.info.sample_rate > 0 {
-                (track.info.total_frames as f64 * new_sample_rate as f64
+                (track.info.total_frames as f64 * sample_rate as f64
                     / track.info.sample_rate as f64) as i64
             } else {
                 0
             };
-            let player = Box::new(TrackPlayer::new(
+            new_players.push(Box::new(TrackPlayer::new(
                 track.id,
                 consumer,
                 0.8,
                 output_frames,
-            ));
-
-            // The replacement stream is running silently while these bounded
-            // commands are queued. On failure, return an error instead of
-            // silently claiming the old tracks were restored.
-            let raw = Box::into_raw(player) as usize;
-            if new_ui_endpoints
-                .cmd_producer
-                .push(EngineCommand::AddTrack { player_ptr: raw })
-                .is_err()
-            {
-                // The new stream is still active and may have consumed commands.
-                // This queue is sized well above the supported track count, so
-                // this indicates an internal invariant failure; avoid unsafe
-                // reclamation of a pointer whose ownership may have transferred.
-                drop(new_stream);
-                return Err(EngineError::TrackLimitReached);
-            }
-
+            )));
             new_decoders.insert(track.id.0, decoder);
             let mut updated = track.clone();
             updated.output_frames = output_frames;
             new_track_infos.push(updated);
         }
 
-        // Commit only after the replacement stream and all track decoders are
-        // prepared. Dropping the old stream stops its callback before the old
-        // queues and decoder workers are replaced.
+        // Start the replacement stream only after decoder setup succeeds. It may
+        // output silence briefly while the pre-built track players are installed.
+        let processor = AudioProcessor::new(sample_rate as f32, audio_endpoints);
+        let new_stream = self
+            .backend
+            .start_output_stream(Some(device_index), processor)?;
+
+        let mut new_ui_endpoints = new_ui_endpoints;
+        for player in new_players {
+            let raw = Box::into_raw(player) as usize;
+            if new_ui_endpoints
+                .cmd_producer
+                .push(EngineCommand::AddTrack { player_ptr: raw })
+                .is_err()
+            {
+                // The queue capacity is far above the supported track limit; this
+                // can only indicate an internal invariant failure. Do not attempt
+                // to reclaim raw pointers here because the running callback may
+                // already have taken ownership of them.
+                drop(new_stream);
+                return Err(EngineError::TrackLimitReached);
+            }
+        }
+
+        // Commit the new graph/queues together. Replacing the old stream stops its
+        // callback before the old queue endpoints and decoder workers are dropped.
+        let new_sample_rate = new_stream.sample_rate();
         self.active_stream = Some(new_stream);
         self.ui_endpoints = new_ui_endpoints;
         self.decoders = new_decoders;
@@ -204,7 +205,6 @@ impl DAWEngine {
 
         Ok(())
     }
-
     /// Returns the active output stream's sample rate in Hz.
     pub fn output_sample_rate(&self) -> u32 {
         self.output_sample_rate
