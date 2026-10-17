@@ -55,14 +55,20 @@ class NativeEngineController implements EngineController {
     required _CommandD stopNative,
     required _CommandD destroyNative,
     required _PollD pollNative,
-    required this.sampleRateHz,\n    required _LoadTrackD loadTrackNative,\n    required _RemoveTrackD removeTrackNative,\n    required _TrackCountD trackCountNative,
+    required this.sampleRateHz,
+    required _LoadTrackD loadTrackNative,
+    required _RemoveTrackD removeTrackNative,
+    required _TrackCountD trackCountNative,
   })  : _library = library,
         _handle = handle,
         _playNative = playNative,
         _pauseNative = pauseNative,
         _stopNative = stopNative,
         _destroyNative = destroyNative,
-        _pollNative = pollNative,\n        _loadTrackNative = loadTrackNative,\n        _removeTrackNative = removeTrackNative,\n        _trackCountNative = trackCountNative {
+        _pollNative = pollNative,
+        _loadTrackNative = loadTrackNative,
+        _removeTrackNative = removeTrackNative,
+        _trackCountNative = trackCountNative {
     _pollTimer = Timer.periodic(const Duration(milliseconds: 33), (_) => _poll());
   }
 
@@ -74,7 +80,10 @@ class NativeEngineController implements EngineController {
   final _CommandD _pauseNative;
   final _CommandD _stopNative;
   final _CommandD _destroyNative;
-  final _PollD _pollNative;\n  final _LoadTrackD _loadTrackNative;\n  final _RemoveTrackD _removeTrackNative;\n  final _TrackCountD _trackCountNative;
+  final _PollD _pollNative;
+  final _LoadTrackD _loadTrackNative;
+  final _RemoveTrackD _removeTrackNative;
+  final _TrackCountD _trackCountNative;
   final int sampleRateHz;
   final StreamController<EngineTelemetry> _telemetry = StreamController<EngineTelemetry>.broadcast();
   Timer? _pollTimer;
@@ -137,7 +146,10 @@ class NativeEngineController implements EngineController {
           stopNative: stop,
           destroyNative: destroy,
           pollNative: poll,
-          sampleRateHz: outSampleRate.value,\n          loadTrackNative: loadTrack,\n          removeTrackNative: removeTrack,\n          trackCountNative: trackCount,
+          sampleRateHz: outSampleRate.value,
+          loadTrackNative: loadTrack,
+          removeTrackNative: removeTrack,
+          trackCountNative: trackCount,
         );
       } finally {
         calloc.free(outSampleRate);
