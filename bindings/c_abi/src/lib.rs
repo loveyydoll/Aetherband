@@ -414,3 +414,29 @@ pub unsafe extern "C" fn daw_engine_get_track_count(engine: *mut DAWEngine) -> i
         -1
     }
 }
+
+
+#[cfg(test)]
+mod ffi_contract_tests {
+    use super::*;
+
+    #[test]
+    fn api_version_matches_dart_ffi_contract() {
+        assert_eq!(daw_get_api_version(), 0x0000_0200);
+    }
+
+    #[test]
+    fn sample_rate_query_rejects_null_handle_or_output() {
+        let mut sample_rate = 0_u32;
+        unsafe {
+            assert_eq!(
+                daw_engine_get_sample_rate(ptr::null_mut(), &mut sample_rate),
+                -1
+            );
+            assert_eq!(
+                daw_engine_get_sample_rate(ptr::null_mut(), ptr::null_mut()),
+                -1
+            );
+        }
+    }
+}
