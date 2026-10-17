@@ -238,9 +238,9 @@ impl DAWEngine {
                     {
                         // Queue full — reclaim the consumer on this thread.
                         drop(unsafe {
-                            Box::from_raw(consumer_ptr as *mut rtrb::Consumer<
-                                crate::ringbuf::DecodedBlock,
-                            >)
+                            Box::from_raw(
+                                consumer_ptr as *mut rtrb::Consumer<crate::ringbuf::DecodedBlock>,
+                            )
                         });
                         // Also drop the new decoder we just created.
                         drop(new_decoder);
@@ -249,11 +249,7 @@ impl DAWEngine {
                     }
                 }
                 Err(e) => {
-                    log::error!(
-                        "Failed to restart decoder for track {:?}: {}",
-                        track.id,
-                        e
-                    );
+                    log::error!("Failed to restart decoder for track {:?}: {}", track.id, e);
                 }
             }
         }
