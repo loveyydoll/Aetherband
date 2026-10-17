@@ -72,15 +72,15 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     if (_initializingEngine) return;
     _initializingEngine = true;
 
-    // Retry must not orphan an existing native handle or leave its telemetry
-    // timer/subscription alive if the error came from polling after startup.
-    final previousEngine = _engine;
-    _engine = null;
-    await _telemetrySubscription?.cancel();
-    _telemetrySubscription = null;
-    if (previousEngine != null) await previousEngine.dispose();
-
     try {
+      // Retry must not orphan an existing native handle or leave its telemetry
+      // timer/subscription alive if the error came from polling after startup.
+      final previousEngine = _engine;
+      _engine = null;
+      await _telemetrySubscription?.cancel();
+      _telemetrySubscription = null;
+      if (previousEngine != null) await previousEngine.dispose();
+
       final engine = await NativeEngineController.create();
       if (!mounted) {
         await engine.dispose();
