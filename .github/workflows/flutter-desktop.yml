@@ -6,13 +6,13 @@ on:
       - 'apps/desktop/**'
       - 'core/**'
       - 'bindings/c_abi/**'
-      - '.github/workflows/flutter-ui-prototype.yml'
+      - '.github/workflows/flutter-desktop.yml'
   push:
     branches:
       - 'main'
     paths:
       - 'apps/desktop/**'
-      - '.github/workflows/flutter-ui-prototype.yml'
+      - '.github/workflows/flutter-desktop.yml'
 
 permissions:
   contents: read
