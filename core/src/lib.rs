@@ -7,6 +7,7 @@ pub mod audio;
 pub mod decoder;
 pub mod device;
 pub mod dsp;
+pub mod graph;
 pub mod ringbuf;
 pub mod spatial;
 pub mod track;
