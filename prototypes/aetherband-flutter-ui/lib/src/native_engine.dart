@@ -37,13 +37,13 @@ final class _MeteringFrame extends Struct {
 /// Owns one native engine handle. Calls are serialized on the Flutter UI isolate;
 /// all DSP, decoding, and audio callback work remains in Rust.
 class NativeEngineController implements EngineController {
-  NativeEngineController._(this._library, this._handle)
-      : _version = _library.lookupFunction<_VersionN, _VersionD>('daw_get_api_version'),
-        _playNative = _library.lookupFunction<_CommandN, _CommandD>('daw_engine_play'),
-        _pauseNative = _library.lookupFunction<_CommandN, _CommandD>('daw_engine_pause'),
-        _stopNative = _library.lookupFunction<_CommandN, _CommandD>('daw_engine_stop'),
-        _destroyNative = _library.lookupFunction<_CommandN, _CommandD>('daw_engine_destroy'),
-        _pollNative = _library.lookupFunction<_PollN, _PollD>('daw_engine_poll_telemetry') {
+  NativeEngineController._(DynamicLibrary library, this._handle)
+      : _version = library.lookupFunction<_VersionN, _VersionD>('daw_get_api_version'),
+        _playNative = library.lookupFunction<_CommandN, _CommandD>('daw_engine_play'),
+        _pauseNative = library.lookupFunction<_CommandN, _CommandD>('daw_engine_pause'),
+        _stopNative = library.lookupFunction<_CommandN, _CommandD>('daw_engine_stop'),
+        _destroyNative = library.lookupFunction<_CommandN, _CommandD>('daw_engine_destroy'),
+        _pollNative = library.lookupFunction<_PollN, _PollD>('daw_engine_poll_telemetry') {
     final version = _version();
     if (version != 0x00000100) {
       _destroyNative(_handle);
@@ -52,7 +52,6 @@ class NativeEngineController implements EngineController {
     _pollTimer = Timer.periodic(const Duration(milliseconds: 33), (_) => _poll());
   }
 
-  final DynamicLibrary _library;
   final Pointer<Void> _handle;
   final _VersionD _version;
   final _CommandD _playNative;
