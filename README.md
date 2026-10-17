@@ -76,7 +76,7 @@ Aetherband is in an early stage. The distinction between existing code, verified
 
 ## Roadmap
 
-These are **versioned alpha milestones**, not delivery-date promises. Each milestone should be considered complete only when its exit criteria are met. Scope and sequencing may change as testing and contributor feedback reveal what the project needs.
+These are **versioned development milestones**, not delivery-date promises. Alpha 1.0 is not a stable release: it marks the end of the initial alpha roadmap and a transition into broader testing. Beta releases, release candidates, and further testing builds may follow before a separate Stable 1.0. Each milestone should be considered complete only when its exit criteria are met. Scope and sequencing may change as testing and contributor feedback reveal what the project needs.
 
 | Version | Direction | Intended outcome | Exit criteria |
 |---|---|---|---|
@@ -89,7 +89,18 @@ These are **versioned alpha milestones**, not delivery-date promises. Each miles
 | **Alpha 0.7 — Shape Sound** | Effects and automation | Add native effects, parameter automation, and a researched plugin-hosting prototype. | DSP correctness, automation timing tests, and a documented fault-isolation plan before third-party plugin support. |
 | **Alpha 0.8 — Open the Ecosystem** | Plugin and project interchange | Evaluate CLAP first, assess VST3 feasibility and licensing, and investigate project interchange. | Compatibility matrix, plugin validation, crash-containment strategy, and reproducible project tests. |
 | **Alpha 0.9 — Make It Dependable** | Performance and release readiness | Improve CPU/memory behavior, accessibility, keyboard workflow, packaging, documentation, and compatibility. | Stress tests, release checklist for supported systems, issue triage, and no known critical data-loss or audio-safety defects. |
-| **1.0 — Aetherband** | Stable public release | Deliver a documented, dependable DAW for the workflows explicitly supported by the release. | Release gates pass on supported OS versions; project-format policy and support boundaries documented; no placeholders presented as finished features. |
+| **Alpha 1.0 — Testing Baseline** | Complete the initial alpha roadmap and prepare for wider testing | Establish a coherent baseline for testing supported workflows; this is not a stable or production-ready release. | Core supported workflows are documented; known limitations and data risks are published; test builds can be reproduced; no placeholders are presented as finished features. |
+
+
+### After Alpha 1.0
+
+Alpha 1.0 does **not** mean Aetherband is stable. Development can continue through multiple testing stages, and version numbers alone do not guarantee reliability.
+
+- **Beta releases** — broaden testing of implemented workflows, usability, compatibility, performance, and bug fixes.
+- **Release candidates (RCs)** — validate a specific proposed release against published release criteria.
+- **Stable 1.0** — a separate milestone, reached only when the supported workflows meet documented quality, reliability, compatibility, and data-integrity requirements.
+
+The number and duration of beta, RC, and other testing releases will depend on findings from real use and testing. No fixed schedule is implied.
 
 ---
 
