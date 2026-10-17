@@ -1,5 +1,9 @@
 # Aetherband Development Roadmap
 
+> **Canonical extended backlog:** See [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) for the detailed, dependency-aware plan covering Flutter migration, C ABI/Dart FFI, project persistence, timeline editing, recording, MIDI, instruments, routing, effects, plugins, automation, export, testing, packaging and retirement of the transitional C# frontend.
+
+> **Mandatory UI direction:** Flutter/Dart is the long-term desktop frontend through the Rust C ABI. C#/Avalonia is transitional and expected to be retired only after verified feature parity and owner approval.
+
 ## 1. Roadmap principles
 
 Aetherband is being developed incrementally, with correctness and testable milestones taking priority over feature count. Implemented code is not considered complete merely because it exists: a phase is complete only when its acceptance criteria are reproducibly verified.
