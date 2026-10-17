@@ -1,4 +1,10 @@
+<div align="center">
+
+<img src="assets/branding/aetherband-primary.svg" alt="Aetherband primary logo" width="520">
+
 # Aetherband
+
+</div>
 
 > **Make sound your own. Keep the tools open.**
 
@@ -16,6 +22,10 @@ Aetherband is being built in the open. Expect incomplete workflows, changing int
 > A note on the vision: Aetherband aims to become a capable DAW. It is not yet a replacement for established production software, and the features in the roadmap below should be read as goals—not as functionality that is already available.
 
 ---
+
+## Visual identity
+
+The primary Aetherband logo is stored as an editable, scalable SVG at [`assets/branding/aetherband-primary.svg`](assets/branding/aetherband-primary.svg). It is the original artwork designed in Figma, not a generated approximation. Use the logo on dark or light backgrounds with sufficient contrast; the symbol and wordmark should remain legible at smaller sizes. The visual identity is evolving alongside the project.
 
 ## Why Aetherband?
 
