@@ -1,6 +1,6 @@
 //! Aetherband C-ABI Foreign Function Interface
 //!
-//! Exposes a flat, C99-compatible interface for consumption by C# (.NET 10) P/Invoke.
+//! Exposes a flat, C-compatible interface for desktop frontends through Dart FFI.
 
 use daw_core::ringbuf::TelemetryFrame;
 use std::ffi::CString;
@@ -83,7 +83,7 @@ impl Default for DAWDeviceInfo {
 /// Returns the API version (major << 16 | minor << 8 | patch).
 #[no_mangle]
 pub extern "C" fn daw_get_api_version() -> u32 {
-    (0 << 16) | (1 << 8) | 0
+    (0 << 16) | (2 << 8) | 0
 }
 
 /// Creates a new DAW engine instance and initializes the default audio stream.
@@ -271,6 +271,25 @@ pub unsafe extern "C" fn daw_engine_get_device_info(
     }
 }
 
+/// Writes the active output sample rate in Hz to `out_sample_rate`.
+///
+/// Returns 0 on success, -1 for an invalid handle or output pointer.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_get_sample_rate(
+    engine: *mut DAWEngine,
+    out_sample_rate: *mut u32,
+) -> i32 {
+    if out_sample_rate.is_null() {
+        return -1;
+    }
+    if let Some(eng) = to_core_ref(engine) {
+        *out_sample_rate = eng.output_sample_rate();
+        0
+    } else {
+        -1
+    }
+}
+
 /// Selects an audio output device by index.
 #[no_mangle]
 pub unsafe extern "C" fn daw_engine_select_device(engine: *mut DAWEngine, index: u32) -> i32 {
@@ -393,5 +412,30 @@ pub unsafe extern "C" fn daw_engine_get_track_count(engine: *mut DAWEngine) -> i
         eng.tracks().len() as i32
     } else {
         -1
+    }
+}
+
+#[cfg(test)]
+mod ffi_contract_tests {
+    use super::*;
+
+    #[test]
+    fn api_version_matches_dart_ffi_contract() {
+        assert_eq!(daw_get_api_version(), 0x0000_0200);
+    }
+
+    #[test]
+    fn sample_rate_query_rejects_null_handle_or_output() {
+        let mut sample_rate = 0_u32;
+        unsafe {
+            assert_eq!(
+                daw_engine_get_sample_rate(ptr::null_mut(), &mut sample_rate),
+                -1
+            );
+            assert_eq!(
+                daw_engine_get_sample_rate(ptr::null_mut(), ptr::null_mut()),
+                -1
+            );
+        }
     }
 }

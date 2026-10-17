@@ -3,12 +3,14 @@ import 'dart:async';
 class EngineTelemetry {
   const EngineTelemetry({
     required this.playheadSeconds,
+    required this.sampleRateHz,
     required this.peakLeft,
     required this.peakRight,
     required this.isPlaying,
   });
 
   final double playheadSeconds;
+  final int sampleRateHz;
   final double peakLeft;
   final double peakRight;
   final bool isPlaying;

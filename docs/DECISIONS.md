@@ -3,9 +3,9 @@
 ## Index of Decisions
 
 - [ADR-001: Desktop-First Architecture with Decoupled Mobile Companion](#adr-001-desktop-first-architecture-with-decoupled-mobile-companion)
-- [ADR-002: Rust Audio/DSP Core with C# / Avalonia Desktop Frontend](#adr-002-rust-audiodsp-core-with-c--avalonia-desktop-frontend)
+- [ADR-002: Rust Audio/DSP Core with Flutter Desktop Frontend](#adr-002-rust-audiodsp-core-with-flutter-desktop-frontend)
 - [ADR-003: Lock-Free SPSC Ring Buffers for Audio Thread Synchronization](#adr-003-lock-free-spsc-ring-buffers-for-audio-thread-synchronization)
-- [ADR-004: Flat C-ABI with csbindgen for Type-Safe Interoperability](#adr-004-flat-c-abi-with-csbindgen-for-type-safe-interoperability)
+- [ADR-004: Versioned C ABI with Dart FFI](#adr-004-versioned-c-abi-with-dart-ffi)
 - [ADR-005: Encapsulated AudioBackend Trait over Direct cpal Coupling](#adr-005-encapsulated-audiobackend-trait-over-direct-cpal-coupling)
 - [ADR-006: Bundled Zip Container (.dawproject) for Project Files](#adr-006-bundled-zip-container-dawproject-for-project-files)
 - [ADR-007: High-Quality Internal DSP First; Defer External Plugin Hosting](#adr-007-high-quality-internal-dsp-first-defer-external-plugin-hosting)
@@ -26,17 +26,19 @@
 
 ---
 
-### ADR-002: Rust Audio/DSP Core with C# / Avalonia Desktop Frontend
-- **Status:** Approved
-- **Date:** 2026-10-16
+### ADR-002: Rust Audio/DSP Core with Flutter Desktop Frontend
+- **Status:** Approved (replaces the original C# / Avalonia decision)
+- **Original date:** 2026-10-16
+- **Updated:** 2026-10-17
 - **Context:**
-  Real-time audio requires deterministic execution without garbage-collection pauses. C# is the developer's strongest language, but managed runtimes are prone to GC pauses during low-latency audio callbacks. C++ is the legacy audio standard but is prone to memory safety bugs and complex build toolchains.
+  The initial UI decision selected C# / Avalonia. The project owner subsequently chose Flutter for the full-scale Windows/macOS desktop UI. The audio engine must remain independent of the presentation framework.
 - **Decision:**
-  Implement the audio engine, DSP algorithms, mixer, and device I/O in pure Rust. Implement the desktop application and UI in C# using Avalonia UI (v11+).
+  Keep audio I/O, decoding, mixing, DSP, and real-time scheduling in Rust. Use Flutter/Dart for the desktop UI and Dart FFI over the versioned C ABI. The former Avalonia frontend has been removed from the desktop application.
 - **Consequences:**
-  - Audio thread achieves hard real-time safety with zero garbage collection.
-  - Developer productivity is maximized in C# for complex desktop UI layouts.
-  - Requires maintaining a clean FFI boundary between Rust and C#.
+  - One maintained desktop UI instead of duplicated frontend implementations.
+  - Custom arrangement/mixer presentation remains in Dart; real-time audio stays native.
+  - Native FFI ownership, ABI versioning, lifecycle, and cross-platform packaging require explicit tests.
+  - This decision does not claim the Flutter frontend has feature parity or that real playback is fully verified.
 
 ---
 
@@ -54,17 +56,17 @@
 
 ---
 
-### ADR-004: Flat C-ABI with csbindgen for Type-Safe Interoperability
+### ADR-004: Versioned C ABI with Dart FFI
 - **Status:** Approved
-- **Date:** 2026-10-16
+- **Date:** 2026-10-17
 - **Context:**
-  Hand-written P/Invoke declarations in C# frequently suffer from data alignment mismatches, typos, and synchronization drift when Rust structs change.
+  Flutter needs a stable, testable boundary to the native Rust engine. Managed UI code must not depend on private Rust implementation details, and ABI drift must be detected before creating native resources.
 - **Decision:**
-  Expose the Rust core via a flat C99 ABI (`extern "C"`) and generate C# P/Invoke bindings automatically using `csbindgen`.
+  Keep the flat `extern "C"` ABI in `bindings/c_abi/src/lib.rs`; consume it from Flutter through Dart `dart:ffi`. Validate `daw_get_api_version()` before other calls, mirror `#[repr(C)]` layouts exactly, check return codes, and serialize access to each engine handle. The former `csbindgen` C# binding generation is no longer part of the desktop build.
 - **Consequences:**
-  - 100% compile-time verified memory layout between C# and Rust.
-  - Eliminates manual FFI glue maintenance.
-  - Clean separation: C# never interacts with internal Rust structs directly, only with the C-ABI facade.
+  - The C ABI remains the stable boundary between Rust and Flutter.
+  - Dart FFI bindings must be tested against the actual Rust exports and native library on Windows/macOS.
+  - API contract changes must update Rust, Dart and documentation together; do not assume `csbindgen` generates Dart bindings.
 
 ---
 
@@ -105,4 +107,8 @@
 - **Consequences:**
   - Guarantees immediate host stability and zero licensing hurdles for the MVP.
   - Users get a complete, functional out-of-the-box production experience without requiring paid plugins.
-\n\n## Current implementation note — transport stabilization (2026-10-16)\n\nThe audio core uses a bounded SPSC command queue; the UI's immediate timer reset is not authoritative evidence that Stop was processed. A runtime report indicates that audio continues after the visible playhead resets. This is a bug to diagnose, not an intended design decision. Add regression tests and verify command acceptance, callback handling, output silence, decoder rewind/restart, and UI telemetry before closing the stabilization gate. Do not add locks, blocking calls, or heap allocation to the audio callback to work around it.\n
+
+
+## Current implementation note — transport stabilization (2026-10-16)
+
+The audio core uses a bounded SPSC command queue; the UI's immediate timer reset is not authoritative evidence that Stop was processed. A runtime report indicates that audio continues after the visible playhead resets. This is a bug to diagnose, not an intended design decision. Add regression tests and verify command acceptance, callback handling, output silence, decoder rewind/restart, and UI telemetry before closing the stabilization gate. Do not add locks, blocking calls, or heap allocation to the audio callback to work around it.
