@@ -29,7 +29,11 @@ Aetherband is intended to be more than a list of DAW features. The project aims 
 
 The Flutter frontend gives the project room to experiment with custom timeline lanes, clip interactions, meters, editors, and instrument panels. The goal is a cohesive, expressive workspace—not a claim that the interface is already finished or faster than every alternative.
 
-## Long-term creative engine direction\n\nAetherband's longer-term direction includes an extensible synthesis environment, visual programming, and spatial-audio foundations. The architecture and staged delivery plan are documented in [Creative Engine and Spatial Audio Direction](docs/CREATIVE_ENGINE_AND_SPATIAL_AUDIO.md). These are planned capabilities; spatial rendering, immersive delivery, and programmable DSP are not currently complete features.\n\n## Development roadmap
+## Long-term creative engine direction
+
+Aetherband's longer-term direction includes an extensible synthesis environment, visual programming, and spatial-audio foundations. The architecture and staged delivery plan are documented in [Creative Engine and Spatial Audio Direction](docs/CREATIVE_ENGINE_AND_SPATIAL_AUDIO.md). These are planned capabilities; spatial rendering, immersive delivery, and programmable DSP are not currently complete features.
+
+## Development roadmap
 
 The audio engine is written in Rust. The long-term architecture keeps real-time audio work in the native engine and separates it from the Flutter presentation layer. That boundary makes the system easier to reason about, test, and evolve.
 
