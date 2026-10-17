@@ -51,7 +51,7 @@ The change is primarily motivated by **greater UI flexibility and control over r
 - Demo clips, instruments, recording state, and any unconnected menu actions are not real audio features unless explicitly wired to the native engine.
 - Project save/load, recording, MIDI, plugin hosting, automation, and export are not to be considered complete unless implementation and tests demonstrate them.
 
-## Development roadmap
+## Long-term creative engine direction\n\nAetherband's longer-term direction includes an extensible synthesis environment, visual programming, and spatial-audio foundations. The architecture and staged delivery plan are documented in [Creative Engine and Spatial Audio Direction](docs/CREATIVE_ENGINE_AND_SPATIAL_AUDIO.md). These are planned capabilities; spatial rendering, immersive delivery, and programmable DSP are not currently complete features.\n\n## Development roadmap
 
 The roadmap uses **versioned alpha milestones** rather than broad phases. Version labels describe intended delivery gates, not a promise that a feature already works.
 
