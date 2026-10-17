@@ -20,6 +20,9 @@ abstract class EngineController {
   Stream<EngineTelemetry> get telemetry;
   Future<void> play();
   Future<void> pause();
-  Future<void> stop();\n  Future<int> loadTrack(String path);\n  Future<void> removeTrack(int trackId);\n  Future<int> getTrackCount();
+  Future<void> stop();
+  Future<int> loadTrack(String path);
+  Future<void> removeTrack(int trackId);
+  Future<int> getTrackCount();
   Future<void> dispose();
 }
