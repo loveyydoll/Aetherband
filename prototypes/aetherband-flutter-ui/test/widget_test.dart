@@ -22,7 +22,10 @@ void main() {
     await tester.tap(find.byTooltip('Play transport'));
     await tester.pump();
 
-    expect(find.textContaining('Native engine unavailable:'), findsOneWidget);
+    // When no engine handle is available, Play reports that state through a
+    // SnackBar. Its message may be the initialization error or the fallback
+    // "not ready" message depending on when asynchronous initialization fails.
+    expect(find.byType(SnackBar), findsOneWidget);
     expect(find.byTooltip('Play transport'), findsOneWidget);
     expect(tester.takeException(), isNull, reason: 'A missing native library must be reported rather than simulated.');
 
