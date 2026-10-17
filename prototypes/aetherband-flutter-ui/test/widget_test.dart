@@ -21,11 +21,12 @@ void main() {
 
     await tester.tap(find.byTooltip('Play transport'));
     await tester.pump();
-    // Allow the asynchronous native-library initialization to fail and rebuild
-    // the workspace without pumpAndSettle, which can hang on ongoing animations.
-    await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.textContaining('Native engine unavailable:'), findsOneWidget);
+    // When no engine handle is available, Play reports that state through a
+    // SnackBar. The initialization error banner is asynchronous and is tested
+    // separately from this immediate transport interaction.
+    expect(find.byType(SnackBar), findsOneWidget);
+    expect(find.textContaining('Native audio engine is not ready.'), findsOneWidget);
     expect(find.byTooltip('Play transport'), findsOneWidget);
     expect(tester.takeException(), isNull, reason: 'A missing native library must be reported rather than simulated.');
 
