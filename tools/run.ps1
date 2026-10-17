@@ -1,31 +1,10 @@
-# Build and launch the Aetherband desktop application.
+# Build and launch the Aetherband Flutter desktop application on Windows.
 $ErrorActionPreference = "Stop"
-
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$desktopProject = Join-Path $repoRoot "apps\desktop\RouletteStudio.Desktop\RouletteStudio.Desktop.csproj"
-$dotnetCommand = Get-Command dotnet -ErrorAction SilentlyContinue
-
-if (-not $dotnetCommand) {
-    throw ".NET SDK was not found on PATH. Install the .NET 10 SDK from https://dotnet.microsoft.com/download/dotnet/10.0, then reopen PowerShell."
-}
-
-if (-not (Test-Path $desktopProject)) {
-    throw "Desktop project not found: $desktopProject"
-}
-
+$flutterProject = Join-Path $repoRoot "apps\desktop\pubspec.yaml"
+if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) { throw "Flutter was not found on PATH. Install Flutter from https://docs.flutter.dev/get-started/install." }
+if (-not (Test-Path $flutterProject)) { throw "Flutter project not found: $flutterProject" }
 & (Join-Path $PSScriptRoot "build.ps1")
-if ($LASTEXITCODE -ne 0) {
-    throw "Build script failed with exit code $LASTEXITCODE; application will not be launched."
-}
-
-Push-Location $repoRoot
-try {
-    Write-Host "==> Launching Aetherband desktop application..." -ForegroundColor Green
-    & $dotnetCommand.Source run --project $desktopProject --no-build --configuration Debug
-    if ($LASTEXITCODE -ne 0) {
-        throw "Aetherband exited with code $LASTEXITCODE. Review the error output above."
-    }
-}
-finally {
-    Pop-Location
-}
+if ($LASTEXITCODE -ne 0) { throw "Build script failed; application will not be launched." }
+Push-Location (Split-Path $flutterProject -Parent)
+try { flutter run -d windows } finally { Pop-Location }
