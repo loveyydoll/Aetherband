@@ -482,7 +482,7 @@ class _TopBar extends StatelessWidget {
           const SizedBox(width: 4),
           _TransportButton(
             icon: Icons.fiber_manual_record,
-            tooltip: isRecording ? 'Stop recording' : 'Toggle recording',
+            tooltip: isRecording ? 'Stop recording' : 'Recording unavailable',
             onTap: onRecord,
             color: isRecording ? AetherColors.magenta : AetherColors.secondaryText,
           ),
