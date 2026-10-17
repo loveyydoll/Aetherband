@@ -57,6 +57,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   String _preset = 'Soft Focus';
   bool _browserOpen = true;
   bool _showMixer = false;
+  bool _initializingEngine = false;
   double _zoom = 1;
 
   TrackModel get _selectedTrack => _tracks.firstWhere((track) => track.id == _selectedTrackId);
@@ -68,6 +69,17 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   Future<void> _initializeEngine() async {
+    if (_initializingEngine) return;
+    _initializingEngine = true;
+
+    // Retry must not orphan an existing native handle or leave its telemetry
+    // timer/subscription alive if the error came from polling after startup.
+    final previousEngine = _engine;
+    _engine = null;
+    await _telemetrySubscription?.cancel();
+    _telemetrySubscription = null;
+    if (previousEngine != null) await previousEngine.dispose();
+
     try {
       final engine = await NativeEngineController.create();
       if (!mounted) {
@@ -82,6 +94,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       setState(() => _engineError = null);
     } catch (error) {
       if (mounted) setState(() => _engineError = error);
+    } finally {
+      _initializingEngine = false;
+      if (mounted) setState(() {});
     }
   }
 
