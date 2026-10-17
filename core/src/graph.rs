@@ -10,7 +10,7 @@
 //! - node IDs are stable within a graph;
 //! - a graph must validate before it can be compiled into a runtime.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NodeId(pub u64);
