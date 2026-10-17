@@ -21,6 +21,9 @@ void main() {
 
     await tester.tap(find.byTooltip('Play transport'));
     await tester.pump();
+    // Allow the asynchronous native-library initialization to fail and rebuild
+    // the workspace without pumpAndSettle, which can hang on ongoing animations.
+    await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.textContaining('Native engine unavailable:'), findsOneWidget);
     expect(find.byTooltip('Play transport'), findsOneWidget);
