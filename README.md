@@ -14,14 +14,14 @@ Aetherband bridges the gap between intuitive songwriting sketchpads and high-pre
 | **Native interoperability** | Flat C ABI under `bindings/c_abi/` | Required shared boundary between the Rust engine and desktop UI runtimes |
 | **Target desktop UI** | **Flutter + Dart** | Mandatory full-scale Windows/macOS frontend direction; current workspace is UI-only and the production Dart FFI adapter remains to be implemented |
 | **Dart/native interop** | Dart `dart:ffi` adapter over the C ABI | Production adapter still needs implementing; do not bind Flutter to private Rust internals |
-| **Existing transition UI** | C# / .NET 10 + Avalonia | Existing audio-connected desktop frontend, retained until Flutter reaches real-engine feature parity and passes migration gates |
-| **C# bindings** | `csbindgen` | Currently generates P/Invoke bindings for the Avalonia app; it does not generate Dart bindings |
+| **Current/transition desktop UI** | C# / .NET 10 + Avalonia | Audio-connected frontend today; expected to be retired from the shipped product after Flutter passes every migration gate. Keep buildable until then; do not maintain two permanent UIs by default. |
+| **Legacy C# bindings** | `csbindgen` | Generates P/Invoke declarations for the transition app only. Likely removable after Avalonia is retired; it is not part of Flutter's Dart FFI path. |
 | **Audio I/O** | `cpal` | Platform audio output |
 | **Decoding** | `symphonia` | WAV playback has been tested; FLAC/MP3/OGG/AAC-M4A are expected candidates but remain unverified end-to-end |
 | **Resampling / concurrency** | `rubato`, `rtrb` | Sample-rate conversion and SPSC queues |
 | **License** | GPLv3 | Open source |
 
-**Product decision (2026-10-17): Flutter is the long-term desktop UI and must be implemented full scale.** This direction is not optional unless the project owner explicitly changes it. Rust remains the audio engine; Flutter must use the C ABI. Avalonia remains available during the staged migration, but it is not the intended final frontend. See [the Flutter migration plan](docs/FLUTTER_DESKTOP_MIGRATION.md) and [AI handoff](docs/AI_HANDOFF.md).
+**Product decision (2026-10-17): Flutter is the mandatory full-scale desktop UI.** Rust remains the audio engine; Flutter must use Dart FFI over the C ABI. **C# / Avalonia will likely be removed from the final shipped app and repository** once Flutter reaches verified feature parity. This is the intended end state, not permission to delete the transition app early. Keep it buildable during migration, and remove it only through a separate reviewed change after the acceptance gates in [the migration plan](docs/FLUTTER_DESKTOP_MIGRATION.md) pass. Do not remove Rust or the C ABI as part of frontend retirement. See [the Flutter migration plan](docs/FLUTTER_DESKTOP_MIGRATION.md) and [AI handoff](docs/AI_HANDOFF.md).
 
 **Status distinction:** The Flutter preview currently shows simulated transport, clips/waveforms, meters, and instrument state. It does not yet play, record, decode, or export audio. The C#/Avalonia app is still the existing audio-connected desktop UI while the new Dart FFI adapter and end-to-end Flutter engine integration are built.
 
@@ -118,7 +118,7 @@ flowchart TD
 - **Target frontend:** Flutter/Dart, with a dedicated adapter using the same exported C ABI.
 - **Audio engine:** Rust owns decoding, device I/O, DSP, mixing and the audio callback.
 - **Interop boundary:** `bindings/c_abi/src/lib.rs` is the source of truth for exported functions and `#[repr(C)]` layouts.
-- **Temporary legacy frontend:** C#/.NET + Avalonia stays intact until Flutter has real-engine feature parity and the migration acceptance criteria pass.
+- **Temporary legacy frontend:** C#/.NET + Avalonia stays intact until Flutter has real-engine feature parity and the migration acceptance criteria pass; after that, plan a separately reviewed retirement of Avalonia and its C#-only binding generation.
 - **Do not infer functionality from the prototype:** current Flutter telemetry and audio clips are mock data, not native playback.
 
 See [`docs/FLUTTER_DESKTOP_MIGRATION.md`](docs/FLUTTER_DESKTOP_MIGRATION.md) for the staged implementation plan and current ABI inventory.
@@ -211,10 +211,15 @@ cargo test -p daw_core --tests
 | **2** | Audio File Playback & Background Disk Streaming | 🧪 Implemented; runtime gate open |
 | **3** | Multi-Track Mixer & Interactive Timeline UI | 🧪 Implemented; runtime gate open |
 | **3.5** | Transport/lifecycle stabilization and regression tests | 🧪 Mostly implemented; confirm current CI/runtime evidence |
-| **UI** | Mandatory full-scale Flutter desktop frontend via C ABI | 🔄 In progress; current UI prototype is mock-only |
-| **4** | Audio Recording, waveform peaks, project persistence & export | ⏳ Planned |
-| **5** | MIDI Engine, Piano Roll & Virtual Instruments | 📅 Planned |
-| **6** | Mixer Routing, Effects Engine & Plugin Hosting | 📅 Planned |
+| **UI-A** | Flutter production adapter, native library loading, real transport/telemetry | 🔄 Next: replace mock engine through Dart FFI |
+| **UI-B** | Real file loading, tracks, waveform peaks, error/device states | ⏳ Planned |
+| **UI-C** | Project/session model, save/load, undo/redo, editing tools | ⏳ Planned |
+| **4** | Recording, input monitoring, waveform generation, offline export | ⏳ Planned |
+| **5** | MIDI engine, piano roll, timing/quantization, virtual instruments | 📅 Planned |
+| **6** | Mixer routing, sends/buses, effects engine, plugin hosting | 📅 Planned |
+| **7** | Automation, modulation, tempo maps, time signatures, advanced editing | 📅 Planned |
+| **8** | Packaging, installers, crash recovery, accessibility, performance hardening | 📅 Planned |
+| **9** | Flutter parity verification, Avalonia retirement, release readiness | 📅 Planned |
 
 ---
 
@@ -227,7 +232,8 @@ Detailed blueprints and architectural specifications:
 - [**ARCHITECTURE.md**](docs/ARCHITECTURE.md) — System boundaries, thread boundaries, and data flow.
 - [**AUDIO_ENGINE.md**](docs/AUDIO_ENGINE.md) — Real-time thread contract, latency calculations, and mixer design.
 - [**API_CONTRACT.md**](docs/API_CONTRACT.md) — Current exported C ABI, structure layouts, return codes, ownership and Dart/C# interop requirements.
-- [**ROADMAP.md**](docs/ROADMAP.md) — Complete 6-phase development roadmap.
+- [**ROADMAP.md**](docs/ROADMAP.md) — Engine, DAW feature, UI migration and release roadmap.
+- [**PRODUCT_ROADMAP.md**](docs/PRODUCT_ROADMAP.md) — Extensive feature backlog with priorities, dependencies and acceptance criteria.
 - [**DECISIONS.md**](docs/DECISIONS.md) — Architecture Decision Records (ADRs).
 - [**AI_WORKFLOW.md**](docs/AI_WORKFLOW.md) — AI pair-programming safety procedures.
 - [**FLUTTER_DESKTOP_MIGRATION.md**](docs/FLUTTER_DESKTOP_MIGRATION.md) — Mandatory full-scale Flutter target architecture, C ABI integration and migration gates.
