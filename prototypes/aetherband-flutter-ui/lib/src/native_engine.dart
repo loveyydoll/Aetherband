@@ -87,10 +87,10 @@ class NativeEngineController implements EngineController {
 
   static DynamicLibrary _openLibrary() {
     final names = Platform.isWindows
-        ? <String>['daw_core.dll', 'target\\debug\\daw_core.dll', 'target\\release\\daw_core.dll']
+        ? <String>['daw_core.dll', 'target\\debug\\daw_core.dll', 'target\\release\\daw_core.dll', '..\\..\\target\\debug\\daw_core.dll']
         : Platform.isMacOS
-            ? <String>['libdaw_core.dylib', 'target/debug/libdaw_core.dylib', 'target/release/libdaw_core.dylib']
-            : <String>['libdaw_core.so', 'target/debug/libdaw_core.so', 'target/release/libdaw_core.so'];
+            ? <String>['libdaw_core.dylib', 'target/debug/libdaw_core.dylib', 'target/release/libdaw_core.dylib', '../../target/debug/libdaw_core.dylib']
+            : <String>['libdaw_core.so', 'target/debug/libdaw_core.so', 'target/release/libdaw_core.so', '../../target/debug/libdaw_core.so'];
     final errors = <String>[];
     for (final name in names) {
       try {
