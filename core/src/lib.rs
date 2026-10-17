@@ -74,6 +74,9 @@ pub struct TrackInfo {
     pub info: AudioFileInfo,
     /// Duration converted to output sample-rate frames.
     pub output_frames: i64,
+    pub gain: f32,
+    pub pan: f32,
+    pub muted: bool,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -158,12 +161,15 @@ impl DAWEngine {
             } else {
                 0
             };
-            new_players.push(Box::new(TrackPlayer::new(
+            let mut player = Box::new(TrackPlayer::new(
                 track.id,
                 consumer,
-                0.8,
+                track.gain,
                 output_frames,
-            )));
+            ));
+            player.pan = track.pan;
+            player.muted = track.muted;
+            new_players.push(player);
             new_decoders.insert(track.id.0, decoder);
             let mut updated = track.clone();
             updated.output_frames = output_frames;
@@ -374,6 +380,9 @@ impl DAWEngine {
             file_path: path.display().to_string(),
             info,
             output_frames,
+            gain: 0.8,
+            pan: 0.5,
+            muted: false,
         });
 
         // Smuggle the player as a raw pointer through the command queue.
@@ -421,31 +430,45 @@ impl DAWEngine {
     // ── Per-track mixing controls ─────────────────────────────────────────
 
     pub fn set_track_volume(&mut self, track_id: TrackId, gain: f32) -> bool {
-        self.ui_endpoints
-            .cmd_producer
-            .push(EngineCommand::SetTrackVolume {
-                track_id,
-                target_gain: gain.clamp(0.0, 2.0),
-                ramp_frames: 256,
-            })
-            .is_ok()
+        let gain = gain.clamp(0.0, 2.0);
+        if self.ui_endpoints.cmd_producer.push(EngineCommand::SetTrackVolume {
+            track_id,
+            target_gain: gain,
+            ramp_frames: 256,
+        }).is_err() {
+            return false;
+        }
+        if let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) {
+            track.gain = gain;
+            true
+        } else {
+            false
+        }
     }
 
     pub fn set_track_pan(&mut self, track_id: TrackId, pan: f32) -> bool {
-        self.ui_endpoints
-            .cmd_producer
-            .push(EngineCommand::SetTrackPan {
-                track_id,
-                pan: pan.clamp(0.0, 1.0),
-            })
-            .is_ok()
+        let pan = pan.clamp(0.0, 1.0);
+        if self.ui_endpoints.cmd_producer.push(EngineCommand::SetTrackPan { track_id, pan }).is_err() {
+            return false;
+        }
+        if let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) {
+            track.pan = pan;
+            true
+        } else {
+            false
+        }
     }
 
     pub fn mute_track(&mut self, track_id: TrackId, muted: bool) -> bool {
-        self.ui_endpoints
-            .cmd_producer
-            .push(EngineCommand::MuteTrack { track_id, muted })
-            .is_ok()
+        if self.ui_endpoints.cmd_producer.push(EngineCommand::MuteTrack { track_id, muted }).is_err() {
+            return false;
+        }
+        if let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) {
+            track.muted = muted;
+            true
+        } else {
+            false
+        }
     }
 
     // ── Telemetry ─────────────────────────────────────────────────────────
