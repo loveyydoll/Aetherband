@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:aetherband_flutter_ui/src/aetherband_app.dart';
+import 'package:aetherband_desktop/src/aetherband_app.dart';
 
 void main() {
-  testWidgets('renders the Aetherband demo workspace and toggles transport', (tester) async {
+  testWidgets('renders the Aetherband workspace and reports unavailable native engine', (tester) async {
     tester.view.physicalSize = const Size(1440, 1000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -22,8 +22,9 @@ void main() {
     await tester.tap(find.byTooltip('Play transport'));
     await tester.pump();
 
-    expect(find.byTooltip('Pause transport'), findsOneWidget);
-    expect(tester.takeException(), isNull, reason: 'The transport interaction should not throw.');
+    expect(find.textContaining('Native engine unavailable:'), findsOneWidget);
+    expect(find.byTooltip('Play transport'), findsOneWidget);
+    expect(tester.takeException(), isNull, reason: 'A missing native library must be reported rather than simulated.');
 
     await tester.pumpWidget(const SizedBox.shrink());
   });

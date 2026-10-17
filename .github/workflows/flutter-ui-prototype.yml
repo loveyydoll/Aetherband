@@ -1,13 +1,15 @@
-name: Flutter UI prototype
+name: Flutter desktop
 
 on:
   pull_request:
     paths:
       - 'prototypes/aetherband-flutter-ui/**'
+      - 'core/**'
+      - 'bindings/c_abi/**'
       - '.github/workflows/flutter-ui-prototype.yml'
   push:
     branches:
-      - 'prototype/flutter-ui'
+      - 'main'
     paths:
       - 'prototypes/aetherband-flutter-ui/**'
       - '.github/workflows/flutter-ui-prototype.yml'
@@ -35,6 +37,21 @@ jobs:
         with:
           channel: stable
           cache: true
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Verify Rust formatting and tests
+        working-directory: .
+        run: |
+          cargo fmt --all -- --check
+          cargo test --workspace --all-targets
+
+      - name: Build native C ABI library
+        working-directory: .
+        run: cargo build -p daw_core_ffi
 
       - name: Generate desktop runners for the CI host
         run: flutter create --platforms=windows,macos .

@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import 'mock_engine.dart';
+import 'engine_controller.dart';
+import 'native_engine.dart';
 import 'models.dart';
 import 'theme.dart';
 import 'widgets/timeline_view.dart';
@@ -30,7 +31,8 @@ class AetherbandWorkspace extends StatefulWidget {
 }
 
 class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
-  final EngineController _engine = MockEngineController();
+  EngineController? _engine;
+  Object? _engineError;
   final List<TrackModel> _tracks = createDemoTracks();
   final Map<String, double> _knobValues = {
     'Tone': 0.62,
@@ -62,28 +64,58 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   @override
   void initState() {
     super.initState();
-    _telemetrySubscription = _engine.telemetry.listen((value) {
-      if (mounted) setState(() => _telemetry = value);
-    });
+    unawaited(_initializeEngine());
+  }
+
+  Future<void> _initializeEngine() async {
+    try {
+      final engine = await NativeEngineController.create();
+      if (!mounted) {
+        await engine.dispose();
+        return;
+      }
+      _engine = engine;
+      _telemetrySubscription = engine.telemetry.listen(
+        (value) { if (mounted) setState(() => _telemetry = value); },
+        onError: (Object error) { if (mounted) setState(() => _engineError = error); },
+      );
+      setState(() => _engineError = null);
+    } catch (error) {
+      if (mounted) setState(() => _engineError = error);
+    }
   }
 
   @override
   void dispose() {
     _telemetrySubscription?.cancel();
-    unawaited(_engine.dispose());
+    final engine = _engine;
+    if (engine != null) unawaited(engine.dispose());
     super.dispose();
   }
 
   Future<void> _togglePlay() async {
-    if (_telemetry.isPlaying) {
-      await _engine.stop();
-    } else {
-      await _engine.play();
+    final engine = _engine;
+    if (engine == null) { _showEngineUnavailable(); return; }
+    try {
+      if (_telemetry.isPlaying) { await engine.pause(); } else { await engine.play(); }
+    } catch (error) {
+      if (mounted) setState(() => _engineError = error);
     }
   }
 
   Future<void> _stop() async {
-    await _engine.stop();
+    final engine = _engine;
+    if (engine == null) { _showEngineUnavailable(); return; }
+    try {
+      await engine.stop();
+    } catch (error) {
+      if (mounted) setState(() => _engineError = error);
+    }
+  }
+
+  void _showEngineUnavailable() {
+    final message = _engineError?.toString() ?? 'Native audio engine is not ready.';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _handleMenuCommand(_MenuAction action) {
@@ -144,6 +176,11 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
             final compact = constraints.maxWidth < 1000;
             return Column(
               children: [
+                if (_engineError != null)
+                  MaterialBanner(
+                    content: Text('Native engine unavailable: $_engineError'),
+                    actions: [TextButton(onPressed: () => unawaited(_initializeEngine()), child: const Text('Retry'))],
+                  ),
                 _MenuBar(onSelected: _handleMenuCommand),
                 _TopBar(
                   isPlaying: _telemetry.isPlaying,

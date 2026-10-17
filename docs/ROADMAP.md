@@ -1,184 +1,117 @@
-# Aetherband Development Roadmap
+# Aetherband Roadmap — Versioned Alpha
 
-## 1. Roadmap principles
+This roadmap is organized as versioned delivery milestones instead of broad development phases. A version is a target scope, not evidence that its features are already complete. Mark a milestone complete only after its acceptance gates pass on the current commit.
 
-Aetherband is being developed incrementally, with correctness and testable milestones taking priority over feature count. Implemented code is not considered complete merely because it exists: a phase is complete only when its acceptance criteria are reproducibly verified.
+## Product architecture decision
 
-Priorities:
+- **Desktop UI:** Flutter + Dart.
+- **Native audio engine:** Rust.
+- **Interop:** versioned C ABI in `bindings/c_abi/`, consumed by a single Dart FFI adapter.
+- **Removed target:** C#/.NET + Avalonia is not a supported target for future desktop development. Its frontend is being retired in favor of Flutter.
+- **Platform targets:** Windows and macOS first. Keep OS-specific native library packaging explicit.
 
-1. Stabilize and verify the existing audio engine and desktop integration.
-2. Complete the recording, project, mixer, and export foundations.
-3. Refresh the UI once those core workflows and APIs are stable.
-4. Add MIDI, instruments, effects, and plugin hosting on top of the stable foundation.
-5. Consider mobile as a separate effort after the desktop application is mature.
+The migration is driven primarily by custom UI flexibility and control over timeline/rendering optimization, plus rapid design iteration, a consistent cross-platform UI, and a cleaner native-engine boundary. Flutter is not presumed faster without measurements.
 
-The current UI is intentionally retained during stabilization so it remains a known test surface. Do not begin a broad visual redesign during the current correctness pass.
+## Alpha 0.1 — Flutter Engine Connection
 
-## 2. Current status
+**Goal:** Replace the mock transport with a real Flutter-to-Rust control path.
 
-**Current focus: Stabilization and verification of Phases 1–3.**
+Deliverables:
+- Dart FFI declarations match the actual exported C ABI, including struct layouts and integer widths.
+- Native library discovery/loading for supported platforms with actionable errors.
+- API-version check and native return-code handling.
+- Safe engine lifecycle: create once, serialize calls, stop and destroy cleanly.
+- Connect transport, test tone, telemetry/meters, device enumeration/selection, and basic track operations where supported by the current ABI.
+- Remove the Avalonia/.NET desktop app, generated C# bindings, and .NET-only CI path after replacement checks are in place.
+- CI runs Flutter analyze/tests and Rust format/check/test/build.
 
-The repository already contains Rust audio-engine code and a C#/Avalonia desktop application, but the existence of these components does not mean the phases are fully verified. The current stabilization work must establish reliable builds, automated tests, decoder/transport lifecycle correctness, audio callback safety, and device-switching behavior before these phases can be marked complete.
+Acceptance gates:
+- Windows and macOS native library loads and ABI smoke tests pass.
+- FFI struct size/alignment/field layout is validated against Rust.
+- No native calls race destruction; no long native work blocks the Flutter UI isolate.
+- Missing library, incompatible API version, and negative return codes appear as visible errors.
+- No mock telemetry or simulated recording is presented as actual audio.
+- Manual playback/device tests are recorded separately from unit tests.
 
-Track status against evidence:
-- **Implemented:** code exists.
-- **In verification:** acceptance tests or runtime checks are still outstanding.
-- **Complete:** every stated acceptance criterion has passed and the result is recorded.
+## Alpha 0.2 — Audio Import & Session Basics
 
-Use `scripts/verify.ps1` on Windows PowerShell or `scripts/verify.sh` in Bash-compatible environments for the repository's automated formatting, build, and test checks. Also perform the manual audio-device and playback checks described below; a successful compile alone is not sufficient.
+- File picker and native audio-track loading/removal.
+- Real track inventory and transport state.
+- Versioned project/session schema and save/load.
+- Missing-file resolution and recovery UI.
 
----
+Acceptance: load/play/pause/stop/remove tests; project round-trip and malformed-project tests; no silent data loss.
 
-## 3. Phase breakdown
+## Alpha 0.3 — Arrangement & Waveforms
 
-### Phase 0 — Planning and Repository Setup
+- Real waveform peak generation and cache invalidation.
+- Arrangement zoom, scroll, clip selection and non-destructive move/split.
+- Virtualized timeline rendering for large sessions.
+- Keyboard/mouse interaction and accessibility.
 
-- **Goal:** Establish the architecture, requirements, repository layout, and developer workflow.
-- **Deliverables:**
-  - Architecture and engineering documentation in `docs/`.
-  - Windows and cross-platform toolchain instructions.
-  - Repository structure, ignore rules, and contribution/AI workflow guidance.
-- **Exit criteria:**
-  - Architecture and development instructions reflect the actual implementation.
-  - Required toolchains and verification commands are documented.
-- **Status:** Baseline established; keep documentation aligned with implementation.
+Acceptance: timeline model tests, large-session performance profiles, Windows/macOS DPI and resizing tests.
 
-### Phase 1 — Real-Time Audio Core Foundation
+## Alpha 0.4 — Recording & Export
 
-- **Goal:** Provide a reliable Rust audio engine and real-time-safe processing path.
-- **Deliverables:**
-  - Rust workspace and `cpal` audio backend.
-  - Audio-device enumeration and stream initialization.
-  - Allocation-free callback processing with click-free gain ramping.
-  - Bounded, lock-free SPSC queues for audio/control communication and metering.
-  - Headless tests for callback behavior and real-time constraints.
-- **Acceptance criteria:**
-  - `cargo fmt --all -- --check`, `cargo check --workspace --all-targets`, and `cargo test --workspace --all-targets` pass in CI and locally.
-  - A dedicated stress test processes at least 100,000 audio blocks without callback-time allocations or deallocations.
-  - Callback execution stays within the agreed budget at a 128-sample buffer; record the test environment and measured results.
-  - Queue-full, command rejection, track removal, processor replacement, and shutdown paths do not cause callback-time destruction, blocking, I/O, logging, locks, or unbounded work.
-  - Tests cover zero-frame/end-of-stream blocks, full and partial final blocks, and supported output channel counts.
-- **Status:** Implemented work is under stabilization; do not mark complete until the criteria are verified.
+- Audio input/device selection and recording state machine.
+- Background recording writer and recoverable takes.
+- Offline WAV mixdown/export with progress and cancellation.
 
-### Phase 2 — Desktop MVP and Cross-Language Integration
+Acceptance: device/interruption tests, write-error recovery, exported-audio regression tests.
 
-- **Goal:** Reliably connect the Rust engine to the C# Avalonia desktop app.
-- **Deliverables:**
-  - Native C ABI and platform-specific library outputs.
-  - C# P/Invoke bindings, generated where appropriate.
-  - Existing desktop controls for device selection, transport, master volume, meters, and audio playback.
-- **Acceptance criteria:**
-  - Rust native library and desktop application build using the documented scripts/toolchain.
-  - Native library loading and ABI behavior are tested on the supported target platforms.
-  - Playback, pause, stop, rapid volume changes, and clean application shutdown work without crashes, hangs, clicks, or unexpected dropouts.
-  - Device selection and stream reinitialization do not leave stale track metadata, decoder handles, or invalid processor state.
-  - CI results are green for the latest commit, not just an earlier commit in the branch.
-- **Status:** Implemented work is under stabilization; verify with automated and manual tests.
+## Alpha 0.5 — Mixing Workflow
 
-### Phase 3 — Multi-Track Timeline and Disk Streaming
+- Track and master gain/pan/mute/solo.
+- Real meters and a coherent mixer panel.
+- Undo/redo foundation, shortcuts, preferences and device status.
+- Routing/buses/sends only when supported by engine design and tests.
 
-- **Goal:** Support reliable multi-track playback from disk and timeline navigation.
-- **Deliverables:**
-  - Background media decoding with `symphonia`.
-  - Preallocated/bounded buffering between decoder workers and the audio callback.
-  - Sample-accurate track playback and transport coordination.
-  - Existing timeline and track controls, preserving the current UI during stabilization.
-- **Acceptance criteria:**
-  - Supported WAV, FLAC, MP3, OGG, and AAC files are tested, including corrupt files, EOF, resampling, and partial final blocks.
-  - Stop, seek/reset, remove-track, rapid load/remove, queue backpressure, and device-switch scenarios have regression tests and do not deadlock or hang.
-  - Decoder errors are surfaced safely and worker threads terminate reliably.
-  - A repeatable performance test targets 16 stereo tracks at 48 kHz with smooth UI interaction; record actual CPU, buffer, and frame-rate measurements rather than treating target figures as already achieved.
-- **Status:** Implemented work is under stabilization; feature/performance claims remain subject to test evidence.
+Acceptance: mixer correctness and stress tests at documented track counts; no UI updates at unbounded frequency.
 
-### Phase 3.5 — Stabilization and Release Gate
+## Alpha 0.6 — MIDI & Built-in Instruments
 
-- **Goal:** Close correctness gaps across Phases 1–3 before expanding the feature set.
-- **Required work:**
-  - Fix and regression-test Stop/Seek and decoder-buffer coordination.
-  - Ensure callback-owned data can be reclaimed without callback-time allocation/deallocation or other unsafe work.
-  - Correctly handle device changes, output sample-rate/channel changes, and failed track/command submissions.
-  - Verify final-block handling and resampling-length calculations.
-  - Run formatting, Rust checks/tests, .NET restore/build/tests, and the available CI workflows on the latest commit.
-  - Test on the developer's Windows machine with real output hardware, including playback and clean shutdown.
-  - Update engineering status with exact commands, outcomes, environment, and remaining known limitations.
-- **Exit criteria:**
-  - Required CI checks pass on the exact candidate commit.
-  - Automated regression tests pass.
-  - Manual hardware checks are recorded.
-  - No unresolved P0 correctness or real-time safety issues remain.
-- **Rule:** Do not start Phase 4 implementation work that depends on unstable transport/engine APIs until this gate is passed. UI planning may happen in parallel, but the existing UI remains unchanged.
+- MIDI event model and editing.
+- Piano roll and MIDI recording/input.
+- Native synth, sampler and drum-machine foundations.
 
-### Phase 4 — Audio Recording, Mixer, Projects, and Export
+Acceptance: deterministic project persistence, MIDI timing and event-editing tests.
 
-- **Goal:** Make Aetherband useful for end-to-end audio production workflows.
-- **Deliverables:**
-  - Low-latency audio input recording with a background disk writer.
-  - Mixer controls: faders, mute, solo, and documented pan law.
-  - Project save/load format with project metadata and managed media assets.
-  - Autosave, crash recovery, missing-media handling, and versioned project migrations.
-  - Offline stereo WAV export, including documented bit depth and sample-rate behavior.
-- **Acceptance criteria:**
-  - Record external input, save a project, close/reopen the app, and verify track arrangement and playback.
-  - Interrupted writes and invalid/missing assets fail safely and provide actionable feedback.
-  - Exported files are validated for duration, channel count, sample rate, bit depth, and expected audio.
-  - A three-minute arrangement export performance target is measured and recorded; do not claim the target until tested.
-- **Prerequisite:** Phase 3.5 stabilization gate passed.
+## Alpha 0.7 — Effects & Automation
 
-### UI Milestone — Design and UI Revamp
+- Built-in audio effects and parameter state.
+- Sample-accurate or explicitly bounded automation.
+- Presets and parameter serialization.
 
-This is a dedicated milestone, not a reason to interrupt the current stabilization work.
+Acceptance: DSP tests, automation timing tests, CPU-budget measurements.
 
-- **Planning can begin during Phase 3.5:** document current screens, identify usability problems from real testing, establish interaction priorities, and prepare wireframes/design tokens without replacing the current UI.
-- **Begin implementation after Phase 4's core project, transport, recording, and mixer APIs are stable, and before the main Phase 5 piano-roll/instrument/plugin workflows are built.**
-- **Scope:**
-  - Rework layout, navigation, hierarchy, spacing, typography, and reusable components.
-  - Keep existing workflows available while migrating screens incrementally.
-  - Design around real editing tasks and keyboard/mouse workflows, not appearance alone.
-  - Preserve or add UI tests for transport, track management, recording, project save/load, mixer, and export.
-  - Avoid changing audio-engine behavior as part of purely visual work.
-- **Exit criteria:**
-  - Core workflows can be completed without regressions.
-  - UI remains responsive during playback and timeline interaction.
-  - The design supports planned MIDI, instruments, effects, and plugin panels.
-  - The previous UI or a reliable test build remains available until the new UI passes regression testing.
+## Alpha 0.8 — Plugin Hosting & Interchange
 
-### Phase 5 — MIDI, Instruments, DSP Effects, and Plugins
+- Evaluate CLAP first; evaluate VST3 support and licensing requirements separately.
+- Plugin scanning, validation, crash containment and compatibility matrix.
+- Interchange formats and project portability improvements.
 
-- **Goal:** Expand from audio editing into a more complete production environment.
-- **Deliverables:**
-  - Sample-accurate MIDI event scheduling and piano roll.
-  - Built-in polyphonic synthesizer and drum sampler.
-  - Parametric EQ, compressor, delay, and reverb.
-  - Plugin-hosting abstraction, starting with CLAP and adding VST3 after the hosting foundation is stable.
-  - Automation and plugin-state persistence planned alongside the relevant systems.
-- **Acceptance criteria:**
-  - Record/import MIDI, edit and quantize notes, and play them through the built-in instruments.
-  - Effect/plugin processing remains stable under playback, project save/load, and repeated enable/disable.
-  - Plugin crashes or invalid states are isolated as far as the host architecture permits.
-  - Plugin state and project compatibility are tested.
-- **Prerequisites:** Phase 4 core workflows and the UI milestone are stable.
+Acceptance: architecture and legal review; third-party plugin failures must not corrupt project state or silently compromise audio safety.
 
-### Phase 6 — Native Mobile Companion (Separate Effort)
+## Alpha 0.9 — Performance & Release Candidate
 
-- **Goal:** Explore a mobile companion that reuses the Rust engine and opens compatible projects.
-- **Prerequisites:** Desktop workflow is mature, project format is stable, and core engine APIs are suitable for reuse.
-- **Possible deliverables:**
-  - Separate mobile repository/workspace.
-  - SwiftUI frontend for iOS/iPadOS and Kotlin/Jetpack Compose for Android.
-  - Touch-first editing, drum pads, and mobile audio-session handling.
-- **Exit criteria:** Define a focused mobile use case and platform-specific acceptance criteria before implementation begins. Mobile development must not delay desktop stability.
+- Profile CPU, memory, UI frame times, loading, waveform rendering and audio callback budget.
+- Accessibility, keyboard navigation, installers/signing, crash diagnostics and docs.
+- Project compatibility policy and release-candidate triage.
 
----
+Acceptance: reproducible stress tests on supported OS versions, release checklist, no known critical data-loss or audio-safety defects.
 
-## 4. Definition of done for every phase
+## 1.0 — Stable Desktop DAW
 
-A phase is complete only when:
+- Documented and supported production workflows.
+- Stable project-format policy, installer/update process and contribution guide.
+- All release gates pass on the declared Windows/macOS matrix.
 
-1. Its deliverables are implemented and documented.
-2. Automated tests cover the key success and failure paths.
-3. Formatting, build, and test commands pass on the candidate commit.
-4. Required manual checks are recorded with the environment and results.
-5. Known limitations and follow-up work are documented.
-6. README and roadmap status agree with the evidence.
+## Rules for status updates
 
-Do not use “implemented,” “merged,” or “the app launches” as a substitute for verified acceptance criteria.
+Use only these status labels:
+- **Planned:** not implemented.
+- **In progress:** implementation exists but acceptance criteria are incomplete.
+- **Implemented, unverified:** code exists but automated/manual evidence is incomplete.
+- **Verified:** stated acceptance criteria passed on the current commit, with evidence recorded.
+
+Never mark a version complete merely because its UI mock or native function exists.
