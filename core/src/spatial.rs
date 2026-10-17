@@ -101,11 +101,10 @@ impl SpatialPosition {
 /// non-finite input. Angles outside the front hemisphere are clamped to the
 /// nearest edge; this is a simple stereo panning law, not a spatial renderer.
 ///
-/// The returned gains have a squared sum of approximately 1, avoiding the
-/// centre dip of linear panning. This function allocates no memory and is
-/// suitable as a building block for a future prepared audio graph.
+/// Returns (left_gain, right_gain). The gains' squared sum is approximately 1,
+/// avoiding the centre dip of linear panning. No memory is allocated.
 pub fn equal_power_stereo_gains(azimuth_radians: f32) -> Option<(f32, f32)> {
-    use std::f32::const::FRAC_PI_2;
+    use std::f32::consts::FRAC_PI_2;
 
     if !azimuth_radians.is_finite() {
         return None;
@@ -163,12 +162,12 @@ mod tests {
         let left = equal_power_stereo_gains(-FRAC_PI_2).unwrap();
         let center = equal_power_stereo_gains(0.0).unwrap();
         let right = equal_power_stereo_gains(FRAC_PI_2).unwrap();
-        assert!(left.0.abs() < 1e-6);
-        assert!((left.1 - 1.0).abs() < 1e-6);
+        assert!((left.0 - 1.0).abs() < 1e-6);
+        assert!(left.1.abs() < 1e-6);
         assert!((center.0 - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-6);
         assert!((center.1 - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-6);
-        assert!((right.0 - 1.0).abs() < 1e-6);
-        assert!(right.1.abs() < 1e-6);
+        assert!(right.0.abs() < 1e-6);
+        assert!((right.1 - 1.0).abs() < 1e-6);
     }
 
     #[test]
