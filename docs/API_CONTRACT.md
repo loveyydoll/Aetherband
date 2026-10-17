@@ -1,152 +1,108 @@
-# Core API Contract & FFI Specification: Aetherband
+# C ABI Contract — Aetherband
 
-## 1. Design Principles for the C-ABI Boundary
+**Current ABI version:** `0.2.0` (`daw_get_api_version() == 0x00000200`)  
+**Source of truth:** `bindings/c_abi/src/lib.rs`. If this document disagrees with the Rust exports, fix the documentation or deliberately update the ABI and version together.
 
-1. **Flat, C-Compatible Declarations:** All exports use `extern "C"` with `#[no_mangle]` and `#[repr(C)]` structs. No C++ name-mangling, no Rust trait objects, and no managed references cross the boundary.
-2. **Opaque Engine Handle:** The engine instance is held behind an opaque pointer `*mut DAWEngine`. The UI runtime treats this as an `IntPtr` and never dereferences it directly.
-3. **Explicit Ownership & Lifetimes:** Any memory allocated by Rust must be deallocated by Rust via an explicit destructor function (e.g., `daw_engine_destroy()`).
-4. **Command & Query Asynchrony:** Control operations return immediately. State is queried or polled asynchronously via the telemetry queue.
-5. **Deterministic Error Codes:** Functions return integer error codes (`DAWResult`), never raw exceptions or panics.
+This contract is for the Flutter/Dart desktop app using `dart:ffi`. The former C# / Avalonia frontend and its `csbindgen` P/Invoke generation have been removed from the desktop architecture.
 
----
+## Boundary rules
 
-## 2. Status & Error Codes (`DAWResult`)
+- Only exported `extern "C"` functions and `#[repr(C)]` structs are public ABI.
+- The engine is an opaque pointer. Dart must never dereference it or retain it after destroy.
+- Check API version **before** calling any other native export.
+- Check every result code; do not infer success from a local UI state change.
+- Serialize calls made against one engine handle. Never destroy a handle while a call or telemetry poll is active.
+- Native code owns engine memory. The caller owns any buffers passed as output pointers and must keep them valid for the duration of the call.
+- Strings passed into `daw_engine_load_track` must be valid NUL-terminated UTF-8 for the duration of the call.
+- No file I/O, locks, allocation, waiting or UI work may be moved into the audio callback to simplify FFI.
+- Do not pass audio buffers through Flutter widgets or platform channels.
 
-```c
-typedef enum DAWResult {
-    DAW_OK                      = 0,
-    DAW_ERR_INVALID_HANDLE      = -1,
-    DAW_ERR_DEVICE_INIT_FAILED  = -2,
-    DAW_ERR_STREAM_ACTIVE       = -3,
-    DAW_ERR_STREAM_STOPPED      = -4,
-    DAW_ERR_QUEUE_FULL          = -5,
-    DAW_ERR_INVALID_PARAMETER   = -6,
-    DAW_ERR_FILE_NOT_FOUND      = -7,
-    DAW_ERR_UNSUPPORTED_FORMAT  = -8,
-    DAW_ERR_UNKNOWN             = -99
-} DAWResult;
-```
+## ABI version
 
----
+`daw_get_api_version()` returns `(major << 16) | (minor << 8) | patch`. The current version is `0x00000200` (0.2.0). The 0.2.0 change adds `daw_engine_get_sample_rate` so Flutter can convert the native playhead frame count to seconds without assuming 48 kHz.
 
-## 3. Data Structures (`#[repr(C)]`)
+Any incompatible layout/signature/ownership change requires a version change and synchronized Rust/Dart updates. Additive exports should still be documented and versioned deliberately.
 
-### 3.1 Device Information
-```c
-typedef struct DAWDeviceInfo {
-    int32_t id;
-    char name[256];
-    uint32_t default_sample_rate;
-    uint32_t min_channels;
-    uint32_t max_channels;
-    uint8_t is_default;
-} DAWDeviceInfo;
-```
+## C-compatible structures
 
-### 3.2 Engine Configuration
-```c
-typedef struct DAWConfig {
-    int32_t output_device_id;   // -1 for system default
-    uint32_t sample_rate;       // e.g., 44100, 48000
-    uint32_t buffer_size_frames;// e.g., 128, 256, 512
-} DAWConfig;
-```
+### `DAWMeteringFrame`
 
-### 3.3 Engine Commands
-```c
-typedef enum DAWCommandType {
-    DAW_CMD_PLAY               = 1,
-    DAW_CMD_PAUSE              = 2,
-    DAW_CMD_STOP               = 3,
-    DAW_CMD_SEEK               = 4,
-    DAW_CMD_SET_MASTER_VOLUME  = 5,
-    DAW_CMD_SET_TRACK_VOLUME   = 6,
-    DAW_CMD_SET_TRACK_PAN      = 7,
-    DAW_CMD_TOGGLE_TEST_TONE   = 8
-} DAWCommandType;
+| Field | C type | Meaning |
+|---|---|---|
+| `peak_left`, `peak_right` | `float` | Linear peak amplitudes |
+| `rms_left`, `rms_right` | `float` | RMS amplitudes |
+| `playhead_frame` | `int64_t` | Current playhead frame |
+| `total_duration_frames` | `int64_t` | Total duration in output frames |
+| `is_playing` | `uint8_t` | 1 when playing, otherwise 0 |
+| `device_error_flag` | `uint8_t` | 1 when the engine reports a device error |
 
-typedef struct DAWCommand {
-    uint32_t command_type;
-    uint32_t track_id;          // 0 for master bus
-    float float_val_1;          // Gain, Frequency, or Pan
-    float float_val_2;          // Secondary parameter
-    int64_t int_val_1;          // Sample index / seek target
-} DAWCommand;
-```
+### `DAWDeviceInfo`
 
-### 3.4 Telemetry & Metering Frame
-```c
-typedef struct DAWMeteringFrame {
-    float peak_left;            // Linear peak amplitude [0.0, 1.0+]
-    float peak_right;
-    float rms_left;             // Root-Mean-Square level
-    float rms_right;
-    int64_t playhead_frame;     // Current playback position in samples
-    uint8_t is_playing;
-    uint8_t device_error_flag;  // 1 if an audio device error occurred
-} DAWMeteringFrame;
-```
+| Field | C type | Meaning |
+|---|---|---|
+| `index` | `uint32_t` | Device index in the current enumeration |
+| `name` | `char[256]` | NUL-terminated device name when available |
+| `default_sample_rate` | `uint32_t` | Device's reported default rate |
+| `channels` | `uint16_t` | Reported output channel count |
+| `is_default` | `uint8_t` | 1 when the device is the default |
 
----
+Do not substitute a different field order or widths in Dart. The Dart `Struct` definitions must match the Rust `#[repr(C)]` layout exactly.
 
-## 4. Exported C-ABI Functions
+## Exported functions
 
-### 4.1 Engine Lifecycle
-```c
-// Creates a new engine instance with the specified configuration.
-// Returns DAW_OK and populates out_engine on success.
-DAWResult daw_engine_create(const DAWConfig* config, DAWEngineHandle* out_engine);
+| Function | Purpose | Return semantics |
+|---|---|---|
+| `daw_get_api_version()` | Read ABI version | Packed `u32` version |
+| `daw_engine_create(out_engine)` | Create engine and open default output stream | 0 success; negative error |
+| `daw_engine_destroy(engine)` | Stop and destroy engine resources | 0 success; negative error |
+| `daw_engine_play(engine)` | Request playback | 0 accepted; negative error |
+| `daw_engine_pause(engine)` | Request pause | 0 accepted; negative error |
+| `daw_engine_stop(engine)` | Request Stop and decoder restart | 0 accepted; negative error |
+| `daw_engine_poll_telemetry(engine, out_frame)` | Read telemetry | 0 frame read; 1 no new frame; negative error |
+| `daw_engine_get_sample_rate(engine, out_rate)` | Get active output rate in Hz | 0 success; negative error |
+| `daw_engine_set_master_volume(engine, gain)` | Set master linear gain | 0 accepted; negative error |
+| `daw_engine_set_test_tone(engine, enabled, freq_hz)` | Toggle diagnostic tone | 0 accepted; negative error |
+| `daw_engine_get_device_count(engine)` | Enumerate output devices and return count | Non-negative count; negative error |
+| `daw_engine_get_device_info(engine, index, out_info)` | Read device metadata | 0 success; negative error |
+| `daw_engine_select_device(engine, index)` | Select output device | 0 success; negative error |
+| `daw_engine_load_track(engine, path_utf8, out_track_id)` | Load a file into a new audio track | 0 success; negative error |
+| `daw_engine_remove_track(engine, track_id)` | Remove track | 0 success; negative error |
+| `daw_engine_set_track_volume(engine, track_id, gain)` | Set track linear gain | 0 accepted; negative error |
+| `daw_engine_set_track_pan(engine, track_id, pan)` | Set track pan (0 left, 0.5 centre, 1 right) | 0 accepted; negative error |
+| `daw_engine_mute_track(engine, track_id, muted)` | Mute/unmute track | 0 accepted; negative error |
+| `daw_engine_get_track_count(engine)` | Get number of loaded tracks | Non-negative count; negative error |
 
-// Destroys the engine, cleanly stopping all threads and freeing native resources.
-DAWResult daw_engine_destroy(DAWEngineHandle engine);
+The exact function signatures and implementation are defined in `bindings/c_abi/src/lib.rs`. Do not add fictitious `DAWConfig`, `DAWCommand`, `daw_engine_send_command`, or `daw_enumerate_output_devices` declarations: they are not the current exported API.
 
-// Returns the API version (major << 16 | minor << 8 | patch).
-uint32_t daw_get_api_version(void);
-```
+## Error codes and caveats
 
-### 4.2 Device Management
-```c
-// Enumerates output devices. Returns count of devices populated in out_devices.
-DAWResult daw_enumerate_output_devices(
-    DAWEngineHandle engine, 
-    DAWDeviceInfo* out_devices, 
-    uint32_t max_count, 
-    uint32_t* out_actual_count
-);
-```
+The implementation currently uses these values in different functions:
 
-### 4.3 Control & Telemetry
-```c
-// Sends a control command to the audio engine (non-blocking, pushed to SPSC queue).
-DAWResult daw_engine_send_command(DAWEngineHandle engine, const DAWCommand* command);
+- `0`: success / command accepted.
+- `1`: no new telemetry frame (only for telemetry polling).
+- `-1`: invalid/null handle, pointer or UTF-8 path input.
+- `-2`: engine/device initialization, enumeration or track-load failure (function-dependent).
+- `-3`: engine rejected a transport or parameter command (function-dependent).
+- `-4`: device index or track identifier was not found (function-dependent).
 
-// Polls the latest telemetry frame from the engine (non-blocking, reads from SPSC queue).
-// Returns DAW_OK if a frame was read, DAW_ERR_QUEUE_EMPTY if no new frame.
-DAWResult daw_engine_poll_telemetry(DAWEngineHandle engine, DAWMeteringFrame* out_frame);
-```
+These are current implementation conventions, not yet a single exhaustive typed error enum. Preserve the originating function and numeric result in diagnostics. Before expanding the public API, define stable named error constants and map decoder/device errors to actionable messages rather than collapsing all failures into one code.
 
----
+## Threading and lifecycle
 
-## 5. Transport semantics and acceptance\n\n- `daw_engine_stop` reports whether the Stop command was accepted into the command queue; it does not mean the audio callback has already processed it.\n- The UI must not treat a local playhead reset as confirmation that output is silent. Poll telemetry and reflect engine state.\n- A Stop regression has been reported: the displayed timer resets while audio reportedly continues. Keep Stop behavior unaccepted until automated and runtime regression tests prove silence, zero playhead, and successful restart.\n- A queue-full return must be surfaced rather than silently presenting a successful transport action.\n\n## 6. Threading and Concurrency Guarantees
+- Create and destroy the engine from a single control thread.
+- Serialize control calls for a given handle; the current Rust helper returns mutable access from the opaque pointer and must not be called concurrently for that handle.
+- Telemetry polling is a bounded, periodic control-side operation; it must not run from a paint/build callback.
+- Stop polling and prevent new control calls before destroying the engine.
+- The audio callback communicates through bounded native queues; it does not call Dart/Flutter.
+- Device selection currently recreates the stream and queues. Verify how it affects active tracks before presenting it as a production-safe UI action.
+- The current Flutter app is not feature complete: device controls and track import/control operations still need full UI integration and end-to-end tests.
 
-1. **`daw_engine_create` / `daw_engine_destroy`:** Must only be called from a single thread (typically the application main or initialization thread).
-2. **`daw_engine_send_command`:** Thread-safe for the UI thread. Internally writes to a Single-Producer Single-Consumer (SPSC) ring buffer.
-3. **`daw_engine_poll_telemetry`:** Thread-safe for the UI polling loop. Reads from the telemetry SPSC ring buffer.
-4. **Audio Callback Independence:** The OS audio thread never executes any of these FFI functions; it only reads from and writes to the pre-allocated lock-free buffers.
+## Verification checklist
 
----
-
-## 7. Automated C# Binding Generation (`csbindgen`)
-
-To eliminate manual P/Invoke typos and synchronization bugs, `csbindgen` is executed as part of the core build:
-```rust
-// In tools/generate_bindings or build.rs
-csbindgen::Builder::new()
-    .input_extern_file("bindings/c_abi/src/lib.rs")
-    .csharp_class_name("NativeMethods")
-    .csharp_namespace("Aetherband.Bindings")
-    .csharp_dll_name("daw_core")
-    .generate_csharp_file("bindings/csharp/NativeMethods.g.cs")
-    .unwrap();
-```
-This guarantees 100% type safety and zero discrepancy between Rust structs and C# memory layouts.
+- [ ] Rust exports and this contract agree.
+- [ ] Dart struct layout matches Rust layout on Windows and macOS.
+- [ ] Version mismatch is rejected before engine creation.
+- [ ] Missing symbols fail before a native handle is created.
+- [ ] Every native result is handled and surfaced.
+- [ ] Engine create/destroy, polling and shutdown are exercised with a built native library.
+- [ ] Real audio playback is manually tested on Windows and macOS.
