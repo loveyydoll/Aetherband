@@ -1,6 +1,6 @@
 //! Aetherband C-ABI Foreign Function Interface
 //!
-//! Exposes a flat, C99-compatible interface for consumption by C# (.NET 10) P/Invoke.
+//! Exposes a flat, C-compatible interface for desktop frontends through Dart FFI.
 
 use daw_core::ringbuf::TelemetryFrame;
 use std::ffi::CString;
@@ -83,7 +83,7 @@ impl Default for DAWDeviceInfo {
 /// Returns the API version (major << 16 | minor << 8 | patch).
 #[no_mangle]
 pub extern "C" fn daw_get_api_version() -> u32 {
-    (0 << 16) | (1 << 8) | 0
+    (0 << 16) | (2 << 8) | 0
 }
 
 /// Creates a new DAW engine instance and initializes the default audio stream.
@@ -266,6 +266,25 @@ pub unsafe extern "C" fn daw_engine_get_device_info(
             }
             Err(_) => -2,
         }
+    } else {
+        -1
+    }
+}
+
+/// Writes the active output sample rate in Hz to `out_sample_rate`.
+///
+/// Returns 0 on success, -1 for an invalid handle or output pointer.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_get_sample_rate(
+    engine: *mut DAWEngine,
+    out_sample_rate: *mut u32,
+) -> i32 {
+    if out_sample_rate.is_null() {
+        return -1;
+    }
+    if let Some(eng) = to_core_ref(engine) {
+        *out_sample_rate = eng.output_sample_rate();
+        0
     } else {
         -1
     }
