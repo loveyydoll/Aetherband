@@ -1,76 +1,116 @@
 <div align="center">
 
-<img src="assets/branding/aetherband-primary.svg" alt="Aetherband — official primary logo" width="440">
+<img src="assets/branding/aetherband-primary.svg" alt="Aetherband — official logo" width="470">
 
 <br>
 
-**Make sound your own. Keep the tools open.**
+### Make sound your own. Keep the tools open.
 
-*An experimental, free and open-source digital audio workstation.*
+**A creative space for music, experimentation, and the unexpected.**
+
+*Free and open-source digital audio workstation · In development*
 
 <br>
 
-[![Development status](https://img.shields.io/badge/status-early%20alpha-B567A8?style=flat-square)](#what-works-today)
-[![License](https://img.shields.io/badge/license-GPL--3.0-55515C?style=flat-square)](LICENSE)
-[![Engine](https://img.shields.io/badge/engine-Rust-55515C?style=flat-square)](#architecture)
-[![Desktop](https://img.shields.io/badge/desktop-Flutter-55515C?style=flat-square)](#architecture)
+[![Status: early alpha](https://img.shields.io/badge/STATUS-EARLY%20ALPHA-B567A8?style=flat-square)](#where-we-are)
+[![License: GPL-3.0](https://img.shields.io/badge/LICENSE-GPL--3.0-655D66?style=flat-square)](LICENSE)
+[![Audio engine: Rust](https://img.shields.io/badge/AUDIO-RUST-655D66?style=flat-square)](#under-the-hood)
+[![Desktop: Flutter](https://img.shields.io/badge/DESKTOP-FLUTTER-655D66?style=flat-square)](#under-the-hood)
 
-[Why Aetherband?](#why-aetherband) · [Current progress](#what-works-today) · [Roadmap](#roadmap) · [Build](#build-and-verify) · [Contribute](#contributing)
+[The idea](#the-idea) · [What we're building](#what-were-building) · [Progress](#where-we-are) · [Roadmap](#roadmap) · [Build](#build-and-verify) · [Contribute](#contributing)
 
 </div>
 
 ---
 
-## At a glance
+## The idea
 
-Aetherband is an experimental, free and open-source digital audio workstation built for people who want room to explore—not just another closed box for making music. The long-term vision is an open creative platform where recording, arranging, sound design, and mixing can grow together, with a distinctive workspace and an audio engine that stays open to inspection and contribution.
+**What if a DAW felt less like a set of rules and more like an invitation to make something?**
+
+Some days, you know exactly what you want to record. Other days, you follow a strange sound until it becomes a song. Aetherband is being made for both.
+
+We want to bring together the immediacy of sketching an idea, the freedom to shape a full production, and the openness to understand and extend the tools themselves. Not because every musician needs to write code—but because creative software should leave room for curiosity.
+
+**Start with a sound. Follow it somewhere new.**
+
+This is the direction, not a claim that the finished experience already exists.
+
+## What we're building
+
+<table>
+<tr><td width="50%" valign="top">
+
+### Create without losing the idea
+
+An approachable creative workspace, with recording, arranging, editing and mixing designed to work together. The goal is to make getting started feel natural without limiting how far a session can grow.
+
+</td><td width="50%" valign="top">
+
+### Shape sound, not just tracks
+
+We want sound design and experimentation to feel like part of making music, not a separate technical detour. The long-term creative-engine direction explores synthesis, programmable workflows and more expressive ways to work with audio.
+
+</td></tr>
+<tr><td valign="top">
+
+### Own your tools
+
+The source is open under GPL-3.0. Our aim is an environment that musicians and developers can inspect, learn from, modify and improve together—not a black box that decides how you must work.
+
+</td><td valign="top">
+
+### Give ideas room to grow
+
+From quick sketches to more involved projects, we want an interface that can become more capable as your work becomes more complex. The long-term research direction also includes spatial-audio foundations.
+
+</td></tr>
+</table>
+
+> **These are product goals.** Recording, MIDI editing, instruments, effects, automation, third-party plugins, spatial rendering and full project workflows are **not** being advertised as complete features today.
+
+## Built for curious people
+
+**For musicians:** a place to explore an idea without feeling boxed in by the interface.
+
+**For producers and sound designers:** a long-term vision of deeper control over arrangement, sound and creative workflows.
+
+**For developers:** an open project with a native audio core, a documented boundary to its desktop interface and opportunities to contribute to the instrument itself.
+
+You don't need to be all three. The point is to make room for different ways of creating.
+
+## Where we are
 
 > [!IMPORTANT]
-> **Early alpha — not yet recommended for production sessions.** Workflows are incomplete, interfaces may change, and breaking changes are expected. Roadmap features are goals, not promises or claims of current functionality.
+> **Aetherband is in early alpha. It is experimental software, not a production-ready DAW.** Do not trust it with your only copy of important recordings or sessions. Features and plans may change, and there is no announced public release date.
 
-| | |
-| --- | --- |
-| **Vision** | A flexible creative workspace for musicians, producers, sound explorers, and audio-tool builders |
-| **Architecture** | Rust audio engine · versioned C ABI · Dart FFI · Flutter desktop UI |
-| **Current focus** | Stabilizing the Flutter desktop application's Rust-engine connection, removing misleading controls, and verifying end-to-end workflows |
-| **License** | GPL-3.0 |
+The foundations are taking shape: a Rust audio-engine workspace, native playback/mixing capabilities, a versioned C ABI, and a Flutter desktop application communicating with the engine through Dart FFI. This is real development work, but it is **not** the same as a complete recording-to-export workflow.
 
----
+**Right now, the focus is connection and reliability:** validating the Flutter ↔ Rust integration, transport and device behavior, and end-to-end tests before expanding the creative toolset.
 
-## Visual identity
+| Now | Next | Later |
+| --- | --- | --- |
+| Stabilize native-engine and Flutter integration; verify real behavior | Audio import, sessions, timeline, recording and mixing workflows | MIDI, instruments, effects, automation, plugin ecosystem and exploratory creative-engine features |
 
-The official [primary wordmark](assets/branding/aetherband-primary.svg) is the original Figma artwork. The [standalone symbol](assets/branding/aetherband-symbol.svg) is intended for compact uses such as app icons, avatars, and navigation. Both are scalable SVGs; avoid stretching or redrawing them, and ensure sufficient contrast with the background.
+For the precise implementation status, read [What works today?](#what-works-today) and the [development roadmap](#roadmap).
 
-## Why Aetherband?
+## Under the hood
 
-Creative tools shape how we think. We want Aetherband to become a place where the interface can adapt to the work, where the internals are not a black box, and where musicians and developers can influence the instrument they are building together.
+| Layer | Technology | Purpose |
+| --- | --- | --- |
+| **Audio engine** | Rust | Real-time native audio processing and DSP foundations |
+| **Engine interface** | Versioned C ABI | Explicit boundary between audio engine and app |
+| **Desktop integration** | Dart FFI | Connects the Flutter UI to the native engine |
+| **Desktop experience** | Flutter / Dart | Primary Windows/macOS user interface |
 
-### An open creative platform
+The architecture is designed to keep real-time audio processing separate from interface rendering. That design still needs platform testing and ongoing engineering to deliver the intended experience.
 
-Aetherband is intended to be more than a list of DAW features. The project aims to make its architecture, development decisions, and future direction visible, so people can learn from it, contribute to it, and eventually shape their own workflows around it.
+**Go deeper:** [Architecture](docs/ARCHITECTURE.md) · [C ABI contract](docs/API_CONTRACT.md) · [Development and release tracking](docs/DEVELOPMENT_AND_RELEASE_TRACKING.md) · [Creative engine & spatial audio direction](docs/CREATIVE_ENGINE_AND_SPATIAL_AUDIO.md)
 
-### A workspace with its own character
+## A note on the identity
 
-The Flutter frontend is Aetherband’s **primary desktop UI**, not a separate experimental alternative to another frontend. It provides the foundation for custom timeline lanes, clip interactions, meters, editors, and instrument panels. The UI is still early alpha: the application architecture is the chosen direction, while many DAW workflows remain incomplete.
+<img src="assets/branding/aetherband-symbol.svg" alt="Aetherband cosmic sound symbol" width="76" align="right">
 
-## Long-term creative engine direction
-
-Aetherband's longer-term direction includes an extensible synthesis environment, visual programming, and spatial-audio foundations. The architecture and staged delivery plan are documented in [Creative Engine and Spatial Audio Direction](docs/CREATIVE_ENGINE_AND_SPATIAL_AUDIO.md). These are planned capabilities; spatial rendering, immersive delivery, and programmable DSP are not currently complete features.
-
-## Architecture and contributor documentation
-
-- [Architecture](docs/ARCHITECTURE.md)
-- [Actual C ABI contract](docs/API_CONTRACT.md)
-- [Development and release tracking](docs/DEVELOPMENT_AND_RELEASE_TRACKING.md)
-- [Creative engine and spatial-audio direction](docs/CREATIVE_ENGINE_AND_SPATIAL_AUDIO.md)
-
-## Development roadmap
-
-The audio engine is written in Rust. The long-term architecture keeps real-time audio work in the native engine and separates it from the Flutter presentation layer. That boundary makes the system easier to reason about, test, and evolve.
-
-### Open by design
-
-The project is licensed under GPL-3.0. We want contributors to be able to inspect the implementation, reproduce builds, discuss trade-offs, and help decide what Aetherband becomes. No proprietary lock-in is part of the vision.
+The Aetherband mark combines a waveform with a cosmic motif: sound as something you can discover, reshape and make your own. The [primary logo](assets/branding/aetherband-primary.svg) and [compact symbol](assets/branding/aetherband-symbol.svg) are available as SVG assets.
 
 ---
 
