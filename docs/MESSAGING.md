@@ -1,6 +1,6 @@
 # Aetherband — Messaging Guide
 
-This guide keeps public descriptions of Aetherband consistent with its product direction and current early-alpha status.
+This guide keeps public descriptions of Aetherband consistent with its product direction, current early-alpha status, and distinction between development milestones and stable releases.
 
 ## Positioning
 
@@ -58,6 +58,15 @@ Do not assume that musicians care about framework choices before they understand
 - Invite people to shape the project without implying that a community or contributor base is already large.
 - Treat uncertainty as part of open development, not as something to hide.
 
+## Release-stage terminology
+
+- **Alpha 1.0** completes the initial alpha roadmap and establishes a baseline for broader testing. It is not a stable release and does not imply production readiness.
+- **Beta releases** continue testing implemented workflows, usability, compatibility, performance, and reliability.
+- **Release candidates (RCs)** are candidate builds checked against explicit release criteria.
+- **Stable 1.0** is a separate milestone and should be announced only when the supported workflows meet documented quality and reliability requirements.
+
+There may be multiple beta, RC, and other testing builds. Do not imply a fixed number of releases or a schedule before evidence supports it.
+
 ## Claims policy
 
 ### Safe to say
@@ -69,7 +78,8 @@ Do not assume that musicians care about framework choices before they understand
 
 ### Say only after verification
 - A feature works end to end.
-- A platform build is stable or release-ready.
+- A platform build is stable or release-ready before it has passed the relevant release criteria.
+- Alpha 1.0 is the stable release or means the project is production-ready.
 - Audio performance is better than another DAW or UI framework.
 - The app is suitable for professional or production-critical sessions.
 - Plugin compatibility, project interchange, recording, MIDI, export, or save/load is complete.
