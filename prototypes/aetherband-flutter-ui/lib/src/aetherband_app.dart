@@ -86,6 +86,33 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     await _engine.stop();
   }
 
+  void _handleMenuCommand(_MenuAction action) {
+    switch (action.id) {
+      case 'view.browser':
+        setState(() => _browserOpen = !_browserOpen);
+        return;
+      case 'view.mixer':
+        setState(() => _showMixer = !_showMixer);
+        return;
+      case 'transport.play':
+        unawaited(_togglePlay());
+        return;
+      case 'transport.stop':
+        unawaited(_stop());
+        return;
+      case 'transport.record':
+        setState(() => _isRecording = !_isRecording);
+        return;
+      default:
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${action.label} is not connected in this UI prototype yet.'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+    }
+  }
+
   void _moveClip(TrackModel track, ClipModel clip, double deltaPx) {
     setState(() {
       clip.start = (clip.start + deltaPx / _zoom).clamp(0.0, 2200.0).toDouble();
@@ -117,14 +144,17 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
             final compact = constraints.maxWidth < 1000;
             return Column(
               children: [
+                _MenuBar(onSelected: _handleMenuCommand),
                 _TopBar(
                   isPlaying: _telemetry.isPlaying,
                   isRecording: _isRecording,
                   browserOpen: _browserOpen,
+                  mixerOpen: _showMixer,
                   onPlay: _togglePlay,
                   onStop: _stop,
                   onRecord: () => setState(() => _isRecording = !_isRecording),
                   onBrowser: () => setState(() => _browserOpen = !_browserOpen),
+                  onMixer: () => setState(() => _showMixer = !_showMixer),
                 ),
                 Expanded(
                   child: Row(
@@ -203,123 +233,280 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 }
 
+class _MenuAction {
+  const _MenuAction(this.id, this.label, [this.shortcut]);
+
+  final String id;
+  final String label;
+  final String? shortcut;
+}
+
+class _MenuBar extends StatelessWidget {
+  const _MenuBar({required this.onSelected});
+
+  final ValueChanged<_MenuAction> onSelected;
+
+  static const Map<String, List<_MenuAction>> _menus = {
+    'File': [
+      _MenuAction('file.new', 'New Session', 'Ctrl+N'),
+      _MenuAction('file.open', 'Open Session…', 'Ctrl+O'),
+      _MenuAction('file.save', 'Save Session', 'Ctrl+S'),
+      _MenuAction('file.saveAs', 'Save Session As…'),
+      _MenuAction('file.export', 'Export Mixdown…', 'Ctrl+Alt+E'),
+    ],
+    'Edit': [
+      _MenuAction('edit.undo', 'Undo', 'Ctrl+Z'),
+      _MenuAction('edit.redo', 'Redo', 'Ctrl+Shift+Z'),
+      _MenuAction('edit.cut', 'Cut', 'Ctrl+X'),
+      _MenuAction('edit.copy', 'Copy', 'Ctrl+C'),
+      _MenuAction('edit.paste', 'Paste', 'Ctrl+V'),
+      _MenuAction('edit.duplicate', 'Duplicate', 'Ctrl+D'),
+    ],
+    'Track': [
+      _MenuAction('track.addAudio', 'Add Audio Track'),
+      _MenuAction('track.addInstrument', 'Add Instrument Track'),
+      _MenuAction('track.addBus', 'Add Bus'),
+      _MenuAction('track.duplicate', 'Duplicate Selected Track'),
+      _MenuAction('track.delete', 'Delete Selected Track'),
+    ],
+    'Region': [
+      _MenuAction('region.split', 'Split at Playhead'),
+      _MenuAction('region.join', 'Join Selected Regions'),
+      _MenuAction('region.bounce', 'Bounce in Place'),
+    ],
+    'Navigate': [
+      _MenuAction('navigate.start', 'Go to Start', 'Home'),
+      _MenuAction('navigate.previous', 'Previous Bar', '←'),
+      _MenuAction('navigate.next', 'Next Bar', '→'),
+      _MenuAction('navigate.end', 'Go to End', 'End'),
+    ],
+    'Record': [
+      _MenuAction('transport.record', 'Toggle Recording', 'R'),
+      _MenuAction('record.metronome', 'Toggle Metronome', 'K'),
+      _MenuAction('record.countIn', 'Count-in Settings…'),
+    ],
+    'Mix': [
+      _MenuAction('view.mixer', 'Show / Hide Mixer'),
+      _MenuAction('mix.resetMeters', 'Reset Metering'),
+      _MenuAction('mix.masterEffects', 'Master Effects'),
+    ],
+    'View': [
+      _MenuAction('view.browser', 'Show / Hide Browser'),
+      _MenuAction('view.mixer', 'Show / Hide Mixer'),
+      _MenuAction('view.zoomToFit', 'Zoom to Fit'),
+      _MenuAction('view.automation', 'Show Automation'),
+    ],
+    'Window': [
+      _MenuAction('window.project', 'Project'),
+      _MenuAction('window.plugins', 'Plug-in Windows'),
+      _MenuAction('window.settings', 'Settings…'),
+    ],
+    'Help': [
+      _MenuAction('help.shortcuts', 'Keyboard Shortcuts'),
+      _MenuAction('help.docs', 'Documentation'),
+      _MenuAction('help.about', 'About Aetherband'),
+    ],
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 31,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: const BoxDecoration(
+        color: AetherColors.background,
+        border: Border(bottom: BorderSide(color: AetherColors.raised, width: 0.7)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 21,
+            height: 21,
+            decoration: BoxDecoration(
+              color: AetherColors.sage.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(5),
+              border: Border.all(color: AetherColors.sage.withValues(alpha: 0.42)),
+            ),
+            child: const Icon(Icons.graphic_eq, color: AetherColors.sage, size: 14),
+          ),
+          const SizedBox(width: 7),
+          const Text(
+            'Aetherband',
+            style: TextStyle(color: AetherColors.paper, fontSize: 11, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(width: 13),
+          Container(width: 1, height: 17, color: AetherColors.raised),
+          const SizedBox(width: 4),
+          for (final menu in _menus.entries)
+            PopupMenuButton<_MenuAction>(
+              tooltip: '${menu.key} menu',
+              padding: EdgeInsets.zero,
+              onSelected: onSelected,
+              color: AetherColors.panel,
+              surfaceTintColor: Colors.transparent,
+              itemBuilder: (context) => menu.value.map((action) {
+                return PopupMenuItem<_MenuAction>(
+                  value: action,
+                  height: 32,
+                  child: SizedBox(
+                    width: 205,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            action.label,
+                            style: const TextStyle(color: AetherColors.paper, fontSize: 12),
+                          ),
+                        ),
+                        if (action.shortcut != null)
+                          Text(
+                            action.shortcut!,
+                            style: const TextStyle(color: AetherColors.secondaryText, fontSize: 10),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
+                child: Text(
+                  menu.key,
+                  style: const TextStyle(color: AetherColors.secondaryText, fontSize: 11),
+                ),
+              ),
+            ),
+          const Spacer(),
+          const Icon(Icons.circle, size: 6, color: AetherColors.magenta),
+          const SizedBox(width: 7),
+          const Text('Untitled Session', style: TextStyle(color: AetherColors.paper, fontSize: 11)),
+          const SizedBox(width: 11),
+        ],
+      ),
+    );
+  }
+}
+
 class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.isPlaying,
     required this.isRecording,
     required this.browserOpen,
+    required this.mixerOpen,
     required this.onPlay,
     required this.onStop,
     required this.onRecord,
     required this.onBrowser,
+    required this.onMixer,
   });
 
   final bool isPlaying;
   final bool isRecording;
   final bool browserOpen;
+  final bool mixerOpen;
   final VoidCallback onPlay;
   final VoidCallback onStop;
   final VoidCallback onRecord;
   final VoidCallback onBrowser;
+  final VoidCallback onMixer;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      height: 49,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: const BoxDecoration(
-        color: AetherColors.background,
+        color: AetherColors.panel,
         border: Border(bottom: BorderSide(color: AetherColors.raised)),
       ),
       child: Row(
         children: [
-          Container(
-            width: 31,
-            height: 31,
-            decoration: BoxDecoration(
-              color: AetherColors.sage.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(9),
-              border: Border.all(color: AetherColors.sage.withValues(alpha: 0.5)),
-            ),
-            child: const Icon(Icons.graphic_eq, color: AetherColors.sage, size: 18),
-          ),
-          const SizedBox(width: 10),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('aetherband', style: TextStyle(color: AetherColors.paper, fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: -0.5)),
-              Text('UNTITLED PROJECT / EARLY ALPHA', style: TextStyle(color: AetherColors.secondaryText.withValues(alpha: 0.85), fontSize: 8, letterSpacing: 1.0)),
-            ],
-          ),
-          const SizedBox(width: 20),
-          Container(width: 1, height: 29, color: AetherColors.raised),
-          const SizedBox(width: 14),
-          _TransportButton(icon: Icons.stop_rounded, tooltip: 'Stop demo transport', onTap: onStop),
+          _TransportButton(icon: Icons.stop_rounded, tooltip: 'Stop transport', onTap: onStop),
           const SizedBox(width: 4),
           _TransportButton(
             icon: isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-            tooltip: isPlaying ? 'Pause demo transport' : 'Play demo transport',
+            tooltip: isPlaying ? 'Pause transport' : 'Play transport',
             onTap: onPlay,
             primary: true,
           ),
           const SizedBox(width: 4),
           _TransportButton(
             icon: Icons.fiber_manual_record,
-            tooltip: 'Toggle simulated recording state',
+            tooltip: isRecording ? 'Stop recording' : 'Toggle recording',
             onTap: onRecord,
             color: isRecording ? AetherColors.magenta : AetherColors.secondaryText,
           ),
-          const SizedBox(width: 13),
+          const SizedBox(width: 12),
+          Container(width: 1, height: 25, color: AetherColors.raised),
+          const SizedBox(width: 12),
           Container(
-            width: 92,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            decoration: BoxDecoration(color: AetherColors.panel, borderRadius: BorderRadius.circular(6)),
-            child: const Column(
-              children: [
-                Text('TEMPO', style: TextStyle(color: AetherColors.secondaryText, fontSize: 8, letterSpacing: 1)),
-                SizedBox(height: 2),
-                Text('92.0 BPM', style: TextStyle(color: AetherColors.paper, fontSize: 12, fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          Container(
-            width: 67,
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
-            decoration: BoxDecoration(color: AetherColors.panel, borderRadius: BorderRadius.circular(6)),
-            child: const Column(
-              children: [
-                Text('METER', style: TextStyle(color: AetherColors.secondaryText, fontSize: 8, letterSpacing: 1)),
-                SizedBox(height: 4),
-                Text('4 / 4', style: TextStyle(color: AetherColors.paper, fontSize: 12, fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: AetherColors.magenta.withValues(alpha: 0.1),
-              border: Border.all(color: AetherColors.magenta.withValues(alpha: 0.4)),
+              color: AetherColors.background,
+              border: Border.all(color: AetherColors.raised),
               borderRadius: BorderRadius.circular(5),
             ),
             child: const Row(
               children: [
-                Icon(Icons.science_outlined, color: AetherColors.magenta, size: 13),
-                SizedBox(width: 6),
-                Text('DEMO ONLY · NO AUDIO', style: TextStyle(color: AetherColors.paper, fontSize: 9, letterSpacing: 0.4)),
+                Icon(Icons.timeline, size: 14, color: AetherColors.sage),
+                SizedBox(width: 7),
+                Text('001 : 01 : 000', style: TextStyle(color: AetherColors.paper, fontSize: 11, fontFeatures: [FontFeature.tabularFigures()])),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          IconButton(
-            tooltip: browserOpen ? 'Close browser' : 'Open browser',
-            onPressed: onBrowser,
-            icon: Icon(Icons.view_sidebar_outlined, color: browserOpen ? AetherColors.sage : AetherColors.secondaryText),
+          const SizedBox(width: 12),
+          const _ValuePlate(label: 'TEMPO', value: '92.0'),
+          const SizedBox(width: 6),
+          const _ValuePlate(label: 'METER', value: '4/4', width: 61),
+          const Spacer(),
+          Text(
+            'UI PREVIEW',
+            style: TextStyle(color: AetherColors.secondaryText.withValues(alpha: 0.78), fontSize: 9, letterSpacing: 0.8),
           ),
-          const SizedBox(width: 4),
-          const Icon(Icons.settings_outlined, size: 19, color: AetherColors.secondaryText),
+          const SizedBox(width: 10),
+          IconButton(
+            tooltip: browserOpen ? 'Hide browser' : 'Show browser',
+            onPressed: onBrowser,
+            visualDensity: VisualDensity.compact,
+            icon: Icon(Icons.view_sidebar_outlined, size: 18, color: browserOpen ? AetherColors.sage : AetherColors.secondaryText),
+          ),
+          IconButton(
+            tooltip: mixerOpen ? 'Hide mixer' : 'Show mixer',
+            onPressed: onMixer,
+            visualDensity: VisualDensity.compact,
+            icon: Icon(Icons.equalizer, size: 18, color: mixerOpen ? AetherColors.magenta : AetherColors.secondaryText),
+          ),
+          const SizedBox(width: 3),
+          const Icon(Icons.settings_outlined, size: 17, color: AetherColors.secondaryText),
+        ],
+      ),
+    );
+  }
+}
+
+class _ValuePlate extends StatelessWidget {
+  const _ValuePlate({required this.label, required this.value, this.width = 72});
+
+  final String label;
+  final String value;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 7),
+      decoration: BoxDecoration(
+        color: AetherColors.background,
+        border: Border.all(color: AetherColors.raised),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: const TextStyle(color: AetherColors.secondaryText, fontSize: 8, letterSpacing: 0.6)),
+          const SizedBox(height: 1),
+          Text(value, style: const TextStyle(color: AetherColors.paper, fontSize: 11, fontWeight: FontWeight.w600)),
         ],
       ),
     );
