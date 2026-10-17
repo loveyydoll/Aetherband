@@ -33,6 +33,13 @@ The Flutter frontend gives the project room to experiment with custom timeline l
 
 Aetherband's longer-term direction includes an extensible synthesis environment, visual programming, and spatial-audio foundations. The architecture and staged delivery plan are documented in [Creative Engine and Spatial Audio Direction](docs/CREATIVE_ENGINE_AND_SPATIAL_AUDIO.md). These are planned capabilities; spatial rendering, immersive delivery, and programmable DSP are not currently complete features.
 
+## Architecture and contributor documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Actual C ABI contract](docs/API_CONTRACT.md)
+- [Development and release tracking](docs/DEVELOPMENT_AND_RELEASE_TRACKING.md)
+- [Creative engine and spatial-audio direction](docs/CREATIVE_ENGINE_AND_SPATIAL_AUDIO.md)
+
 ## Development roadmap
 
 The audio engine is written in Rust. The long-term architecture keeps real-time audio work in the native engine and separates it from the Flutter presentation layer. That boundary makes the system easier to reason about, test, and evolve.
@@ -52,7 +59,7 @@ Aetherband is in an early stage. The distinction between existing code, verified
 - A Rust audio-engine workspace and a C ABI for communication with the desktop UI.
 - Native engine functionality for multi-track playback and mixing.
 - C ABI exports for engine lifecycle, transport, telemetry, audio-device operations, test tone, and track controls. Not every exported operation is yet connected to a complete user-facing workflow.
-- A Flutter desktop frontend prototype and a Dart FFI integration for the initial engine lifecycle, transport, and telemetry path.
+- A Flutter desktop frontend with an initial Dart FFI integration for engine lifecycle, transport, and telemetry; full DAW feature parity is not yet complete.
 - Regression coverage for the **Stop/rewind transport fix**. The Flutter migration does not intentionally change that transport implementation.
 
 ### Known gaps
