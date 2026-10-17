@@ -25,7 +25,7 @@ The former C#/.NET + Avalonia frontend is retired and removed from the desktop a
 - **Telemetry:** Rust engine telemetry -> C ABI struct -> Dart polling adapter -> UI state.
 - **Audio:** Rust decoder workers -> preallocated/bounded engine buffers -> Rust audio callback -> OS audio device.
 
-The current C ABI exposes engine lifecycle, transport, telemetry, device enumeration/selection, test tone, track load/remove, track gain/pan/mute and track count. Check `bindings/c_abi/src/lib.rs` as the source of truth before adding calls. The current telemetry frame does not expose the active sample rate, so the Flutter adapter's playhead seconds are approximate until that ABI gap is resolved.
+The current C ABI exposes engine lifecycle, transport, telemetry, device enumeration/selection, test tone, track load/remove, track gain/pan/mute and track count. Check `bindings/c_abi/src/lib.rs` as the source of truth before adding calls. ABI version 0.2.0 adds `daw_engine_get_sample_rate`, and the Flutter adapter now converts playhead frames using the active output sample rate rather than assuming 48 kHz. Device selection is not yet fully wired into Flutter; if that is added, refresh the cached sample rate after a successful switch.
 
 ## Why Flutter
 
