@@ -52,10 +52,26 @@ pub struct SpatialPosition {
 }
 
 impl SpatialPosition {
-    pub const FRONT: Self = Self { x: 0.0, y: 1.0, z: 0.0 };
-    pub const RIGHT: Self = Self { x: 1.0, y: 0.0, z: 0.0 };
-    pub const LEFT: Self = Self { x: -1.0, y: 0.0, z: 0.0 };
-    pub const ABOVE: Self = Self { x: 0.0, y: 0.0, z: 1.0 };
+    pub const FRONT: Self = Self {
+        x: 0.0,
+        y: 1.0,
+        z: 0.0,
+    };
+    pub const RIGHT: Self = Self {
+        x: 1.0,
+        y: 0.0,
+        z: 0.0,
+    };
+    pub const LEFT: Self = Self {
+        x: -1.0,
+        y: 0.0,
+        z: 0.0,
+    };
+    pub const ABOVE: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 1.0,
+    };
 
     /// Creates a direction from Cartesian coordinates.
     pub const fn new(x: f32, y: f32, z: f32) -> Self {
@@ -150,10 +166,14 @@ mod tests {
     #[test]
     fn azimuth_uses_front_as_zero_and_right_as_positive() {
         assert!(SpatialPosition::FRONT.azimuth_radians().unwrap().abs() < 1e-6);
-        assert!((SpatialPosition::RIGHT.azimuth_radians().unwrap()
-            - std::f32::consts::FRAC_PI_2).abs() < 1e-6);
-        assert!((SpatialPosition::LEFT.azimuth_radians().unwrap()
-            + std::f32::consts::FRAC_PI_2).abs() < 1e-6);
+        assert!(
+            (SpatialPosition::RIGHT.azimuth_radians().unwrap() - std::f32::consts::FRAC_PI_2).abs()
+                < 1e-6
+        );
+        assert!(
+            (SpatialPosition::LEFT.azimuth_radians().unwrap() + std::f32::consts::FRAC_PI_2).abs()
+                < 1e-6
+        );
     }
 
     #[test]

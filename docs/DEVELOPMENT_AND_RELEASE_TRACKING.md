@@ -69,8 +69,10 @@ Keep one row per published release. Leave fields blank until the event actually 
 
 | Item | Status | Reference |
 |---|---|---|
-| Flutter + Dart FFI migration | PR merged; migration still requires CI/platform verification before being called stable | [PR #12](https://github.com/loveyydoll/Aetherband/pull/12) |
-| Creative engine and spatial-audio foundations | Draft PR; not merged or released | [PR #14](https://github.com/loveyydoll/Aetherband/pull/14) |
-| Creative-platform README repositioning | Draft PR; not merged or released | [PR #13](https://github.com/loveyydoll/Aetherband/pull/13) |
+| Flutter + Dart FFI migration | PR merged; initial engine lifecycle, transport and telemetry adapter exists. Real Windows/macOS playback and shutdown still require host verification. | [PR #12](https://github.com/loveyydoll/Aetherband/pull/12) |
+| Creative-platform README repositioning | Merged; product vision and README updated, not a release. | [PR #13](https://github.com/loveyydoll/Aetherband/pull/13) |
+| Creative engine and spatial-audio foundations | Merged foundational metadata/utilities and direction docs; not a spatial renderer or immersive export implementation. | [PR #14](https://github.com/loveyydoll/Aetherband/pull/14) |
+| Native-engine widget test stability | Merged; test no longer assumes the native library is absent on every test host. | [PR #18](https://github.com/loveyydoll/Aetherband/pull/18) |
+| ABI sample-rate correctness, FFI lifecycle and truthful recording UI | Open PR; Rust formatting was fixed in the branch, CI is running. Not yet merged. | [PR #19](https://github.com/loveyydoll/Aetherband/pull/19) |
 
 This table is a snapshot, not a substitute for GitHub's live state. Update it when PR status changes, and record releases only when published.

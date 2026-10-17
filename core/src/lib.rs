@@ -155,6 +155,11 @@ impl DAWEngine {
         Ok(())
     }
 
+    /// Returns the active output stream's sample rate in Hz.
+    pub fn output_sample_rate(&self) -> u32 {
+        self.output_sample_rate
+    }
+
     /// Returns the active audio device name, if any.
     pub fn active_device_name(&self) -> Option<&str> {
         self.active_stream.as_ref().map(|s| s.device_name())

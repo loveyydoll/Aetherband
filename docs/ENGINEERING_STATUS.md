@@ -1,5 +1,7 @@
 # Aetherband — Engineering Status Snapshot
 
+> **Historical snapshot:** This document describes the repository on 2026-10-16 and is not current implementation guidance. The Flutter/Dart FFI migration was merged in [PR #12](https://github.com/loveyydoll/Aetherband/pull/12); C#/Avalonia has been removed. For current state, start with [README.md](../README.md), [ARCHITECTURE.md](ARCHITECTURE.md), and [DEVELOPMENT_AND_RELEASE_TRACKING.md](DEVELOPMENT_AND_RELEASE_TRACKING.md). Verify current CI and source before acting on any historical risk below.
+
 **Snapshot date:** 2026-10-16  
 **Branch context:** `fix/audio-engine-correctness`, draft PR #1  
 **Important:** This is a historical status snapshot, not proof that code compiles or behaves correctly. Re-check source, CI and PR status before acting on it.

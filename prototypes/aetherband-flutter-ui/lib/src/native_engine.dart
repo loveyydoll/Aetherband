@@ -14,6 +14,10 @@ typedef _CommandN = Int32 Function(Pointer<Void>);
 typedef _CommandD = int Function(Pointer<Void>);
 typedef _PollN = Int32 Function(Pointer<Void>, Pointer<_MeteringFrame>);
 typedef _PollD = int Function(Pointer<Void>, Pointer<_MeteringFrame>);
+typedef _SampleRateN = Int32 Function(Pointer<Void>, Pointer<Uint32>);
+typedef _SampleRateD = int Function(Pointer<Void>, Pointer<Uint32>);
+
+const int _expectedApiVersion = 0x00000200;
 
 final class _MeteringFrame extends Struct {
   @Float()
@@ -37,28 +41,35 @@ final class _MeteringFrame extends Struct {
 /// Owns one native engine handle. Calls are serialized on the Flutter UI isolate;
 /// all DSP, decoding, and audio callback work remains in Rust.
 class NativeEngineController implements EngineController {
-  NativeEngineController._(DynamicLibrary library, this._handle)
-      : _version = library.lookupFunction<_VersionN, _VersionD>('daw_get_api_version'),
-        _playNative = library.lookupFunction<_CommandN, _CommandD>('daw_engine_play'),
-        _pauseNative = library.lookupFunction<_CommandN, _CommandD>('daw_engine_pause'),
-        _stopNative = library.lookupFunction<_CommandN, _CommandD>('daw_engine_stop'),
-        _destroyNative = library.lookupFunction<_CommandN, _CommandD>('daw_engine_destroy'),
-        _pollNative = library.lookupFunction<_PollN, _PollD>('daw_engine_poll_telemetry') {
-    final version = _version();
-    if (version != 0x00000100) {
-      _destroyNative(_handle);
-      throw StateError('Native API version mismatch: expected 0x100, got 0x${version.toRadixString(16)}.');
-    }
+  NativeEngineController._({
+    required DynamicLibrary library,
+    required Pointer<Void> handle,
+    required _CommandD playNative,
+    required _CommandD pauseNative,
+    required _CommandD stopNative,
+    required _CommandD destroyNative,
+    required _PollD pollNative,
+    required this.sampleRateHz,
+  })  : _library = library,
+        _handle = handle,
+        _playNative = playNative,
+        _pauseNative = pauseNative,
+        _stopNative = stopNative,
+        _destroyNative = destroyNative,
+        _pollNative = pollNative {
     _pollTimer = Timer.periodic(const Duration(milliseconds: 33), (_) => _poll());
   }
 
+  // Keep the native library loaded for as long as its function pointers/handle are used.
+  // ignore: unused_field
+  final DynamicLibrary _library;
   final Pointer<Void> _handle;
-  final _VersionD _version;
   final _CommandD _playNative;
   final _CommandD _pauseNative;
   final _CommandD _stopNative;
   final _CommandD _destroyNative;
   final _PollD _pollNative;
+  final int sampleRateHz;
   final StreamController<EngineTelemetry> _telemetry = StreamController<EngineTelemetry>.broadcast();
   Timer? _pollTimer;
   bool _disposed = false;
@@ -68,17 +79,60 @@ class NativeEngineController implements EngineController {
 
   static Future<NativeEngineController> create() async {
     final library = _openLibrary();
+
+    // Validate the ABI before calling any function that creates or mutates native
+    // state. Resolve every required symbol before creating a handle so a missing
+    // export cannot leak a newly-created engine.
+    final version = library.lookupFunction<_VersionN, _VersionD>('daw_get_api_version');
+    final actualVersion = version();
+    if (actualVersion != _expectedApiVersion) {
+      throw StateError(
+        'Native API version mismatch: expected 0x${_expectedApiVersion.toRadixString(16)}, '
+        'got 0x${actualVersion.toRadixString(16)}. Rebuild the Rust C ABI library.',
+      );
+    }
+
     final create = library.lookupFunction<_CreateN, _CreateD>('daw_engine_create');
+    final play = library.lookupFunction<_CommandN, _CommandD>('daw_engine_play');
+    final pause = library.lookupFunction<_CommandN, _CommandD>('daw_engine_pause');
+    final stop = library.lookupFunction<_CommandN, _CommandD>('daw_engine_stop');
+    final destroy = library.lookupFunction<_CommandN, _CommandD>('daw_engine_destroy');
+    final poll = library.lookupFunction<_PollN, _PollD>('daw_engine_poll_telemetry');
+    final getSampleRate = library.lookupFunction<_SampleRateN, _SampleRateD>('daw_engine_get_sample_rate');
+
     final outHandle = calloc<Pointer<Void>>();
     try {
       final result = create(outHandle);
       if (result != 0) {
         throw StateError('Native engine creation failed (error $result). Check audio-device availability.');
       }
-      if (outHandle.value == nullptr) {
+      final handle = outHandle.value;
+      if (handle == nullptr) {
         throw StateError('Native engine creation returned a null handle.');
       }
-      return NativeEngineController._(library, outHandle.value);
+
+      final outSampleRate = calloc<Uint32>();
+      try {
+        final sampleRateResult = getSampleRate(handle, outSampleRate);
+        if (sampleRateResult != 0 || outSampleRate.value == 0) {
+          destroy(handle);
+          throw StateError(
+            'Could not read the active native sample rate (error $sampleRateResult).',
+          );
+        }
+        return NativeEngineController._(
+          library: library,
+          handle: handle,
+          playNative: play,
+          pauseNative: pause,
+          stopNative: stop,
+          destroyNative: destroy,
+          pollNative: poll,
+          sampleRateHz: outSampleRate.value,
+        );
+      } finally {
+        calloc.free(outSampleRate);
+      }
     } finally {
       calloc.free(outHandle);
     }
@@ -86,10 +140,25 @@ class NativeEngineController implements EngineController {
 
   static DynamicLibrary _openLibrary() {
     final names = Platform.isWindows
-        ? <String>['daw_core.dll', 'target\\debug\\daw_core.dll', 'target\\release\\daw_core.dll', '..\\..\\target\\debug\\daw_core.dll']
+        ? <String>[
+            'daw_core.dll',
+            'target\\debug\\daw_core.dll',
+            'target\\release\\daw_core.dll',
+            '..\\..\\target\\debug\\daw_core.dll',
+          ]
         : Platform.isMacOS
-            ? <String>['libdaw_core.dylib', 'target/debug/libdaw_core.dylib', 'target/release/libdaw_core.dylib', '../../target/debug/libdaw_core.dylib']
-            : <String>['libdaw_core.so', 'target/debug/libdaw_core.so', 'target/release/libdaw_core.so', '../../target/debug/libdaw_core.so'];
+            ? <String>[
+                'libdaw_core.dylib',
+                'target/debug/libdaw_core.dylib',
+                'target/release/libdaw_core.dylib',
+                '../../target/debug/libdaw_core.dylib',
+              ]
+            : <String>[
+                'libdaw_core.so',
+                'target/debug/libdaw_core.so',
+                'target/release/libdaw_core.so',
+                '../../target/debug/libdaw_core.so',
+              ];
     final errors = <String>[];
     for (final name in names) {
       try {
@@ -98,7 +167,9 @@ class NativeEngineController implements EngineController {
         errors.add('$name: $error');
       }
     }
-    throw StateError('Native library not found. Build the daw_core_ffi Rust library. Tried: ${errors.join('; ')}');
+    throw StateError(
+      'Native library not found. Build the daw_core_ffi Rust library. Tried: ${errors.join('; ')}',
+    );
   }
 
   void _poll() {
@@ -109,8 +180,8 @@ class NativeEngineController implements EngineController {
       if (result == 0) {
         final value = frame.ref;
         _telemetry.add(EngineTelemetry(
-          // ABI currently omits the active sample rate; 48 kHz is an estimate for display.
-          playheadSeconds: value.playheadFrame / 48000.0,
+          playheadSeconds: value.playheadFrame / sampleRateHz,
+          sampleRateHz: sampleRateHz,
           peakLeft: value.peakLeft.clamp(0.0, 1.0).toDouble(),
           peakRight: value.peakRight.clamp(0.0, 1.0).toDouble(),
           isPlaying: value.isPlaying != 0,

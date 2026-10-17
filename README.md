@@ -29,7 +29,18 @@ Aetherband is intended to be more than a list of DAW features. The project aims 
 
 The Flutter frontend gives the project room to experiment with custom timeline lanes, clip interactions, meters, editors, and instrument panels. The goal is a cohesive, expressive workspace—not a claim that the interface is already finished or faster than every alternative.
 
-## Long-term creative engine direction\n\nAetherband's longer-term direction includes an extensible synthesis environment, visual programming, and spatial-audio foundations. The architecture and staged delivery plan are documented in [Creative Engine and Spatial Audio Direction](docs/CREATIVE_ENGINE_AND_SPATIAL_AUDIO.md). These are planned capabilities; spatial rendering, immersive delivery, and programmable DSP are not currently complete features.\n\n## Development roadmap
+## Long-term creative engine direction
+
+Aetherband's longer-term direction includes an extensible synthesis environment, visual programming, and spatial-audio foundations. The architecture and staged delivery plan are documented in [Creative Engine and Spatial Audio Direction](docs/CREATIVE_ENGINE_AND_SPATIAL_AUDIO.md). These are planned capabilities; spatial rendering, immersive delivery, and programmable DSP are not currently complete features.
+
+## Architecture and contributor documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Actual C ABI contract](docs/API_CONTRACT.md)
+- [Development and release tracking](docs/DEVELOPMENT_AND_RELEASE_TRACKING.md)
+- [Creative engine and spatial-audio direction](docs/CREATIVE_ENGINE_AND_SPATIAL_AUDIO.md)
+
+## Development roadmap
 
 The audio engine is written in Rust. The long-term architecture keeps real-time audio work in the native engine and separates it from the Flutter presentation layer. That boundary makes the system easier to reason about, test, and evolve.
 
@@ -48,7 +59,7 @@ Aetherband is in an early stage. The distinction between existing code, verified
 - A Rust audio-engine workspace and a C ABI for communication with the desktop UI.
 - Native engine functionality for multi-track playback and mixing.
 - C ABI exports for engine lifecycle, transport, telemetry, audio-device operations, test tone, and track controls. Not every exported operation is yet connected to a complete user-facing workflow.
-- A Flutter desktop frontend prototype and a Dart FFI integration for the initial engine lifecycle, transport, and telemetry path.
+- A Flutter desktop frontend with an initial Dart FFI integration for engine lifecycle, transport, and telemetry; full DAW feature parity is not yet complete.
 - Regression coverage for the **Stop/rewind transport fix**. The Flutter migration does not intentionally change that transport implementation.
 
 ### Known gaps
@@ -108,10 +119,13 @@ The number and duration of beta, RC, and other testing releases will depend on f
 
 Aetherband separates the creative interface from the work that must run close to the audio hardware.
 
-- **Rust** — native audio engine and real-time-sensitive processing.
-- **C ABI** — a small, versioned boundary between the engine and UI.
-- **Dart FFI** — the Flutter-side adapter for native calls and ownership rules.
-- **Flutter** — the desktop presentation layer and interactive creative workspace.
+| Technology | Role | Current status |
+|---|---|---|
+| **Rust** | Native audio engine, decoding, mixing, DSP and real-time callback | Core implementation exists; correctness and platform behavior still require regression testing |
+| **C ABI** | Versioned boundary between native engine and desktop UI | ABI 0.2.0; exported functions are documented in [API_CONTRACT.md](docs/API_CONTRACT.md) |
+| **Dart FFI** | Native library loading, ABI validation, engine lifecycle and telemetry | Initial lifecycle/transport/telemetry path implemented; device and track workflows remain incomplete |
+| **Flutter / Dart** | Windows/macOS desktop UI and creative workspace | Intended sole desktop frontend; demo clips and several controls remain presentation-only |
+| **CPAL / Symphonia / rtrb** | Audio device I/O, media decoding and bounded cross-thread communication | Used by the Rust engine; exact supported formats and runtime behavior must be verified per platform |
 
 ### Why Flutter?
 
