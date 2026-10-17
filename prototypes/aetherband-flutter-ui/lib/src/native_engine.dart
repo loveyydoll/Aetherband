@@ -16,6 +16,12 @@ typedef _PollN = Int32 Function(Pointer<Void>, Pointer<_MeteringFrame>);
 typedef _PollD = int Function(Pointer<Void>, Pointer<_MeteringFrame>);
 typedef _SampleRateN = Int32 Function(Pointer<Void>, Pointer<Uint32>);
 typedef _SampleRateD = int Function(Pointer<Void>, Pointer<Uint32>);
+typedef _LoadTrackN = Int32 Function(Pointer<Void>, Pointer<Utf8>, Pointer<Uint32>);
+typedef _LoadTrackD = int Function(Pointer<Void>, Pointer<Utf8>, Pointer<Uint32>);
+typedef _RemoveTrackN = Int32 Function(Pointer<Void>, Uint32);
+typedef _RemoveTrackD = int Function(Pointer<Void>, int);
+typedef _TrackCountN = Int32 Function(Pointer<Void>);
+typedef _TrackCountD = int Function(Pointer<Void>);
 
 const int _expectedApiVersion = 0x00000200;
 
@@ -49,14 +55,14 @@ class NativeEngineController implements EngineController {
     required _CommandD stopNative,
     required _CommandD destroyNative,
     required _PollD pollNative,
-    required this.sampleRateHz,
+    required this.sampleRateHz,\n    required _LoadTrackD loadTrackNative,\n    required _RemoveTrackD removeTrackNative,\n    required _TrackCountD trackCountNative,
   })  : _library = library,
         _handle = handle,
         _playNative = playNative,
         _pauseNative = pauseNative,
         _stopNative = stopNative,
         _destroyNative = destroyNative,
-        _pollNative = pollNative {
+        _pollNative = pollNative,\n        _loadTrackNative = loadTrackNative,\n        _removeTrackNative = removeTrackNative,\n        _trackCountNative = trackCountNative {
     _pollTimer = Timer.periodic(const Duration(milliseconds: 33), (_) => _poll());
   }
 
@@ -68,7 +74,7 @@ class NativeEngineController implements EngineController {
   final _CommandD _pauseNative;
   final _CommandD _stopNative;
   final _CommandD _destroyNative;
-  final _PollD _pollNative;
+  final _PollD _pollNative;\n  final _LoadTrackD _loadTrackNative;\n  final _RemoveTrackD _removeTrackNative;\n  final _TrackCountD _trackCountNative;
   final int sampleRateHz;
   final StreamController<EngineTelemetry> _telemetry = StreamController<EngineTelemetry>.broadcast();
   Timer? _pollTimer;
@@ -99,6 +105,9 @@ class NativeEngineController implements EngineController {
     final destroy = library.lookupFunction<_CommandN, _CommandD>('daw_engine_destroy');
     final poll = library.lookupFunction<_PollN, _PollD>('daw_engine_poll_telemetry');
     final getSampleRate = library.lookupFunction<_SampleRateN, _SampleRateD>('daw_engine_get_sample_rate');
+    final loadTrack = library.lookupFunction<_LoadTrackN, _LoadTrackD>('daw_engine_load_track');
+    final removeTrack = library.lookupFunction<_RemoveTrackN, _RemoveTrackD>('daw_engine_remove_track');
+    final trackCount = library.lookupFunction<_TrackCountN, _TrackCountD>('daw_engine_get_track_count');
 
     final outHandle = calloc<Pointer<Void>>();
     try {
@@ -128,7 +137,7 @@ class NativeEngineController implements EngineController {
           stopNative: stop,
           destroyNative: destroy,
           pollNative: poll,
-          sampleRateHz: outSampleRate.value,
+          sampleRateHz: outSampleRate.value,\n          loadTrackNative: loadTrack,\n          removeTrackNative: removeTrack,\n          trackCountNative: trackCount,
         );
       } finally {
         calloc.free(outSampleRate);
@@ -170,6 +179,36 @@ class NativeEngineController implements EngineController {
     throw StateError(
       'Native library not found. Build the daw_core_ffi Rust library. Tried: ${errors.join('; ')}',
     );
+  }
+
+  @override
+  Future<int> loadTrack(String path) async {
+    if (_disposed) throw StateError('Native engine has been disposed.');
+    final nativePath = path.toNativeUtf8();
+    final outTrackId = calloc<Uint32>();
+    try {
+      final result = _loadTrackNative(_handle, nativePath, outTrackId);
+      if (result != 0) {
+        throw StateError('Native audio import failed (error $result): $path');
+      }
+      return outTrackId.value;
+    } finally {
+      calloc.free(nativePath);
+      calloc.free(outTrackId);
+    }
+  }
+
+  @override
+  Future<void> removeTrack(int trackId) async {
+    _check('remove track', _removeTrackNative(_handle, trackId));
+  }
+
+  @override
+  Future<int> getTrackCount() async {
+    if (_disposed) throw StateError('Native engine has been disposed.');
+    final count = _trackCountNative(_handle);
+    if (count < 0) throw StateError('Native track count query failed (error $count).');
+    return count;
   }
 
   void _poll() {
