@@ -60,6 +60,8 @@ class NativeEngineController implements EngineController {
     _pollTimer = Timer.periodic(const Duration(milliseconds: 33), (_) => _poll());
   }
 
+  // Keep the native library loaded for as long as its function pointers/handle are used.
+  // ignore: unused_field
   final DynamicLibrary _library;
   final Pointer<Void> _handle;
   final _CommandD _playNative;
