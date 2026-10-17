@@ -9,7 +9,7 @@ Aetherband is an early-alpha, open-source desktop DAW. Its long-term direction i
 
 ## Current architecture
 
-- **Desktop UI:** Flutter/Dart in `prototypes/aetherband-flutter-ui/`.
+- **Desktop UI:** Flutter/Dart in `apps/desktop/`.
 - **Audio engine/DSP:** Rust in `core/`.
 - **Interop:** versioned C ABI in `bindings/c_abi/`, consumed through Dart FFI.
 - **Audio I/O/decoding:** Rust engine components using the existing audio/device and decoder stack.
