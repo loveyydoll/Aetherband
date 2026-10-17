@@ -15,8 +15,8 @@
 | **Native API** | Flat C ABI at `bindings/c_abi/src/lib.rs` | Cross-language boundary used by both the existing C# frontend and the target Flutter frontend. It exposes an opaque `DAWEngine` handle and C-compatible structs. |
 | **Target desktop UI** | **Flutter + Dart** | Mandatory implementation target for Windows/macOS. Current source is under `prototypes/aetherband-flutter-ui/`; current app remains mock-only. |
 | **Flutter ↔ Rust** | Dart `dart:ffi` wrapper over C ABI | Not yet implemented at the current handoff snapshot. Must check native results, structure layouts, ownership, lifecycle and platform library loading. |
-| **Transition desktop UI** | C# / .NET 10 + Avalonia | Existing app under `apps/desktop/RouletteStudio.Desktop/`; keep working while Flutter reaches feature parity. It is not the intended final frontend. |
-| **C# bindings** | `csbindgen` | `bindings/c_abi/build.rs` currently generates C# P/Invoke declarations. This does **not** generate Dart bindings. |
+| **Transition desktop UI** | C# / .NET 10 + Avalonia | Existing audio-connected app under `apps/desktop/RouletteStudio.Desktop/`. Expected to be retired after Flutter has verified feature parity; do not delete before the release gates. |
+| **Legacy C# bindings** | `csbindgen` | `bindings/c_abi/build.rs` currently generates C# P/Invoke declarations for Avalonia. This does **not** generate Dart bindings and is likely removable with the legacy UI after migration. |
 | **Toolchains** | Cargo, Flutter stable/Dart, Visual Studio C++ workload (Windows), Xcode (macOS) | CI and local instructions must validate each host's actual prerequisites. |
 
 ## 2. Binding requirements for Flutter
