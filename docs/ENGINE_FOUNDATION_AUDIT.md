@@ -20,8 +20,8 @@ The current gap is less “there is no engine” and more “the engine/UI contr
 - `core/src/ringbuf.rs` / `core/src/track.rs`: bounded queues and track playback state.
 - `core/src/lib.rs`: control-thread engine lifecycle, track loading/removal, device selection and transport.
 - `bindings/c_abi/src/lib.rs`: opaque engine handle, versioned C ABI, transport, telemetry, device and track exports.
-- `prototypes/aetherband-flutter-ui/lib/src/native_engine.dart`: ABI version check, library loading, engine lifecycle, Play/Pause/Stop and telemetry polling.
-- `prototypes/aetherband-flutter-ui/lib/src/aetherband_app.dart`: primary Flutter UI, still visibly labels itself `UI PREVIEW` and describes demo clips in its status area.
+- `apps/desktop/lib/src/native_engine.dart`: ABI version check, library loading, engine lifecycle, Play/Pause/Stop and telemetry polling.
+- `apps/desktop/lib/src/aetherband_app.dart`: primary Flutter UI, still visibly labels itself `UI PREVIEW` and describes demo clips in its status area.
 - `.github/workflows/flutter-ui-prototype.yml`: Windows/macOS Flutter validation still targets the legacy directory path.
 
 ## Findings and risks
@@ -58,7 +58,7 @@ The Flutter app has a native lifecycle/telemetry path but also contains illustra
 
 ### 7. The app path is still legacy organization
 
-Flutter is documented as the primary desktop UI, but the app remains under `prototypes/aetherband-flutter-ui/`, and CI uses that path. Restructuring it to `apps/desktop/` is reasonable, but should be a separate migration with every workflow, script, instruction, import, generated runner and document reference updated together. It must not be mixed into an unreviewable engine rewrite.
+Flutter is documented as the primary desktop UI, but the app remains under `apps/desktop/`, and CI uses that path. Restructuring it to `apps/desktop/` is reasonable, but should be a separate migration with every workflow, script, instruction, import, generated runner and document reference updated together. It must not be mixed into an unreviewable engine rewrite.
 
 ## Recommended implementation order
 
