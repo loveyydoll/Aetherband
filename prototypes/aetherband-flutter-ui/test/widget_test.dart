@@ -19,6 +19,11 @@ void main() {
     expect(find.byTooltip('Play transport'), findsOneWidget);
     expect(tester.takeException(), isNull, reason: 'The initial workspace should fit without overflow.');
 
+    await tester.tap(find.byTooltip('Recording unavailable'));
+    await tester.pump();
+    expect(find.textContaining('Audio recording is not implemented yet'), findsOneWidget);
+    expect(tester.takeException(), isNull, reason: 'Unavailable recording must not fake a successful state change.');
+
     // Native engine availability depends on the test machine's built artifacts.
     // This widget test checks the workspace itself, not a machine-specific
     // assumption that the native library must be absent.
