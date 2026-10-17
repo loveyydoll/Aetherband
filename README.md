@@ -11,7 +11,7 @@ Aetherband is being built in the open. Expect incomplete workflows, changing int
 - **Vision:** a flexible creative workspace for musicians, producers, sound explorers, and the people who build audio tools.
 - **License:** GPL-3.0
 - **Architecture:** Rust audio engine · versioned C ABI · Dart FFI · Flutter desktop UI
-- **Current focus:** stabilize the Flutter-to-engine connection and establish a trustworthy baseline before expanding the DAW.
+- **Current focus:** make the Flutter desktop application a reliable primary UI by stabilizing its Rust-engine connection, removing misleading controls, and verifying end-to-end workflows.
 
 > A note on the vision: Aetherband aims to become a capable DAW. It is not yet a replacement for established production software, and the features in the roadmap below should be read as goals—not as functionality that is already available.
 
@@ -27,7 +27,7 @@ Aetherband is intended to be more than a list of DAW features. The project aims 
 
 ### A workspace with its own character
 
-The Flutter frontend gives the project room to experiment with custom timeline lanes, clip interactions, meters, editors, and instrument panels. The goal is a cohesive, expressive workspace—not a claim that the interface is already finished or faster than every alternative.
+The Flutter frontend is Aetherband’s **primary desktop UI**, not a separate experimental alternative to another frontend. It provides the foundation for custom timeline lanes, clip interactions, meters, editors, and instrument panels. The UI is still early alpha: the application architecture is the chosen direction, while many DAW workflows remain incomplete.
 
 ## Long-term creative engine direction
 
@@ -59,13 +59,13 @@ Aetherband is in an early stage. The distinction between existing code, verified
 - A Rust audio-engine workspace and a C ABI for communication with the desktop UI.
 - Native engine functionality for multi-track playback and mixing.
 - C ABI exports for engine lifecycle, transport, telemetry, audio-device operations, test tone, and track controls. Not every exported operation is yet connected to a complete user-facing workflow.
-- A Flutter desktop frontend with an initial Dart FFI integration for engine lifecycle, transport, and telemetry; full DAW feature parity is not yet complete.
+- The primary Flutter desktop application with Dart FFI integration for engine lifecycle, ABI-version validation, transport, sample-rate query, and telemetry; full DAW feature parity is not yet complete.
 - Regression coverage for the **Stop/rewind transport fix**. The Flutter migration does not intentionally change that transport implementation.
 
 ### Known gaps
 
-- The Flutter frontend is still an early prototype; some arrangement content is demonstrative rather than a real session.
-- Device selection, audio import and track management need complete end-to-end integration and verification in the Flutter application.
+- The Flutter application is the main desktop UI, but the current workspace is still early alpha: demo tracks/clips are not evidence of a loaded or saved session. The directory name `prototypes/aetherband-flutter-ui/` is legacy organization, not a statement that Flutter is a disposable or secondary frontend.
+- Device selection, audio import, track management, and transport behavior still need end-to-end verification on supported desktop platforms.
 - Recording, MIDI editing, built-in instruments, effects, automation, third-party plugin hosting, project save/load, and export must not be considered complete unless they are implemented and tested.
 - Windows and macOS native-library packaging, playback, and clean shutdown need repeatable verification.
 - The current CI checks need to pass before the migration can be described as stable.
@@ -122,9 +122,9 @@ Aetherband separates the creative interface from the work that must run close to
 | Technology | Role | Current status |
 |---|---|---|
 | **Rust** | Native audio engine, decoding, mixing, DSP and real-time callback | Core implementation exists; correctness and platform behavior still require regression testing |
-| **C ABI** | Versioned boundary between native engine and desktop UI | ABI 0.2.0; exported functions are documented in [API_CONTRACT.md](docs/API_CONTRACT.md) |
+| **C ABI** | Versioned boundary between native engine and desktop UI | ABI 0.2.0; includes a sample-rate query; exported functions are documented in [API_CONTRACT.md](docs/API_CONTRACT.md) |
 | **Dart FFI** | Native library loading, ABI validation, engine lifecycle and telemetry | Initial lifecycle/transport/telemetry path implemented; device and track workflows remain incomplete |
-| **Flutter / Dart** | Windows/macOS desktop UI and creative workspace | Intended sole desktop frontend; demo clips and several controls remain presentation-only |
+| **Flutter / Dart** | Windows/macOS primary desktop UI and creative workspace | Chosen sole desktop frontend; demo clips remain illustrative and several menu actions are not implemented |
 | **CPAL / Symphonia / rtrb** | Audio device I/O, media decoding and bounded cross-thread communication | Used by the Rust engine; exact supported formats and runtime behavior must be verified per platform |
 
 ### Why Flutter?
@@ -164,7 +164,7 @@ cargo build -p daw_core_ffi
 
 ### Flutter desktop
 
-From `prototypes/aetherband-flutter-ui/`:
+From `prototypes/aetherband-flutter-ui/` (the current path; the directory name is legacy and does not make Flutter a secondary UI):
 
 ```sh
 flutter pub get
@@ -186,7 +186,7 @@ Aetherband is for musicians who want to shape their tools and developers who wan
 - Read the architecture and current milestone before starting a large change.
 - Prefer focused pull requests with a clear purpose and tests.
 - Do not change real-time audio behavior without considering callback safety and regression coverage.
-- Keep UI prototypes clearly distinguished from native functionality.
+- Keep illustrative/demo content clearly distinguished from real session and engine state. Flutter is the primary desktop UI.
 - Include reproduction steps for bugs, especially for device, transport, and shutdown issues.
 - Discuss substantial architectural or product changes before investing in a large implementation.
 
