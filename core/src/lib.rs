@@ -349,6 +349,9 @@ impl DAWEngine {
     ///
     /// The decoder immediately starts streaming decoded blocks into the audio thread.
     pub fn load_track(&mut self, path: &Path) -> Result<TrackId, EngineError> {
+        if self.tracks.len() >= track::MAX_TRACKS {
+            return Err(EngineError::TrackLimitReached);
+        }
         let info = probe_file(path)?;
         let id = next_track_id();
 
