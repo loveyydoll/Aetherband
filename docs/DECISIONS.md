@@ -27,7 +27,7 @@
 ---
 
 ### ADR-002: Rust Audio/DSP Core with Flutter Desktop Frontend
-- **Status:** Superseded by the Flutter migration decision
+- **Status:** Approved (replaces the original C# / Avalonia decision)
 - **Original date:** 2026-10-16
 - **Updated:** 2026-10-17
 - **Context:**
