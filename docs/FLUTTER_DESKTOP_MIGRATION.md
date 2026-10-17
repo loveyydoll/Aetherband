@@ -6,6 +6,10 @@
 
 Read this document before making frontend, interop, or roadmap decisions. The concise agent contract is in [`AGENTS.md`](../AGENTS.md); the chronological handoff is [`AI_HANDOFF.md`](AI_HANDOFF.md).
 
+## Extended product roadmap
+
+The full dependency-aware backlog (14 milestones covering Flutter migration, native interop, parity, project persistence, editing, recording, MIDI, instruments, mixer/routing, effects/plugins, automation, export, reliability, packaging and legacy UI retirement) is maintained in [`PRODUCT_ROADMAP.md`](PRODUCT_ROADMAP.md). Keep this document as the canonical architecture/FFI migration contract and the product roadmap as the broader implementation backlog.
+
 ## 1. Non-negotiable direction
 
 1. **Build Aetherband's full desktop UI in Flutter/Dart.** Continue through implementation friction, missing widgets, packaging issues, test failures, and platform differences. Fix the problems; do not use them as reasons to abandon Flutter.
