@@ -40,7 +40,7 @@ Aetherband's preferred pace is experimental and feature-driven: deliver useful v
 
 ## 4. Current technology and command discovery
 
-Current target: Rust engine + versioned C ABI + Flutter/Dart desktop UI. The Flutter project is under `prototypes/aetherband-flutter-ui/`. The retired C#/.NET + Avalonia frontend must not be recreated unless the owner explicitly reverses the decision.
+Current target: Rust engine + versioned C ABI + Flutter/Dart desktop UI. The Flutter project is under `apps/desktop/`. The retired C#/.NET + Avalonia frontend must not be recreated unless the owner explicitly reverses the decision.
 
 From repository root, if Rust/native prerequisites are available:
 
@@ -51,7 +51,7 @@ cargo test --workspace --all-targets
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-From `prototypes/aetherband-flutter-ui/`:
+From `apps/desktop/`:
 
 ```sh
 flutter pub get
