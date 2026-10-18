@@ -420,12 +420,9 @@ void main() {
     expect(reopened.volume, 0.35);
     expect(reopened.pan, 0.8);
     expect(reopened.muted, isTrue);
-    await tester.runAsync(() async {
-      for (var i = 0; i < 100 && first.disposeCount == 0; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      }
-    });
-    await tester.pumpAndSettle();
+    for (var i = 0; i < 100 && first.disposeCount == 0; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
     expect(first.disposeCount, 1);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
