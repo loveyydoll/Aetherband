@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:aetherband_desktop/src/aetherband_app.dart';
 import 'package:aetherband_desktop/src/engine_controller.dart';
@@ -422,6 +423,34 @@ void main() {
     expect(first.disposeCount, 1);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
+  });
+
+  testWidgets('Ctrl+S shortcut saves imported audio without using the menu',
+      (tester) async {
+    final directory = await Directory.systemTemp.createTemp('aetherband-keys-');
+    addTearDown(() => directory.delete(recursive: true));
+    final audio = File('${directory.path}/track.wav');
+    await audio.writeAsBytes([82, 73, 70, 70]);
+    final project = File('${directory.path}/keyboard.aetherband.json');
+    final engine = FakeEngine();
+    await mountWorkspace(
+      tester,
+      engine,
+      picker: () async => XFile(audio.path),
+      sessionSavePicker: () async => project.path,
+    );
+    await importAudio(tester);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    await tester.runAsync(() async {
+      for (var i = 0; i < 100 && !await project.exists(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    expect(await project.exists(), isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
 }
