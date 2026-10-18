@@ -350,10 +350,10 @@ void main() {
 
   testWidgets('session file menu saves and restores real native mixer state',
       (tester) async {
-    final directory = await Directory.systemTemp.createTemp('aetherband-ui-');
-    addTearDown(() => directory.delete(recursive: true));
+    final directory = Directory.systemTemp.createTempSync('aetherband-ui-');
+    addTearDown(() => directory.deleteSync(recursive: true));
     final audio = File('${directory.path}/voice.wav');
-    await audio.writeAsBytes([82, 73, 70, 70]);
+    audio.writeAsBytesSync([82, 73, 70, 70]);
     final sessionPath = '${directory.path}/sketch.aetherband.json';
     final first = FakeEngine();
     final restored = FakeEngine();
@@ -387,7 +387,7 @@ void main() {
       for (var i = 0; i < 100 && !await project.exists(); i++) {
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }
-      expect(await project.exists(), isTrue);
+      expect(project.existsSync(), isTrue);
     });
     await tester.pumpAndSettle();
     final saved = (await tester.runAsync(
@@ -427,10 +427,10 @@ void main() {
 
   testWidgets('Ctrl+S shortcut saves imported audio without using the menu',
       (tester) async {
-    final directory = await Directory.systemTemp.createTemp('aetherband-keys-');
-    addTearDown(() => directory.delete(recursive: true));
+    final directory = Directory.systemTemp.createTempSync('aetherband-keys-');
+    addTearDown(() => directory.deleteSync(recursive: true));
     final audio = File('${directory.path}/track.wav');
-    await audio.writeAsBytes([82, 73, 70, 70]);
+    audio.writeAsBytesSync([82, 73, 70, 70]);
     final project = File('${directory.path}/keyboard.aetherband.json');
     final engine = FakeEngine();
     await mountWorkspace(
@@ -449,7 +449,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }
     });
-    expect(await project.exists(), isTrue);
+    expect(project.existsSync(), isTrue);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
