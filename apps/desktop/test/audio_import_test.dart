@@ -409,7 +409,7 @@ void main() {
     });
     await tester.pumpAndSettle();
     expect(restored.calls, containsAllInOrder([
-      'load:${audio.path}',
+      'load:${File.fromUri(audio.absolute.uri).path}',
       'volume:1:0.35',
       'pan:1:0.8',
       'mute:1:true',
@@ -420,6 +420,12 @@ void main() {
     expect(reopened.volume, 0.35);
     expect(reopened.pan, 0.8);
     expect(reopened.muted, isTrue);
+    await tester.runAsync(() async {
+      for (var i = 0; i < 100 && first.disposeCount == 0; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    await tester.pumpAndSettle();
     expect(first.disposeCount, 1);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
