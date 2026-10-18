@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:aetherband_desktop/src/engine_controller.dart';
 import 'package:aetherband_desktop/src/models.dart';
 import 'package:aetherband_desktop/src/widgets/clip_tile.dart';
 import 'package:aetherband_desktop/src/widgets/workspace_panels.dart';
+import 'package:aetherband_desktop/src/session_store.dart';
 
 class FakeEngine implements EngineController {
   final frames = StreamController<EngineTelemetry>.broadcast();
@@ -90,6 +92,8 @@ Future<void> mountWorkspace(
   FakeEngine engine, {
   Future<XFile?> Function()? picker,
   Future<EngineController> Function()? factory,
+  Future<XFile?> Function()? sessionPicker,
+  Future<String?> Function()? sessionSavePicker,
   double width = 1440,
   double height = 1000,
 }) async {
@@ -100,6 +104,8 @@ Future<void> mountWorkspace(
   await tester.pumpWidget(AetherbandApp(
     createEngine: factory ?? () async => engine,
     pickAudioFile: picker ?? () async => XFile('C:/audio/take.wav'),
+    pickSessionFile: sessionPicker,
+    pickSessionSavePath: sessionSavePicker,
   ));
   await tester.pumpAndSettle();
 }
@@ -339,6 +345,81 @@ void main() {
     expect(importedTrack.volume, 0.8);
     expect(find.textContaining('Track volume failed:'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('session file menu saves and restores real native mixer state',
+      (tester) async {
+    final directory = await Directory.systemTemp.createTemp('aetherband-ui-');
+    addTearDown(() => directory.delete(recursive: true));
+    final audio = File('${directory.path}/voice.wav');
+    await audio.writeAsBytes([82, 73, 70, 70]);
+    final sessionPath = '${directory.path}/sketch.aetherband.json';
+    final first = FakeEngine();
+    final restored = FakeEngine();
+    var creations = 0;
+
+    await mountWorkspace(
+      tester,
+      first,
+      picker: () async => XFile(audio.path),
+      sessionPicker: () async => XFile(sessionPath),
+      sessionSavePicker: () async => sessionPath,
+      factory: () async => creations++ == 0 ? first : restored,
+    );
+    await importAudio(tester);
+    final imported = tester.widget<InstrumentDock>(find.byType(InstrumentDock))
+        .tracks
+        .singleWhere((track) => track.id.startsWith('native-'));
+    final stableId = imported.id;
+    final mixer = tester.widget<InstrumentDock>(find.byType(InstrumentDock));
+    mixer.onVolumeChanged(imported, 0.35);
+    mixer.onPanChanged(imported, 0.8);
+    mixer.onMuteChanged(imported, true);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('File menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save Session'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      final project = File(sessionPath);
+      for (var i = 0; i < 100 && !await project.exists(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(await project.exists(), isTrue);
+    });
+    await tester.pumpAndSettle();
+    final saved = await const AudioSessionStore().open(sessionPath);
+    expect(saved.tracks.single.id, stableId);
+    expect(saved.tracks.single.gain, 0.35);
+    expect(saved.tracks.single.pan, 0.8);
+    expect(saved.tracks.single.muted, isTrue);
+
+    await tester.tap(find.byTooltip('File menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Open Session…'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      for (var i = 0; i < 100 && restored.calls.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    await tester.pumpAndSettle();
+    expect(restored.calls, containsAllInOrder([
+      'load:${audio.path}',
+      'volume:1:0.35',
+      'pan:1:0.8',
+      'mute:1:true',
+    ]));
+    final reopened = tester.widget<InstrumentDock>(find.byType(InstrumentDock))
+        .tracks
+        .singleWhere((track) => track.id == stableId);
+    expect(reopened.volume, 0.35);
+    expect(reopened.pan, 0.8);
+    expect(reopened.muted, isTrue);
+    expect(first.disposeCount, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
   });
 
 }
