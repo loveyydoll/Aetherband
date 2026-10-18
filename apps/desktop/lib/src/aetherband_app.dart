@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
 
 import 'engine_controller.dart';
@@ -810,8 +811,31 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true):
+            () => unawaited(_saveSession()),
+        const SingleActivator(LogicalKeyboardKey.keyS, meta: true):
+            () => unawaited(_saveSession()),
+        const SingleActivator(
+            LogicalKeyboardKey.keyS, control: true, shift: true):
+            () => unawaited(_saveSession(saveAs: true)),
+        const SingleActivator(
+            LogicalKeyboardKey.keyS, meta: true, shift: true):
+            () => unawaited(_saveSession(saveAs: true)),
+        const SingleActivator(LogicalKeyboardKey.keyO, control: true):
+            () => unawaited(_openSession()),
+        const SingleActivator(LogicalKeyboardKey.keyO, meta: true):
+            () => unawaited(_openSession()),
+        const SingleActivator(LogicalKeyboardKey.keyN, control: true):
+            () => unawaited(_newSession()),
+        const SingleActivator(LogicalKeyboardKey.keyN, meta: true):
+            () => unawaited(_newSession()),
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
             final compact = constraints.maxWidth < 1000;
@@ -949,6 +973,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
               ],
             );
           },
+        ),
+      ),
         ),
       ),
     );
