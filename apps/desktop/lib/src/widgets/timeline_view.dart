@@ -44,103 +44,123 @@ class TimelineView extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final baseWidth = math.max(1400.0, constraints.maxWidth / zoom).toDouble();
-        final contentWidth = baseWidth * zoom;
+        final baseWidth =
+            math.max(1400.0, constraints.maxWidth / zoom).toDouble();
+        final clipEnd = tracks.expand((track) => track.clips).fold<double>(
+              0,
+              (end, clip) =>
+                  math.max(end, clip.start + clip.timelineWidth(tempo)),
+            );
+        final contentWidth = math.max(baseWidth, clipEnd + 84) * zoom;
         final availableHeight = constraints.hasBoundedHeight
             ? constraints.maxHeight
             : _rulerHeight + tracks.length * _minimumLaneHeight;
-        final contentHeight = math.max(
-          availableHeight,
-          _rulerHeight + tracks.length * _minimumLaneHeight,
-        ).toDouble();
+        final contentHeight = math
+            .max(
+              availableHeight,
+              _rulerHeight + tracks.length * _minimumLaneHeight,
+            )
+            .toDouble();
         final laneHeight = tracks.isEmpty
             ? _minimumLaneHeight
             : ((contentHeight - _rulerHeight) / tracks.length).toDouble();
         final playheadX =
-            (playheadSeconds * tempo / 240 * 84 * zoom).clamp(0.0, contentWidth).toDouble();
+            (playheadSeconds * timelinePixelsPerSecond(tempo) * zoom)
+                .clamp(0.0, contentWidth)
+                .toDouble();
 
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: _headerWidth,
-              child: Column(
-                children: [
-                  Container(
-                    height: _rulerHeight,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    alignment: Alignment.centerLeft,
-                    decoration: const BoxDecoration(
-                      color: AetherColors.panel,
-                      border: Border(
-                        bottom: BorderSide(color: AetherColors.raised),
-                        right: BorderSide(color: AetherColors.raised),
-                      ),
-                    ),
-                    child: Text(
-                      'TRACKS / ${tracks.length.toString().padLeft(2, '0')}',
-                      style: TextStyle(
-                        color: AetherColors.secondaryText,
-                        fontSize: 10,
-                        letterSpacing: 1.3,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  for (final track in tracks)
-                    _TrackHeader(
-                      key: ValueKey(track.id),
-                      track: track,
-                      selected: track.id == selectedTrackId,
-                      onTap: () => onTrackSelected(track),
-                      onMute: () => onMuteChanged(track, !track.muted),
-                      onSolo: () => onSoloChanged(track, !track.solo),
-                      onVolumeChanged: (value) => onVolumeChanged(track, value),
-                      height: laneHeight,
-                    ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: Scrollbar(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: SizedBox(
-                    width: contentWidth,
-                    height: contentHeight,
-                    child: Stack(
-                      children: [
-                        Column(
-                          children: [
-                            _TimelineRuler(width: contentWidth, zoom: zoom),
-                            for (final track in tracks)
-                              _TimelineLane(
-                                key: ValueKey('lane-${track.id}'),
-                                track: track,
-                                width: contentWidth,
-                                laneHeight: laneHeight,
-                                zoom: zoom,
-                                selectedClipId: selectedClipId,
-                                onClipSelected: (clip) => onClipSelected(track, clip),
-                                onClipMoved: (clip, dx) => onClipMoved(track, clip, dx),
-                              ),
-                          ],
-                        ),
-                        Positioned(
-                          left: playheadX,
-                          top: 0,
-                          bottom: 0,
-                          child: IgnorePointer(
-                            child: Container(width: 1.5, color: AetherColors.magenta),
+        return SingleChildScrollView(
+          child: SizedBox(
+            height: contentHeight,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: _headerWidth,
+                  child: Column(
+                    children: [
+                      Container(
+                        height: _rulerHeight,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        alignment: Alignment.centerLeft,
+                        decoration: const BoxDecoration(
+                          color: AetherColors.panel,
+                          border: Border(
+                            bottom: BorderSide(color: AetherColors.raised),
+                            right: BorderSide(color: AetherColors.raised),
                           ),
                         ),
-                      ],
+                        child: Text(
+                          'TRACKS / ${tracks.length.toString().padLeft(2, '0')}',
+                          style: TextStyle(
+                            color: AetherColors.secondaryText,
+                            fontSize: 10,
+                            letterSpacing: 1.3,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      for (final track in tracks)
+                        _TrackHeader(
+                          key: ValueKey(track.id),
+                          track: track,
+                          selected: track.id == selectedTrackId,
+                          onTap: () => onTrackSelected(track),
+                          onMute: () => onMuteChanged(track, !track.muted),
+                          onSolo: () => onSoloChanged(track, !track.solo),
+                          onVolumeChanged: (value) =>
+                              onVolumeChanged(track, value),
+                          height: laneHeight,
+                        ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Scrollbar(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: SizedBox(
+                        width: contentWidth,
+                        height: contentHeight,
+                        child: Stack(
+                          children: [
+                            Column(
+                              children: [
+                                _TimelineRuler(width: contentWidth, zoom: zoom),
+                                for (final track in tracks)
+                                  _TimelineLane(
+                                    key: ValueKey('lane-${track.id}'),
+                                    track: track,
+                                    width: contentWidth,
+                                    laneHeight: laneHeight,
+                                    zoom: zoom,
+                                    tempo: tempo,
+                                    selectedClipId: selectedClipId,
+                                    onClipSelected: (clip) =>
+                                        onClipSelected(track, clip),
+                                    onClipMoved: (clip, dx) =>
+                                        onClipMoved(track, clip, dx),
+                                  ),
+                              ],
+                            ),
+                            Positioned(
+                              left: playheadX,
+                              top: 0,
+                              bottom: 0,
+                              child: IgnorePointer(
+                                child: Container(
+                                    width: 1.5, color: AetherColors.magenta),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         );
       },
     );
@@ -331,6 +351,7 @@ class _TimelineLane extends StatelessWidget {
     required this.width,
     required this.laneHeight,
     required this.zoom,
+    required this.tempo,
     required this.selectedClipId,
     required this.onClipSelected,
     required this.onClipMoved,
@@ -341,6 +362,7 @@ class _TimelineLane extends StatelessWidget {
   final double width;
   final double laneHeight;
   final double zoom;
+  final int tempo;
   final String? selectedClipId;
   final ValueChanged<ClipModel> onClipSelected;
   final void Function(ClipModel, double) onClipMoved;
@@ -352,12 +374,13 @@ class _TimelineLane extends StatelessWidget {
       height: laneHeight,
       child: Stack(
         children: [
-          Positioned.fill(child: CustomPaint(painter: TimelineGridPainter(zoom: zoom))),
+          Positioned.fill(
+              child: CustomPaint(painter: TimelineGridPainter(zoom: zoom))),
           for (final clip in track.clips)
             Positioned(
               left: clip.start * zoom,
               top: (laneHeight - math.min(50.0, laneHeight - 14)) / 2,
-              width: math.max(48.0, clip.width * zoom).toDouble(),
+              width: math.max(1.0, clip.timelineWidth(tempo) * zoom).toDouble(),
               height: math.min(50.0, laneHeight - 14),
               child: ClipTile(
                 clip: clip,
@@ -379,16 +402,23 @@ class TimelineGridPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final minor = Paint()..color = AetherColors.grid..strokeWidth = 0.6;
-    final major = Paint()..color = AetherColors.raised..strokeWidth = 1.0;
+    final minor = Paint()
+      ..color = AetherColors.grid
+      ..strokeWidth = 0.6;
+    final major = Paint()
+      ..color = AetherColors.raised
+      ..strokeWidth = 1.0;
     var index = 0;
     for (var x = 0.0; x <= size.width; x += 21 * zoom) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), index % 4 == 0 ? major : minor);
+      canvas.drawLine(
+          Offset(x, 0), Offset(x, size.height), index % 4 == 0 ? major : minor);
       index++;
     }
-    canvas.drawLine(Offset(0, size.height - 0.5), Offset(size.width, size.height - 0.5), major);
+    canvas.drawLine(Offset(0, size.height - 0.5),
+        Offset(size.width, size.height - 0.5), major);
   }
 
   @override
-  bool shouldRepaint(covariant TimelineGridPainter oldDelegate) => oldDelegate.zoom != zoom;
+  bool shouldRepaint(covariant TimelineGridPainter oldDelegate) =>
+      oldDelegate.zoom != zoom;
 }

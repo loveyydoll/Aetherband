@@ -186,7 +186,7 @@ Aetherband separates the creative interface from the work that must run close to
 | Technology | Role | Current status |
 |---|---|---|
 | **Rust** | Native audio engine, decoding, mixing, DSP and real-time callback | Core implementation exists; correctness and platform behavior still require regression testing |
-| **C ABI** | Versioned boundary between native engine and desktop UI | ABI 0.2.0; includes a sample-rate query; exported functions are documented in [API_CONTRACT.md](docs/API_CONTRACT.md) |
+| **C ABI** | Versioned boundary between native engine and desktop UI | ABI 0.3.0; includes sample-rate and loaded-track metadata queries; exported functions are documented in [API_CONTRACT.md](docs/API_CONTRACT.md) |
 | **Dart FFI** | Native library loading, ABI validation, engine lifecycle and telemetry | Initial lifecycle/transport/telemetry path implemented; device and track workflows remain incomplete |
 | **Flutter / Dart** | Windows/macOS primary desktop UI and creative workspace | Chosen sole desktop frontend; demo clips remain illustrative and several menu actions are not implemented |
 | **CPAL / Symphonia / rtrb** | Audio device I/O, media decoding and bounded cross-thread communication | Used by the Rust engine; exact supported formats and runtime behavior must be verified per platform |

@@ -1,6 +1,6 @@
 # C ABI Contract — Aetherband
 
-**Current ABI version:** `0.2.0` (`daw_get_api_version() == 0x00000200`)  
+**Current ABI version:** `0.3.0` (`daw_get_api_version() == 0x00000300`)
 **Source of truth:** `bindings/c_abi/src/lib.rs`. If this document disagrees with the Rust exports, fix the documentation or deliberately update the ABI and version together.
 
 This contract is for the Flutter/Dart desktop app using `dart:ffi`. The former C# / Avalonia frontend and its `csbindgen` P/Invoke generation have been removed from the desktop architecture.
@@ -19,11 +19,21 @@ This contract is for the Flutter/Dart desktop app using `dart:ffi`. The former C
 
 ## ABI version
 
-`daw_get_api_version()` returns `(major << 16) | (minor << 8) | patch`. The current version is `0x00000200` (0.2.0). The 0.2.0 change adds `daw_engine_get_sample_rate` so Flutter can convert the native playhead frame count to seconds without assuming 48 kHz.
+`daw_get_api_version()` returns `(major << 16) | (minor << 8) | patch`. Version 0.3.0 adds `daw_engine_get_track_info`, preserves engine OS-thread ownership behind the opaque handle, and returns -3 for queue-rejected removal without deleting track metadata. Version 0.2.0 introduced the active sample-rate query. Rebuild the native library and Dart app together; the Dart adapter requires an exact version match.
 
 Any incompatible layout/signature/ownership change requires a version change and synchronized Rust/Dart updates. Additive exports should still be documented and versioned deliberately.
 
 ## C-compatible structures
+
+### `DAWTrackInfo`
+
+| Field | C type | Meaning |
+|---|---|---|
+| `total_frames` | `uint64_t` | Source frames, or zero when duration is unavailable |
+| `sample_rate` | `uint32_t` | Source rate in Hz, not the output device rate |
+| `channels` | `uint32_t` | Source channel count |
+
+Size is 16 bytes; field offsets are 0, 8 and 12. Compute seconds as `total_frames / sample_rate` only when both are positive. This is probed file metadata, not an independently measured decoded duration. The query reads existing control-side metadata without reopening the file. Failed queries leave the output buffer unchanged.
 
 ### `DAWMeteringFrame`
 
@@ -66,6 +76,7 @@ Do not substitute a different field order or widths in Dart. The Dart `Struct` d
 | `daw_engine_get_device_info(engine, index, out_info)` | Read device metadata | 0 success; negative error |
 | `daw_engine_select_device(engine, index)` | Select output device | 0 success; negative error |
 | `daw_engine_load_track(engine, path_utf8, out_track_id)` | Load a file into a new audio track | 0 success; negative error |
+| `daw_engine_get_track_info(engine, track_id, out_info)` | Read loaded source metadata | 0 success; -1 null argument; -2 engine worker failure; -4 unknown track |
 | `daw_engine_remove_track(engine, track_id)` | Remove track | 0 success; negative error |
 | `daw_engine_set_track_volume(engine, track_id, gain)` | Set track linear gain | 0 accepted; negative error |
 | `daw_engine_set_track_pan(engine, track_id, pan)` | Set track pan (0 left, 0.5 centre, 1 right) | 0 accepted; negative error |
@@ -85,17 +96,20 @@ The implementation currently uses these values in different functions:
 - `-3`: engine rejected a transport or parameter command (function-dependent).
 - `-4`: device index or track identifier was not found (function-dependent).
 
+Named Rust constants for these boundaries are `DAW_OK`, `DAW_ERROR_INVALID_ARGUMENT`, `DAW_ERROR_COMMAND_REJECTED`, and `DAW_ERROR_TRACK_NOT_FOUND`. Removal returns -3 if its command cannot be accepted, keeping the track inventory and decoder intact for retry.
+
 These are current implementation conventions, not yet a single exhaustive typed error enum. Preserve the originating function and numeric result in diagnostics. Before expanding the public API, define stable named error constants and map decoder/device errors to actionable messages rather than collapsing all failures into one code.
 
 ## Threading and lifecycle
 
-- Create and destroy the engine from a single control thread.
+- The opaque handle owns a dedicated Rust control thread, which creates, operates and destroys the actual engine and its non-Send CPAL stream. Only owned commands and results cross its bounded 64-job standard-library channel. Full/disconnected queues fail; accepted calls wait for a reply on the non-audio calling thread. Destroy closes the channel, drains accepted jobs and joins the owner thread. No engine pointers or audio buffers cross Dart ports.
+- Flutter calls the synchronous C ABI from a separate long-lived Dart isolate, keeping file probing, decoder restarts and native destruction off the UI isolate. Its request backlog is bounded at 64; disposal is always admitted, rejects new requests and waits behind accepted work.
 - Serialize control calls for a given handle; the current Rust helper returns mutable access from the opaque pointer and must not be called concurrently for that handle.
 - Telemetry polling is a bounded, periodic control-side operation; it must not run from a paint/build callback.
 - Stop polling and prevent new control calls before destroying the engine.
 - The audio callback communicates through bounded native queues; it does not call Dart/Flutter.
 - Device selection builds a replacement queue/processor, recreates decoders at the selected output rate, and re-installs existing track IDs plus stored gain/pan/mute settings before committing the new pipeline. This path still requires automated testing and real-device verification; do not call it production-safe until those pass.
-- The current Flutter app is not feature complete: device controls and track import/control operations still need full UI integration and end-to-end tests.
+- The Flutter import path rewinds transport, loads the file, queries its metadata and creates a duration-scaled clip only on success. Unknown duration is labelled; real waveforms and clip repositioning are unavailable. Imported mixer controls do not pretend to change native state. Engine retry starts a fresh inventory and clears old native clip IDs.
 
 ## Verification checklist
 

@@ -112,3 +112,13 @@
 ## Current implementation note — transport stabilization (2026-10-16)
 
 The audio core uses a bounded SPSC command queue; the UI's immediate timer reset is not authoritative evidence that Stop was processed. A runtime report indicates that audio continues after the visible playhead resets. This is a bug to diagnose, not an intended design decision. Add regression tests and verify command acceptance, callback handling, output silence, decoder rewind/restart, and UI telemetry before closing the stabilization gate. Do not add locks, blocking calls, or heap allocation to the audio callback to work around it.
+
+---
+
+### ADR-008: Native Control Work Outside Flutter with Explicit OS-Thread Ownership
+- **Status:** Implemented; macOS runtime verification pending
+- **Date:** 2026-10-18
+- **Context:** Import probes files synchronously and Stop joins/restarts decoders. Calling these on Flutter's UI isolate stalls presentation. A Dart isolate serializes calls but does not ensure OS-thread affinity; CPAL 0.15's platform stream is non-Send. Moving raw engine ownership between scheduler threads would rely on unsupported assumptions.
+- **Decision:** Keep the Dart FFI adapter, but execute it in one long-lived worker isolate. The opaque C ABI handle owns a dedicated Rust control thread that creates and destroys the actual engine. A bounded 64-job standard-library channel carries owned operations and Send results; a per-call reply channel returns success/error. Full/disconnected channels fail. Accepted work drains before shutdown. No new dependency, unsafe Send implementation, audio-buffer transfer or callback lock is introduced.
+- **Consequences:** Native calls remain synchronous for ABI clients and must stay off their UI thread. The extra control-thread hop adds overhead to be profiled; it does not touch the real-time SPSC path. Worker initialization, destruction thread ownership, import/transport and queued shutdown have automated coverage. Forced isolate termination/hot restart and device-loss recovery still require dedicated testing.
+- **References:** [Dart VM thread-pool model](https://dart.googlesource.com/sdk/+/main/runtime/docs/README.md), [CPAL 0.15.3 platform stream](https://github.com/RustAudio/cpal/blob/v0.15.3/src/platform/mod.rs).

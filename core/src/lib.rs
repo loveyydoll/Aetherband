@@ -150,10 +150,7 @@ impl DAWEngine {
         let mut new_players = Vec::with_capacity(self.tracks.len());
 
         for track in &self.tracks {
-            let mut decoder = StreamDecoder::spawn(
-                Path::new(&track.file_path),
-                sample_rate,
-            )?;
+            let mut decoder = StreamDecoder::spawn(Path::new(&track.file_path), sample_rate)?;
             let consumer = decoder.take_consumer();
             let output_frames = if track.info.sample_rate > 0 {
                 (track.info.total_frames as f64 * sample_rate as f64
@@ -411,14 +408,21 @@ impl DAWEngine {
     /// Removes a track by ID.
     pub fn remove_track(&mut self, id: TrackId) -> bool {
         if let Some(pos) = self.tracks.iter().position(|t| t.id == id) {
+            // Commit control-side removal only after the audio callback can
+            // receive it. On saturation the UI can retry without losing its
+            // metadata or stopping a still-installed player's decoder.
+            if self
+                .ui_endpoints
+                .cmd_producer
+                .push(EngineCommand::RemoveTrack { track_id: id })
+                .is_err()
+            {
+                return false;
+            }
             self.tracks.remove(pos);
             if let Some(mut decoder) = self.decoders.remove(&id.0) {
                 decoder.stop();
             }
-            let _ = self
-                .ui_endpoints
-                .cmd_producer
-                .push(EngineCommand::RemoveTrack { track_id: id });
             true
         } else {
             false
@@ -434,11 +438,16 @@ impl DAWEngine {
 
     pub fn set_track_volume(&mut self, track_id: TrackId, gain: f32) -> bool {
         let gain = gain.clamp(0.0, 2.0);
-        if self.ui_endpoints.cmd_producer.push(EngineCommand::SetTrackVolume {
-            track_id,
-            target_gain: gain,
-            ramp_frames: 256,
-        }).is_err() {
+        if self
+            .ui_endpoints
+            .cmd_producer
+            .push(EngineCommand::SetTrackVolume {
+                track_id,
+                target_gain: gain,
+                ramp_frames: 256,
+            })
+            .is_err()
+        {
             return false;
         }
         if let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) {
@@ -451,7 +460,12 @@ impl DAWEngine {
 
     pub fn set_track_pan(&mut self, track_id: TrackId, pan: f32) -> bool {
         let pan = pan.clamp(0.0, 1.0);
-        if self.ui_endpoints.cmd_producer.push(EngineCommand::SetTrackPan { track_id, pan }).is_err() {
+        if self
+            .ui_endpoints
+            .cmd_producer
+            .push(EngineCommand::SetTrackPan { track_id, pan })
+            .is_err()
+        {
             return false;
         }
         if let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) {
@@ -463,7 +477,12 @@ impl DAWEngine {
     }
 
     pub fn mute_track(&mut self, track_id: TrackId, muted: bool) -> bool {
-        if self.ui_endpoints.cmd_producer.push(EngineCommand::MuteTrack { track_id, muted }).is_err() {
+        if self
+            .ui_endpoints
+            .cmd_producer
+            .push(EngineCommand::MuteTrack { track_id, muted })
+            .is_err()
+        {
             return false;
         }
         if let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) {
@@ -489,5 +508,56 @@ impl DAWEngine {
             latest = Some(frame);
         }
         latest
+    }
+}
+
+#[cfg(test)]
+mod engine_tests {
+    use super::*;
+
+    #[test]
+    fn removal_retains_track_on_queue_saturation_and_can_be_retried() {
+        let (ui_endpoints, mut audio_endpoints) = create_engine_queues(1, 1);
+        // No stream or device is opened: this exercises the control protocol
+        // deterministically while the audio consumer is deliberately stalled.
+        let mut engine = DAWEngine {
+            backend: CpalBackend::new().unwrap(),
+            active_stream: None,
+            ui_endpoints,
+            current_device_index: None,
+            output_sample_rate: 48000,
+            decoders: HashMap::new(),
+            tracks: vec![TrackInfo {
+                id: TrackId(1),
+                file_path: String::new(),
+                info: AudioFileInfo {
+                    total_frames: 44100,
+                    sample_rate: 44100,
+                    channels: 2,
+                    duration_secs: 1.0,
+                },
+                output_frames: 48000,
+                gain: 0.8,
+                pan: 0.5,
+                muted: false,
+            }],
+        };
+        assert!(engine.play());
+        assert!(!engine.remove_track(TrackId(1)));
+        assert_eq!(engine.tracks().len(), 1);
+        assert!(matches!(
+            audio_endpoints.cmd_consumer.pop(),
+            Ok(EngineCommand::Play)
+        ));
+        assert!(engine.remove_track(TrackId(1)));
+        assert!(engine.tracks().is_empty());
+        assert!(matches!(
+            audio_endpoints.cmd_consumer.pop(),
+            Ok(EngineCommand::RemoveTrack {
+                track_id: TrackId(1)
+            })
+        ));
+        assert!(!engine.remove_track(TrackId(1)));
+        assert!(audio_endpoints.cmd_consumer.pop().is_err());
     }
 }

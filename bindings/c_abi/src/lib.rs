@@ -7,25 +7,33 @@ use std::ffi::CString;
 use std::os::raw::c_char;
 use std::ptr;
 
+mod threaded_engine;
+use threaded_engine::EngineHandle;
+
+pub const DAW_OK: i32 = 0;
+pub const DAW_ERROR_INVALID_ARGUMENT: i32 = -1;
+pub const DAW_ERROR_COMMAND_REJECTED: i32 = -3;
+pub const DAW_ERROR_TRACK_NOT_FOUND: i32 = -4;
+
 /// Opaque handle representing a DAW engine instance.
 #[repr(C)]
 pub struct DAWEngine {
     _unused: [u8; 0],
 }
 
-unsafe fn to_core_mut<'a>(engine: *mut DAWEngine) -> Option<&'a mut daw_core::DAWEngine> {
+unsafe fn to_core_mut<'a>(engine: *mut DAWEngine) -> Option<&'a mut EngineHandle> {
     if engine.is_null() {
         None
     } else {
-        Some(&mut *(engine as *mut daw_core::DAWEngine))
+        Some(&mut *(engine as *mut EngineHandle))
     }
 }
 
-unsafe fn to_core_ref<'a>(engine: *mut DAWEngine) -> Option<&'a daw_core::DAWEngine> {
+unsafe fn to_core_ref<'a>(engine: *mut DAWEngine) -> Option<&'a EngineHandle> {
     if engine.is_null() {
         None
     } else {
-        Some(&*(engine as *mut daw_core::DAWEngine))
+        Some(&*(engine as *mut EngineHandle))
     }
 }
 
@@ -41,6 +49,25 @@ pub struct DAWMeteringFrame {
     pub total_duration_frames: i64,
     pub is_playing: u8,
     pub device_error_flag: u8,
+}
+
+/// Source-file metadata. A zero frame count means duration is not known.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct DAWTrackInfo {
+    pub total_frames: u64,
+    pub sample_rate: u32,
+    pub channels: u32,
+}
+
+impl From<&daw_core::TrackInfo> for DAWTrackInfo {
+    fn from(track: &daw_core::TrackInfo) -> Self {
+        Self {
+            total_frames: track.info.total_frames,
+            sample_rate: track.info.sample_rate,
+            channels: track.info.channels,
+        }
+    }
 }
 
 impl From<TelemetryFrame> for DAWMeteringFrame {
@@ -83,7 +110,7 @@ impl Default for DAWDeviceInfo {
 /// Returns the API version (major << 16 | minor << 8 | patch).
 #[no_mangle]
 pub extern "C" fn daw_get_api_version() -> u32 {
-    (0 << 16) | (2 << 8) | 0
+    3 << 8
 }
 
 /// Creates a new DAW engine instance and initializes the default audio stream.
@@ -95,7 +122,7 @@ pub unsafe extern "C" fn daw_engine_create(out_engine: *mut *mut DAWEngine) -> i
         return -1;
     }
 
-    match daw_core::DAWEngine::new() {
+    match EngineHandle::new() {
         Ok(engine) => {
             let boxed = Box::new(engine);
             *out_engine = Box::into_raw(boxed) as *mut DAWEngine;
@@ -112,7 +139,7 @@ pub unsafe extern "C" fn daw_engine_destroy(engine: *mut DAWEngine) -> i32 {
         return -1;
     }
 
-    drop(Box::from_raw(engine as *mut daw_core::DAWEngine));
+    drop(Box::from_raw(engine as *mut EngineHandle));
     0
 }
 
@@ -203,11 +230,13 @@ pub unsafe extern "C" fn daw_engine_poll_telemetry(
     }
 
     if let Some(eng) = to_core_mut(engine) {
-        if let Some(frame) = eng.poll_telemetry() {
-            *out_frame = frame.into();
-            0
-        } else {
-            1 // Queue empty, keep previous frame
+        match eng.poll_telemetry() {
+            Ok(Some(frame)) => {
+                *out_frame = frame.into();
+                0
+            }
+            Ok(None) => 1, // Queue empty, keep previous frame.
+            Err(()) => -2,
         }
     } else {
         -1
@@ -283,8 +312,13 @@ pub unsafe extern "C" fn daw_engine_get_sample_rate(
         return -1;
     }
     if let Some(eng) = to_core_ref(engine) {
-        *out_sample_rate = eng.output_sample_rate();
-        0
+        match eng.output_sample_rate() {
+            Ok(rate) => {
+                *out_sample_rate = rate;
+                0
+            }
+            Err(()) => -2,
+        }
     } else {
         -1
     }
@@ -304,6 +338,38 @@ pub unsafe extern "C" fn daw_engine_select_device(engine: *mut DAWEngine, index:
 }
 
 // ── Multi-track playback and mixing FFI ───────────────────────────────────────
+
+/// Reads source metadata for an already loaded track without accessing disk.
+///
+/// Returns 0 on success, -1 for null arguments, or -4 for an unknown track ID.
+/// On failure the caller's output is unchanged.
+///
+/// # Safety
+/// `engine` must be a live handle, with calls serialized against destruction.
+/// `out_info` must be writable and aligned for one `DAWTrackInfo`.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_get_track_info(
+    engine: *mut DAWEngine,
+    track_id: u32,
+    out_info: *mut DAWTrackInfo,
+) -> i32 {
+    if out_info.is_null() {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    }
+    let Some(eng) = to_core_ref(engine) else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    let Ok(tracks) = eng.tracks() else {
+        return -2;
+    };
+    match tracks.iter().find(|track| track.id.0 == track_id) {
+        Some(track) => {
+            *out_info = track.into();
+            DAW_OK
+        }
+        None => DAW_ERROR_TRACK_NOT_FOUND,
+    }
+}
 
 /// Loads an audio file into a new track, spawning a background stream decoder.
 ///
@@ -341,13 +407,19 @@ pub unsafe extern "C" fn daw_engine_load_track(
 #[no_mangle]
 pub unsafe extern "C" fn daw_engine_remove_track(engine: *mut DAWEngine, track_id: u32) -> i32 {
     if let Some(eng) = to_core_mut(engine) {
+        let Ok(tracks) = eng.tracks() else {
+            return -2;
+        };
+        if !tracks.iter().any(|track| track.id.0 == track_id) {
+            return DAW_ERROR_TRACK_NOT_FOUND;
+        }
         if eng.remove_track(daw_core::ringbuf::TrackId(track_id)) {
-            0
+            DAW_OK
         } else {
-            -4 // Track not found
+            DAW_ERROR_COMMAND_REJECTED
         }
     } else {
-        -1
+        DAW_ERROR_INVALID_ARGUMENT
     }
 }
 
@@ -409,7 +481,10 @@ pub unsafe extern "C" fn daw_engine_mute_track(
 #[no_mangle]
 pub unsafe extern "C" fn daw_engine_get_track_count(engine: *mut DAWEngine) -> i32 {
     if let Some(eng) = to_core_ref(engine) {
-        eng.tracks().len() as i32
+        match eng.tracks() {
+            Ok(tracks) => tracks.len() as i32,
+            Err(()) => -2,
+        }
     } else {
         -1
     }
@@ -421,7 +496,51 @@ mod ffi_contract_tests {
 
     #[test]
     fn api_version_matches_dart_ffi_contract() {
-        assert_eq!(daw_get_api_version(), 0x0000_0200);
+        assert_eq!(daw_get_api_version(), 0x0000_0300);
+    }
+
+    #[test]
+    fn track_info_uses_source_rate_and_preserves_large_frame_counts() {
+        let track = daw_core::TrackInfo {
+            id: daw_core::ringbuf::TrackId(42),
+            file_path: String::new(),
+            info: daw_core::decoder::AudioFileInfo {
+                total_frames: u32::MAX as u64 + 44100,
+                sample_rate: 44100,
+                channels: 1,
+                duration_secs: 0.0,
+            },
+            output_frames: 48000,
+            gain: 0.8,
+            pan: 0.5,
+            muted: false,
+        };
+        let info = DAWTrackInfo::from(&track);
+        assert_eq!(info.total_frames, track.info.total_frames);
+        assert_eq!(info.sample_rate, 44100);
+        assert_eq!(info.channels, 1);
+        assert_eq!(std::mem::size_of::<DAWTrackInfo>(), 16);
+        assert_eq!(std::mem::offset_of!(DAWTrackInfo, total_frames), 0);
+        assert_eq!(std::mem::offset_of!(DAWTrackInfo, sample_rate), 8);
+        assert_eq!(std::mem::offset_of!(DAWTrackInfo, channels), 12);
+    }
+
+    #[test]
+    fn track_info_rejects_null_arguments_without_changing_output() {
+        let mut info = DAWTrackInfo {
+            total_frames: 99,
+            sample_rate: 44100,
+            channels: 2,
+        };
+        let before = info;
+        unsafe {
+            assert_eq!(daw_engine_get_track_info(ptr::null_mut(), 1, &mut info), -1);
+            assert_eq!(
+                daw_engine_get_track_info(ptr::null_mut(), 1, ptr::null_mut()),
+                -1
+            );
+        }
+        assert_eq!(info, before);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 # Aetherband — Project State Handoff
 
-**Snapshot date:** 2026-10-17  
-**Evidence level:** documentation/source inspection only unless a command or CI run is explicitly linked below. Recheck the current branch, PRs and Actions before relying on this snapshot.
+**Snapshot date:** 2026-10-18
+**Evidence level:** local Windows Rust/Flutter checks, a Windows desktop build and native integration test; macOS runtime verification remains pending. Recheck current CI before relying on this snapshot.
 
 ## Product identity
 
@@ -22,6 +22,7 @@ Do not reintroduce C#/.NET/Avalonia as a second desktop frontend. Verify current
 - The Flutter workspace and arrangement are still prototype-stage; demo tracks/clips are not proof of a loaded or persisted project.
 - Native engine initialization, telemetry and initial transport controls are wired through an adapter/controller. Verify every specific operation before treating it as end-to-end complete.
 - The native engine exposes a set of transport, telemetry, device, test-tone and track operations; inspect `bindings/c_abi/src/lib.rs` as the source of truth before adding or assuming APIs.
+- Audio import now queries source duration through ABI 0.3.0. Native calls run outside Flutter's UI isolate, with the actual engine confined to a dedicated Rust OS thread. Imported clips use probed metadata when available, label unknown duration, and do not fabricate waveforms or support visual-only movement/mixing. Track removal preserves state on command rejection. Reconnecting clears the old engine's native IDs and requires reimport.
 - Record UI controls must not imply actual recording unless a real recording path exists.
 - Live meters must use actual engine telemetry, not invented animation.
 - Project save/load, MIDI editing, instruments, effects, automation, plugin hosting, spatial rendering and final export must not be claimed complete unless current code and tests prove it.
@@ -47,6 +48,8 @@ See [Feature Tracker](FEATURE_TRACKER.md) for the living backlog. Initial order:
 7. Revisit spatial audio and advanced creative-engine experiments when core workflows are coherent.
 
 ## Known uncertainty
+
+The 2026-10-18 local checks passed Rust formatting/check/test and C ABI build, Flutter analysis/tests, a Windows desktop build and native import/transport/removal/queued-shutdown testing. Existing Clippy findings in unchanged audio/decoder/DSP/track code prevent `cargo clippy --workspace --all-targets -- -D warnings` from passing. See [verification record](VERIFICATION_2026-10-18.md) for exact scope and limitations.
 
 This document is not a runtime test report. It does not independently prove current CI status, device behaviour, audio output, persistence, export or platform packaging. Use current GitHub Actions logs and local results. Update this snapshot when evidence changes, and date it when a new status review is performed.
 
