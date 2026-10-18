@@ -6,6 +6,8 @@ All notable changes to Aetherband are recorded here. This is a development chang
 
 ### Added
 
+- **2026-10-18 — Audio session persistence (pending merge):** Added a versioned early-alpha `.aetherband.json` format for imported audio source paths and stable track IDs, plus mixer gain/pan/mute settings. The File menu now supports Save, Save As, Open and New Session; project reads/writes run off the UI isolate. Open validates files before staging a new native engine, avoiding destructive partial session replacement. Demo clips, real clip editing and bundled assets remain unimplemented.
+
 - **2026-10-18 — Native mixer controls (pending merge):** Connected imported track gain, pan, and mute controls from the Flutter mixer and timeline through the existing native C ABI. Added UI and native integration regressions; physical audio verification remains pending.
 
 - **2026-10-17 — PR #22, Engine foundation:** Added a typed, control-thread audio graph model with Audio, Control, Event, and Analysis signal kinds; port/channel compatibility validation; cycle rejection; and topological ordering. This is graph metadata and validation only; it is not yet executed by the real-time audio callback.
