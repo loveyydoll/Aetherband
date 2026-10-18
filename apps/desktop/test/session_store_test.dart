@@ -39,7 +39,8 @@ void main() {
     expect(reopened.title, 'Indie sketches');
     expect(reopened.tracks.single.id, 'native-stable-001');
     expect(reopened.tracks.single.name, 'Guitar / verse');
-    expect(reopened.tracks.single.sourcePath, audio.absolute.path);
+    expect(File(reopened.tracks.single.sourcePath).absolute.uri,
+        audio.absolute.uri);
     expect(reopened.tracks.single.gain, 0.4);
     expect(reopened.tracks.single.pan, 0.75);
     expect(reopened.tracks.single.muted, false);
