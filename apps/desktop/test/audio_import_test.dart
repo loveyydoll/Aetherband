@@ -389,7 +389,9 @@ void main() {
       expect(await project.exists(), isTrue);
     });
     await tester.pumpAndSettle();
-    final saved = await const AudioSessionStore().open(sessionPath);
+    final saved = (await tester.runAsync(
+      () => const AudioSessionStore().open(sessionPath),
+    ))!;
     expect(saved.tracks.single.id, stableId);
     expect(saved.tracks.single.gain, 0.35);
     expect(saved.tracks.single.pan, 0.8);
