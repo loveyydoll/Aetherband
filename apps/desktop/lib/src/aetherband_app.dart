@@ -339,6 +339,298 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     }
   }
 
+  AudioSessionDocument _captureAudioSession(String title) {
+    final tracks = <SavedAudioTrack>[];
+    for (final track in _tracks) {
+      final path = _nativeTrackSources[track.id];
+      if (path == null) continue; // Deliberately exclude visual demo content.
+      tracks.add(SavedAudioTrack(
+        id: track.id,
+        name: track.name,
+        sourceUri: File(path).absolute.uri.toString(),
+        gain: track.volume,
+        pan: track.pan,
+        muted: track.muted,
+      ));
+    }
+    return AudioSessionDocument(title: title, tracks: tracks);
+  }
+
+  String _titleFromSessionPath(String path) {
+    final name = File(path).absolute.uri.pathSegments.last;
+    const extension = '.aetherband.json';
+    final result = name.endsWith(extension)
+        ? name.substring(0, name.length - extension.length)
+        : (name.endsWith('.json')
+            ? name.substring(0, name.length - 5)
+            : name);
+    if (result.trim().isEmpty) return 'Untitled Session';
+    return result.length > 120 ? result.substring(0, 120) : result;
+  }
+
+  Future<String?> _chooseSessionSavePath() async {
+    if (widget.pickSessionSavePath != null) {
+      return widget.pickSessionSavePath!();
+    }
+    final location = await getSaveLocation(
+      suggestedName: '${_sessionTitle}.aetherband.json',
+      acceptedTypeGroups: const <XTypeGroup>[
+        XTypeGroup(label: 'Aetherband session', extensions: ['json']),
+      ],
+    );
+    if (location == null) return null;
+    return location.path.endsWith('.json')
+        ? location.path
+        : '${location.path}.aetherband.json';
+  }
+
+  Future<void> _saveSession({bool saveAs = false}) async {
+    if (_trackOperationPending || _initializingEngine) return;
+    var path = saveAs ? null : _sessionPath;
+    if (path == null) {
+      path = await _chooseSessionSavePath();
+      if (path == null || !mounted) return;
+    }
+    setState(() => _trackOperationPending = true);
+    try {
+      // Do not write optimistic fader values while a native rejection is
+      // still possible. No further mixer edits are admitted during the save.
+      if (_mixerActions.isNotEmpty) {
+        await Future.wait(_mixerActions.toList());
+      }
+      if (!mounted) return;
+      final title = _titleFromSessionPath(path);
+      final document = _captureAudioSession(title);
+      final revisionAtSave = _sessionRevision;
+      await _sessionStore.save(path, document);
+      if (!mounted) return;
+      setState(() {
+        _sessionTitle = title;
+        _sessionPath = path;
+        if (_sessionRevision == revisionAtSave) {
+          _sessionDirty = false;
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          'Saved ${document.tracks.length} real audio tracks. '
+          'Demo clips and unsupported edits are not included.',
+        ),
+      ));
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Session save failed: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _trackOperationPending = false);
+    }
+  }
+
+  Future<bool> _confirmDiscardChanges() async {
+    if (!_sessionDirty) return true;
+    final choice = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Unsaved audio session changes'),
+        content: const Text(
+          'Opening or creating another session will discard unsaved '
+          'imported audio track and mixer changes.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Discard changes'),
+          ),
+        ],
+      ),
+    );
+    return choice == true;
+  }
+
+  Future<void> _adoptPreparedSession({
+    required EngineController preparedEngine,
+    required List<TrackModel> preparedTracks,
+    required Map<String, int> preparedIds,
+    required Map<String, String> preparedSources,
+    required String title,
+    required String? path,
+  }) async {
+    final previousEngine = _engine;
+    if (identical(preparedEngine, previousEngine)) {
+      throw StateError('A session must use a new native engine instance.');
+    }
+    await _telemetrySubscription?.cancel();
+    if (!mounted) return;
+    _telemetrySubscription = preparedEngine.telemetry.listen(
+      (value) {
+        if (mounted) setState(() => _telemetry = value);
+      },
+      onError: (Object error) {
+        if (mounted) setState(() => _engineError = error);
+      },
+    );
+    setState(() {
+      _engine = preparedEngine;
+      _tracks.removeWhere((track) => _nativeTrackIds.containsKey(track.id));
+      _tracks.addAll(preparedTracks);
+      _nativeTrackIds
+        ..clear()
+        ..addAll(preparedIds);
+      _nativeTrackSources
+        ..clear()
+        ..addAll(preparedSources);
+      _selectedTrackId =
+          preparedTracks.isEmpty ? 'afterimage' : preparedTracks.first.id;
+      _selectedClipId =
+          preparedTracks.isEmpty ? null : preparedTracks.first.clips.first.id;
+      _sessionTitle = title;
+      _sessionPath = path;
+      _sessionDirty = false;
+      _sessionRevision++;
+      _engineError = null;
+      _telemetry = const EngineTelemetry(
+        playheadSeconds: 0,
+        sampleRateHz: 0,
+        peakLeft: 0,
+        peakRight: 0,
+        isPlaying: false,
+      );
+    });
+    if (previousEngine != null) {
+      try {
+        await previousEngine.dispose();
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Old engine cleanup warning: $error')),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _openSession() async {
+    if (_trackOperationPending || _initializingEngine) return;
+    if (!await _confirmDiscardChanges() || !mounted) return;
+    final file = await (widget.pickSessionFile?.call() ??
+        openFile(acceptedTypeGroups: const <XTypeGroup>[
+          XTypeGroup(label: 'Aetherband session', extensions: ['json']),
+        ]));
+    if (file == null || !mounted) return;
+
+    setState(() => _trackOperationPending = true);
+    EngineController? staged;
+    try {
+      // This validates JSON, version and source-file existence before any
+      // existing session state is modified.
+      final document = await _sessionStore.open(file.path);
+      if (!mounted) return;
+      staged = await (widget.createEngine ?? NativeEngineController.create)();
+      if (identical(staged, _engine)) {
+        throw StateError('Cannot reuse an active native engine for project staging.');
+      }
+      final tracks = <TrackModel>[];
+      final ids = <String, int>{};
+      final sources = <String, String>{};
+      for (final saved in document.tracks) {
+        final source = saved.sourcePath;
+        final loaded = await staged.loadTrack(source);
+        await staged.setTrackVolume(loaded.id, saved.gain);
+        await staged.setTrackPan(loaded.id, saved.pan);
+        await staged.muteTrack(loaded.id, saved.muted);
+        ids[saved.id] = loaded.id;
+        sources[saved.id] = source;
+        tracks.add(TrackModel(
+          id: saved.id,
+          name: saved.name,
+          kind: 'AUDIO',
+          color: AetherColors.sage,
+          volume: saved.gain,
+          pan: saved.pan,
+          muted: saved.muted,
+          clips: [
+            ClipModel(
+              id: '${saved.id}-clip',
+              title: saved.name,
+              start: 0,
+              width: 0,
+              color: AetherColors.sage,
+              isDemo: false,
+              durationSeconds: loaded.durationSeconds,
+            ),
+          ],
+        ));
+      }
+      if (!mounted) return;
+      await _adoptPreparedSession(
+        preparedEngine: staged,
+        preparedTracks: tracks,
+        preparedIds: ids,
+        preparedSources: sources,
+        title: document.title,
+        path: file.path,
+      );
+      staged = null; // Ownership now belongs to the workspace.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Opened ${tracks.length} audio tracks.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Session open failed: $error')),
+        );
+      }
+    } finally {
+      // An unsuccessful staged load never destroys the previous session.
+      if (staged != null && !identical(staged, _engine)) {
+        await staged.dispose();
+      }
+      if (mounted) setState(() => _trackOperationPending = false);
+    }
+  }
+
+  Future<void> _newSession() async {
+    if (_trackOperationPending || _initializingEngine) return;
+    if (!await _confirmDiscardChanges() || !mounted) return;
+    setState(() => _trackOperationPending = true);
+    EngineController? staged;
+    try {
+      staged = await (widget.createEngine ?? NativeEngineController.create)();
+      if (identical(staged, _engine)) {
+        throw StateError('Cannot reuse an active native engine for a new session.');
+      }
+      if (!mounted) return;
+      await _adoptPreparedSession(
+        preparedEngine: staged,
+        preparedTracks: const [],
+        preparedIds: const {},
+        preparedSources: const {},
+        title: 'Untitled Session',
+        path: null,
+      );
+      staged = null;
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('New session failed: $error')),
+        );
+      }
+    } finally {
+      if (staged != null && !identical(staged, _engine)) {
+        await staged.dispose();
+      }
+      if (mounted) setState(() => _trackOperationPending = false);
+    }
+  }
+
   void _handleMenuCommand(_MenuAction action) {
     switch (action.id) {
       case 'view.browser':
