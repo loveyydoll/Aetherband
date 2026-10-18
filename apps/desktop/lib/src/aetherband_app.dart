@@ -11,7 +11,10 @@ import 'widgets/timeline_view.dart';
 import 'widgets/workspace_panels.dart';
 
 class AetherbandApp extends StatelessWidget {
-  const AetherbandApp({super.key});
+  const AetherbandApp({this.createEngine, this.pickAudioFile, super.key});
+
+  final Future<EngineController> Function()? createEngine;
+  final Future<XFile?> Function()? pickAudioFile;
 
   @override
   Widget build(BuildContext context) {
@@ -19,13 +22,17 @@ class AetherbandApp extends StatelessWidget {
       title: 'Aetherband',
       debugShowCheckedModeBanner: false,
       theme: AetherTheme.dark,
-      home: const AetherbandWorkspace(),
+      home: AetherbandWorkspace(
+          createEngine: createEngine, pickAudioFile: pickAudioFile),
     );
   }
 }
 
 class AetherbandWorkspace extends StatefulWidget {
-  const AetherbandWorkspace({super.key});
+  const AetherbandWorkspace({this.createEngine, this.pickAudioFile, super.key});
+
+  final Future<EngineController> Function()? createEngine;
+  final Future<XFile?> Function()? pickAudioFile;
 
   @override
   State<AetherbandWorkspace> createState() => _AetherbandWorkspaceState();
@@ -60,9 +67,11 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   bool _browserOpen = true;
   bool _showMixer = false;
   bool _initializingEngine = false;
+  bool _trackOperationPending = false;
   double _zoom = 1;
 
-  TrackModel get _selectedTrack => _tracks.firstWhere((track) => track.id == _selectedTrackId);
+  TrackModel get _selectedTrack =>
+      _tracks.firstWhere((track) => track.id == _selectedTrackId);
 
   @override
   void initState() {
@@ -71,7 +80,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   Future<void> _initializeEngine() async {
-    if (_initializingEngine) return;
+    if (_initializingEngine || _trackOperationPending) return;
     _initializingEngine = true;
 
     try {
@@ -79,19 +88,41 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       // timer/subscription alive if the error came from polling after startup.
       final previousEngine = _engine;
       _engine = null;
+      // A replacement engine has a new inventory; old native IDs must never be
+      // reused against it or leave silent clips looking loaded.
+      setState(() {
+        _tracks.removeWhere((track) => _nativeTrackIds.containsKey(track.id));
+        _nativeTrackIds.clear();
+        if (!_tracks.any((track) => track.id == _selectedTrackId)) {
+          _selectedTrackId = _tracks.first.id;
+          _selectedClipId = null;
+        }
+        _telemetry = const EngineTelemetry(
+          playheadSeconds: 0,
+          sampleRateHz: 0,
+          peakLeft: 0,
+          peakRight: 0,
+          isPlaying: false,
+        );
+      });
       await _telemetrySubscription?.cancel();
       _telemetrySubscription = null;
       if (previousEngine != null) await previousEngine.dispose();
 
-      final engine = await NativeEngineController.create();
+      final engine =
+          await (widget.createEngine ?? NativeEngineController.create)();
       if (!mounted) {
         await engine.dispose();
         return;
       }
       _engine = engine;
       _telemetrySubscription = engine.telemetry.listen(
-        (value) { if (mounted) setState(() => _telemetry = value); },
-        onError: (Object error) { if (mounted) setState(() => _engineError = error); },
+        (value) {
+          if (mounted) setState(() => _telemetry = value);
+        },
+        onError: (Object error) {
+          if (mounted) setState(() => _engineError = error);
+        },
       );
       setState(() => _engineError = null);
     } catch (error) {
@@ -111,10 +142,18 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   Future<void> _togglePlay() async {
+    if (_trackOperationPending || _initializingEngine) return;
     final engine = _engine;
-    if (engine == null) { _showEngineUnavailable(); return; }
+    if (engine == null) {
+      _showEngineUnavailable();
+      return;
+    }
     try {
-      if (_telemetry.isPlaying) { await engine.pause(); } else { await engine.play(); }
+      if (_telemetry.isPlaying) {
+        await engine.pause();
+      } else {
+        await engine.play();
+      }
     } catch (error) {
       if (mounted) setState(() => _engineError = error);
     }
@@ -122,7 +161,10 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
 
   Future<void> _stop() async {
     final engine = _engine;
-    if (engine == null) { _showEngineUnavailable(); return; }
+    if (engine == null) {
+      _showEngineUnavailable();
+      return;
+    }
     try {
       await engine.stop();
     } catch (error) {
@@ -131,21 +173,24 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   void _showEngineUnavailable() {
-    final message = _engineError?.toString() ?? 'Native audio engine is not ready.';
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    final message =
+        _engineError?.toString() ?? 'Native audio engine is not ready.';
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _showFeatureUnavailable(String feature) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('$feature is not implemented yet; no recording or project changes were made.'),
+        content: Text(
+            '$feature is not implemented yet; no recording or project changes were made.'),
         duration: const Duration(seconds: 3),
       ),
     );
   }
 
-
   Future<void> _importAudio() async {
+    if (_trackOperationPending || _initializingEngine) return;
     final engine = _engine;
     if (engine == null) {
       _showEngineUnavailable();
@@ -155,10 +200,18 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       label: 'Audio',
       extensions: <String>['wav', 'aiff', 'aif', 'flac', 'mp3', 'ogg', 'm4a'],
     );
+    setState(() => _trackOperationPending = true);
     try {
-      final file = await openFile(acceptedTypeGroups: <XTypeGroup>[audioTypes]);
+      final file = await (widget.pickAudioFile?.call() ??
+          openFile(acceptedTypeGroups: <XTypeGroup>[audioTypes]));
       if (file == null || !mounted) return;
-      final nativeId = await engine.loadTrack(file.path);
+      // Loaded tracks currently start at frame zero; rewind before import so
+      // their displayed origin matches playback instead of joining mid-session.
+      await engine.stop();
+      if (!mounted) return;
+      final loaded = await engine.loadTrack(file.path);
+      if (!mounted) return;
+      final nativeId = loaded.id;
       final name = file.name;
       final id = 'native-$nativeId';
       setState(() {
@@ -168,13 +221,16 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
           name: name,
           kind: 'AUDIO',
           color: AetherColors.sage,
+          volume: 0.8,
           clips: <ClipModel>[
             ClipModel(
               id: '$id-clip',
               title: name,
               start: 0,
-              width: 420,
+              width: 0,
               color: AetherColors.sage,
+              isDemo: false,
+              durationSeconds: loaded.durationSeconds,
             ),
           ],
         ));
@@ -183,28 +239,43 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         _engineError = null;
       });
     } catch (error) {
-      if (mounted) setState(() => _engineError = error);
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Audio import failed: $error')),
+        );
+    } finally {
+      if (mounted) setState(() => _trackOperationPending = false);
     }
   }
 
   Future<void> _removeSelectedTrack() async {
+    if (_trackOperationPending || _initializingEngine) return;
     final engine = _engine;
-    final nativeId = _nativeTrackIds[_selectedTrackId];
+    final selectedId = _selectedTrackId;
+    final nativeId = _nativeTrackIds[selectedId];
     if (engine == null || nativeId == null) {
       _showFeatureUnavailable('Removing demo tracks');
       return;
     }
+    setState(() => _trackOperationPending = true);
     try {
       await engine.removeTrack(nativeId);
       if (!mounted) return;
       setState(() {
-        _tracks.removeWhere((track) => track.id == _selectedTrackId);
-        _nativeTrackIds.remove(_selectedTrackId);
-        _selectedTrackId = _tracks.first.id;
-        _selectedClipId = null;
+        _tracks.removeWhere((track) => track.id == selectedId);
+        _nativeTrackIds.remove(selectedId);
+        if (_selectedTrackId == selectedId) {
+          _selectedTrackId = _tracks.first.id;
+          _selectedClipId = null;
+        }
       });
     } catch (error) {
-      if (mounted) setState(() => _engineError = error);
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Track removal failed: $error')),
+        );
+    } finally {
+      if (mounted) setState(() => _trackOperationPending = false);
     }
   }
 
@@ -234,7 +305,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       default:
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${action.label} is not connected in this UI prototype yet.'),
+            content: Text(
+                '${action.label} is not connected in this UI prototype yet.'),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -242,6 +314,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   void _moveClip(TrackModel track, ClipModel clip, double deltaPx) {
+    if (!clip.isDemo) return;
     setState(() {
       clip.start = (clip.start + deltaPx / _zoom).clamp(0.0, 2200.0).toDouble();
       _selectedTrackId = track.id;
@@ -263,6 +336,14 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     });
   }
 
+  void _setTrackVolume(TrackModel track, double value) {
+    if (_nativeTrackIds.containsKey(track.id)) {
+      _showFeatureUnavailable('Native track volume controls');
+      return;
+    }
+    setState(() => track.volume = value);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -275,7 +356,14 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                 if (_engineError != null)
                   MaterialBanner(
                     content: Text('Native engine unavailable: $_engineError'),
-                    actions: [TextButton(onPressed: () => unawaited(_initializeEngine()), child: const Text('Retry'))],
+                    actions: [
+                      TextButton(
+                        onPressed: _initializingEngine || _trackOperationPending
+                            ? null
+                            : () => unawaited(_initializeEngine()),
+                        child: const Text('Retry'),
+                      )
+                    ],
                   ),
                 _MenuBar(onSelected: _handleMenuCommand),
                 _TopBar(
@@ -297,10 +385,16 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                           width: 222,
                           child: BrowserPanel(
                             category: _browserCategory,
-                            onCategoryChanged: (category) => setState(() => _browserCategory = category),
+                            onCategoryChanged: (category) =>
+                                setState(() => _browserCategory = category),
                             onPresetSelected: (name) {
                               setState(() {
-                                _preset = const ['Soft Focus', 'Pale Blue', 'Slow Bloom', 'Velvet Tape'].contains(name)
+                                _preset = const [
+                                  'Soft Focus',
+                                  'Pale Blue',
+                                  'Slow Bloom',
+                                  'Velvet Tape'
+                                ].contains(name)
                                     ? name
                                     : 'Soft Focus';
                                 _selectedTrackId = 'afterimage';
@@ -313,10 +407,17 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                           children: [
                             _TimelineToolbar(
                               selectedTrack: _selectedTrack.name,
+                              importing: _trackOperationPending,
+                              onImport:
+                                  _initializingEngine || _trackOperationPending
+                                      ? null
+                                      : _importAudio,
                               zoom: _zoom,
-                              onZoomChanged: (value) => setState(() => _zoom = value),
+                              onZoomChanged: (value) =>
+                                  setState(() => _zoom = value),
                               browserOpen: _browserOpen,
-                              onBrowser: () => setState(() => _browserOpen = !_browserOpen),
+                              onBrowser: () =>
+                                  setState(() => _browserOpen = !_browserOpen),
                             ),
                             Expanded(
                               child: TimelineView(
@@ -329,9 +430,23 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                                 onTrackSelected: _selectTrack,
                                 onClipSelected: _selectClip,
                                 onClipMoved: _moveClip,
-                                onMuteChanged: (track, value) => setState(() => track.muted = value),
-                                onSoloChanged: (track, value) => setState(() => track.solo = value),
-                                onVolumeChanged: (track, value) => setState(() => track.volume = value),
+                                onMuteChanged: (track, value) {
+                                  if (_nativeTrackIds.containsKey(track.id)) {
+                                    _showFeatureUnavailable(
+                                        'Native track mute controls');
+                                  } else {
+                                    setState(() => track.muted = value);
+                                  }
+                                },
+                                onSoloChanged: (track, value) {
+                                  if (_nativeTrackIds.containsKey(track.id)) {
+                                    _showFeatureUnavailable(
+                                        'Native track solo controls');
+                                  } else {
+                                    setState(() => track.solo = value);
+                                  }
+                                },
+                                onVolumeChanged: _setTrackVolume,
                               ),
                             ),
                           ],
@@ -343,16 +458,22 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                 InstrumentDock(
                   isMixer: _showMixer,
                   onTabChanged: (value) => setState(() => _showMixer = value),
-                  preset: const ['Soft Focus', 'Pale Blue', 'Slow Bloom', 'Velvet Tape'].contains(_preset)
+                  preset: const [
+                    'Soft Focus',
+                    'Pale Blue',
+                    'Slow Bloom',
+                    'Velvet Tape'
+                  ].contains(_preset)
                       ? _preset
                       : 'Soft Focus',
                   onPresetChanged: (value) {
                     if (value != null) setState(() => _preset = value);
                   },
                   knobValues: _knobValues,
-                  onKnobChanged: (name, value) => setState(() => _knobValues[name] = value),
+                  onKnobChanged: (name, value) =>
+                      setState(() => _knobValues[name] = value),
                   tracks: _tracks,
-                  onVolumeChanged: (track, value) => setState(() => track.volume = value),
+                  onVolumeChanged: _setTrackVolume,
                   peakLeft: _telemetry.peakLeft,
                   peakRight: _telemetry.peakRight,
                 ),
@@ -360,6 +481,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                   engineConnected: _engine != null && _engineError == null,
                   isPlaying: _telemetry.isPlaying,
                   engineError: _engineError,
+                  loadedTrackCount: _nativeTrackIds.length,
                 ),
               ],
             );
@@ -452,7 +574,8 @@ class _MenuBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: const BoxDecoration(
         color: AetherColors.background,
-        border: Border(bottom: BorderSide(color: AetherColors.raised, width: 0.7)),
+        border:
+            Border(bottom: BorderSide(color: AetherColors.raised, width: 0.7)),
       ),
       child: Row(
         children: [
@@ -462,61 +585,78 @@ class _MenuBar extends StatelessWidget {
             decoration: BoxDecoration(
               color: AetherColors.sage.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(5),
-              border: Border.all(color: AetherColors.sage.withValues(alpha: 0.42)),
+              border:
+                  Border.all(color: AetherColors.sage.withValues(alpha: 0.42)),
             ),
-            child: const Icon(Icons.graphic_eq, color: AetherColors.sage, size: 14),
+            child: const Icon(Icons.graphic_eq,
+                color: AetherColors.sage, size: 14),
           ),
           const SizedBox(width: 7),
           const Text(
             'Aetherband',
-            style: TextStyle(color: AetherColors.paper, fontSize: 11, fontWeight: FontWeight.w700),
+            style: TextStyle(
+                color: AetherColors.paper,
+                fontSize: 11,
+                fontWeight: FontWeight.w700),
           ),
           const SizedBox(width: 13),
           Container(width: 1, height: 17, color: AetherColors.raised),
           const SizedBox(width: 4),
-          for (final menu in _menus.entries)
-            PopupMenuButton<_MenuAction>(
-              tooltip: '${menu.key} menu',
-              padding: EdgeInsets.zero,
-              onSelected: onSelected,
-              color: AetherColors.panel,
-              surfaceTintColor: Colors.transparent,
-              itemBuilder: (context) => menu.value.map((action) {
-                return PopupMenuItem<_MenuAction>(
-                  value: action,
-                  height: 32,
-                  child: SizedBox(
-                    width: 205,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            action.label,
-                            style: const TextStyle(color: AetherColors.paper, fontSize: 12),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(children: [
+                for (final menu in _menus.entries)
+                  PopupMenuButton<_MenuAction>(
+                    tooltip: '${menu.key} menu',
+                    padding: EdgeInsets.zero,
+                    onSelected: onSelected,
+                    color: AetherColors.panel,
+                    surfaceTintColor: Colors.transparent,
+                    itemBuilder: (context) => menu.value.map((action) {
+                      return PopupMenuItem<_MenuAction>(
+                        value: action,
+                        height: 32,
+                        child: SizedBox(
+                          width: 205,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  action.label,
+                                  style: const TextStyle(
+                                      color: AetherColors.paper, fontSize: 12),
+                                ),
+                              ),
+                              if (action.shortcut != null)
+                                Text(
+                                  action.shortcut!,
+                                  style: const TextStyle(
+                                      color: AetherColors.secondaryText,
+                                      fontSize: 10),
+                                ),
+                            ],
                           ),
                         ),
-                        if (action.shortcut != null)
-                          Text(
-                            action.shortcut!,
-                            style: const TextStyle(color: AetherColors.secondaryText, fontSize: 10),
-                          ),
-                      ],
+                      );
+                    }).toList(),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 6),
+                      child: Text(
+                        menu.key,
+                        style: const TextStyle(
+                            color: AetherColors.secondaryText, fontSize: 11),
+                      ),
                     ),
                   ),
-                );
-              }).toList(),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
-                child: Text(
-                  menu.key,
-                  style: const TextStyle(color: AetherColors.secondaryText, fontSize: 11),
-                ),
-              ),
+              ]),
             ),
-          const Spacer(),
+          ),
           const Icon(Icons.circle, size: 6, color: AetherColors.magenta),
           const SizedBox(width: 7),
-          const Text('Untitled Session', style: TextStyle(color: AetherColors.paper, fontSize: 11)),
+          const Text('Untitled Session',
+              style: TextStyle(color: AetherColors.paper, fontSize: 11)),
           const SizedBox(width: 11),
         ],
       ),
@@ -693,6 +833,8 @@ class _TimelineToolbar extends StatelessWidget {
     required this.onZoomChanged,
     required this.browserOpen,
     required this.onBrowser,
+    required this.onImport,
+    required this.importing,
   });
 
   final String selectedTrack;
@@ -700,6 +842,8 @@ class _TimelineToolbar extends StatelessWidget {
   final ValueChanged<double> onZoomChanged;
   final bool browserOpen;
   final VoidCallback onBrowser;
+  final VoidCallback? onImport;
+  final bool importing;
 
   @override
   Widget build(BuildContext context) {
@@ -719,23 +863,55 @@ class _TimelineToolbar extends StatelessWidget {
             icon: const Icon(Icons.view_sidebar_outlined, size: 17),
           ),
           const SizedBox(width: 6),
-          const Text('ARRANGEMENT', style: TextStyle(color: AetherColors.paper, fontSize: 10, letterSpacing: 1.1, fontWeight: FontWeight.w700)),
+          Tooltip(
+            message: 'Import audio (rewinds transport)',
+            child: TextButton.icon(
+              onPressed: onImport,
+              icon: importing
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.audio_file_outlined, size: 16),
+              label: Text(importing ? 'Importing…' : 'Import audio'),
+            ),
+          ),
+          const SizedBox(width: 6),
+          const Text('ARRANGEMENT',
+              style: TextStyle(
+                  color: AetherColors.paper,
+                  fontSize: 10,
+                  letterSpacing: 1.1,
+                  fontWeight: FontWeight.w700)),
           const SizedBox(width: 12),
           Container(width: 1, height: 20, color: AetherColors.raised),
           const SizedBox(width: 12),
           const Icon(Icons.layers_outlined, size: 15, color: AetherColors.sage),
           const SizedBox(width: 6),
           Expanded(
-            child: Text('Selected: $selectedTrack', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AetherColors.secondaryText, fontSize: 11)),
+            child: Text('Selected: $selectedTrack',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    color: AetherColors.secondaryText, fontSize: 11)),
           ),
-          const Icon(Icons.zoom_out, size: 15, color: AetherColors.secondaryText),
-          SizedBox(width: 120, child: Slider(value: zoom, min: 0.65, max: 1.5, onChanged: onZoomChanged)),
-          const Icon(Icons.zoom_in, size: 15, color: AetherColors.secondaryText),
+          const Icon(Icons.zoom_out,
+              size: 15, color: AetherColors.secondaryText),
+          SizedBox(
+              width: 120,
+              child: Slider(
+                  value: zoom, min: 0.65, max: 1.5, onChanged: onZoomChanged)),
+          const Icon(Icons.zoom_in,
+              size: 15, color: AetherColors.secondaryText),
           const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            decoration: BoxDecoration(color: AetherColors.background, borderRadius: BorderRadius.circular(4)),
-            child: Text('${(zoom * 100).round()}%', style: const TextStyle(color: AetherColors.secondaryText, fontSize: 10)),
+            decoration: BoxDecoration(
+                color: AetherColors.background,
+                borderRadius: BorderRadius.circular(4)),
+            child: Text('${(zoom * 100).round()}%',
+                style: const TextStyle(
+                    color: AetherColors.secondaryText, fontSize: 10)),
           ),
         ],
       ),
@@ -748,11 +924,13 @@ class _StatusBar extends StatelessWidget {
     required this.engineConnected,
     required this.isPlaying,
     required this.engineError,
+    required this.loadedTrackCount,
   });
 
   final bool engineConnected;
   final bool isPlaying;
   final Object? engineError;
+  final int loadedTrackCount;
 
   @override
   Widget build(BuildContext context) {
@@ -770,23 +948,33 @@ class _StatusBar extends StatelessWidget {
           const SizedBox(width: 6),
           const Text(
             'FLUTTER ALPHA',
-            style: TextStyle(color: AetherColors.secondaryText, fontSize: 8, letterSpacing: 0.6),
+            style: TextStyle(
+                color: AetherColors.secondaryText,
+                fontSize: 8,
+                letterSpacing: 0.6),
           ),
           const Spacer(),
           Text(
             engineConnected
-                ? (isPlaying ? 'NATIVE ENGINE CONNECTED · PLAYING' : 'NATIVE ENGINE CONNECTED · DEMO CLIPS ONLY')
+                ? (loadedTrackCount > 0
+                    ? '$loadedTrackCount AUDIO ${loadedTrackCount == 1 ? 'TRACK' : 'TRACKS'} LOADED · ${isPlaying ? 'PLAYING' : 'READY'}'
+                    : 'NATIVE ENGINE CONNECTED · DEMO CLIPS ONLY')
                 : 'ENGINE UNAVAILABLE · DEMO CLIPS ONLY',
-            style: const TextStyle(color: AetherColors.secondaryText, fontSize: 8, letterSpacing: 0.4),
+            style: const TextStyle(
+                color: AetherColors.secondaryText,
+                fontSize: 8,
+                letterSpacing: 0.4),
           ),
           if (engineError != null) ...[
             const SizedBox(width: 8),
-            const Icon(Icons.warning_amber_rounded, color: AetherColors.magenta, size: 11),
+            const Icon(Icons.warning_amber_rounded,
+                color: AetherColors.magenta, size: 11),
           ],
           const SizedBox(width: 8),
           const Text(
             'WINDOWS / macOS',
-            style: TextStyle(color: AetherColors.sage, fontSize: 8, letterSpacing: 0.5),
+            style: TextStyle(
+                color: AetherColors.sage, fontSize: 8, letterSpacing: 0.5),
           ),
         ],
       ),

@@ -1,6 +1,6 @@
 # Aetherband Feature Tracker
 
-**Last reviewed:** 2026-10-17  
+**Last reviewed:** 2026-10-18
 **Purpose:** Agent handoff and prioritization. This is not proof of runtime correctness; verify source and CI before changing a status.
 
 ## Status vocabulary
@@ -20,11 +20,11 @@ The project is early alpha. Favor visible, end-to-end progress over speculative 
 
 | Priority | Area | Current understanding | Next useful outcome | Acceptance evidence |
 |---|---|---|---|---|
-| P0 | CI and developer baseline | Recent status must be rechecked against current GitHub Actions. | Get Rust formatting/check/test and Flutter analysis/test/build checks green on the current mainline. | Exact successful run URLs and logs; no skipped required checks hidden. |
-| P0 | Flutter ↔ Rust integration | Transport FFI exists; track load/remove/count bindings and an import UI are now implemented on the engine-foundation branch, but unverified. | Verify ABI alignment, file import, native state, error display and clean disposal on supported desktop targets. | Rust tests, Dart analysis/widget tests, platform builds and manual Windows/macOS runtime notes. |
-| P0 | Transport correctness | Stop/rewind regression is present; Pause/resume callback regression added on the engine-foundation branch, not yet run. | Confirm Play/Pause/Stop and restart behaviour through UI and engine. | Passing regression tests plus manual confirmation that Stop silences audio and resets/restarts correctly. |
+| P0 | CI and developer baseline | Formatting failures in graph/core source repaired; local Rust format/check/test/build and Flutter analysis/tests/Windows build pass. Existing Clippy findings remain. CI must be rechecked on the PR. | Establish green platform CI and address remaining lint findings separately. | [Local verification](VERIFICATION_2026-10-18.md); successful current CI run URLs still required. |
+| P0 | Flutter ↔ Rust integration | ABI 0.3.0 adds source metadata. Calls run on a Dart worker; a dedicated Rust thread owns the engine through shutdown. Windows native test passes; macOS unverified. | Verify macOS library loading, import and lifecycle. | Rust ownership/layout tests, Flutter widget tests and Windows native integration test; see verification record. |
+| P0 | Transport correctness | Stop/Pause callback regressions and Windows native Pause/Stop/restart telemetry tests pass. | Confirm physical output silence/restart and device behavior manually on both supported systems. | Automated evidence exists; independent audio capture/listening and macOS runtime checks remain. |
 | P1 | Real session tracks and clips | Timeline includes demo presentation models. | Establish a real track/clip state path instead of demo-only arrangement state. | Track/clip actions update the actual session model and survive view rebuilds. |
-| P1 | Import and playback workflow | Desktop file-picker import and native track load/remove FFI are implemented on the engine-foundation branch, but unverified; imported clip duration is still a placeholder. | Load an audio file, play it, remove it, and report failures clearly. | End-to-end manual test and regression tests for invalid media / failure paths. |
+| P1 | Import and playback workflow | Implemented: visible import/loading action, duration-scaled clips, unknown-duration labels, native inventory status and truthful errors. Windows native WAV import/transport/remove and UI failure/cancellation/retry tests pass. | Verify more formats and macOS; add real waveform peaks and native clip editing. | [Local verification](VERIFICATION_2026-10-18.md). Import rewinds transport; demo content remains; persistence and imported mixer editing are not implemented. |
 | P1 | Project save/reopen | Planned; do not assume complete. | Define the smallest useful session format and persist track/clip state safely. | Save, close, reopen and compare state; malformed/missing media handled safely. |
 | P1 | Stereo export | Planned; do not assume complete. | Render/export a simple session to WAV after project and playback model support it. | Output file exists, is valid, expected duration/sample rate/channels verified. |
 | P2 | Editing quality | Waveforms, precise clip editing, undo/redo and automation are future work unless verified in code. | Deliver one useful editing workflow end-to-end at a time. | Acceptance criteria and model-level tests for each operation. |

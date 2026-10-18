@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'theme.dart';
 
+double timelinePixelsPerSecond(int tempo) => tempo / 240 * 84;
+
 class ClipModel {
   ClipModel({
     required this.id,
@@ -9,6 +11,8 @@ class ClipModel {
     required this.start,
     required this.width,
     required this.color,
+    this.isDemo = true,
+    this.durationSeconds,
   });
 
   final String id;
@@ -16,6 +20,14 @@ class ClipModel {
   double start;
   final double width;
   final Color color;
+  final bool isDemo;
+  final double? durationSeconds;
+
+  double timelineWidth(int tempo) => isDemo
+      ? width
+      : durationSeconds == null
+          ? 140 // Explicitly labelled unknown; not presented as a measured length.
+          : durationSeconds! * timelinePixelsPerSecond(tempo);
 }
 
 class TrackModel {

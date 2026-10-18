@@ -32,7 +32,11 @@ pub struct Port {
 
 impl Port {
     pub fn new(name: impl Into<String>, kind: SignalKind, channels: u16) -> Self {
-        Self { name: name.into(), kind, channels }
+        Self {
+            name: name.into(),
+            kind,
+            channels,
+        }
     }
 }
 
@@ -138,7 +142,10 @@ impl AudioGraph {
                     to: connection.to_node,
                 });
             }
-            edges.entry(connection.from_node).or_default().push(connection.to_node);
+            edges
+                .entry(connection.from_node)
+                .or_default()
+                .push(connection.to_node);
         }
 
         // Kahn's algorithm detects cycles in the directed processing graph.
@@ -179,10 +186,15 @@ impl AudioGraph {
             self.nodes.iter().map(|node| (node.id, 0)).collect();
         let mut edges: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
         for connection in &self.connections {
-            edges.entry(connection.from_node).or_default().push(connection.to_node);
+            edges
+                .entry(connection.from_node)
+                .or_default()
+                .push(connection.to_node);
             *indegree.entry(connection.to_node).or_default() += 1;
         }
-        let mut ready: Vec<NodeId> = self.nodes.iter()
+        let mut ready: Vec<NodeId> = self
+            .nodes
+            .iter()
             .filter_map(|node| (indegree[&node.id] == 0).then_some(node.id))
             .collect();
         let mut order = Vec::with_capacity(self.nodes.len());
@@ -210,8 +222,16 @@ mod tests {
         NodeSpec {
             id: NodeId(id),
             name: format!("node-{id}"),
-            inputs: if input { vec![Port::new("in", SignalKind::Audio, 2)] } else { vec![] },
-            outputs: if output { vec![Port::new("out", SignalKind::Audio, 2)] } else { vec![] },
+            inputs: if input {
+                vec![Port::new("in", SignalKind::Audio, 2)]
+            } else {
+                vec![]
+            },
+            outputs: if output {
+                vec![Port::new("out", SignalKind::Audio, 2)]
+            } else {
+                vec![]
+            },
         }
     }
 
@@ -220,27 +240,52 @@ mod tests {
         let mut graph = AudioGraph::new();
         graph.add_node(audio_node(1, false, true)).unwrap();
         graph.add_node(audio_node(2, true, false)).unwrap();
-        graph.connect(Connection { from_node: NodeId(1), from_port: 0, to_node: NodeId(2), to_port: 0 }).unwrap();
+        graph
+            .connect(Connection {
+                from_node: NodeId(1),
+                from_port: 0,
+                to_node: NodeId(2),
+                to_port: 0,
+            })
+            .unwrap();
         let order = graph.processing_order().unwrap();
         assert_eq!(order.len(), 2);
-        assert!(order.iter().position(|id| *id == NodeId(1)).unwrap()
-            < order.iter().position(|id| *id == NodeId(2)).unwrap());
+        assert!(
+            order.iter().position(|id| *id == NodeId(1)).unwrap()
+                < order.iter().position(|id| *id == NodeId(2)).unwrap()
+        );
     }
 
     #[test]
     fn rejects_incompatible_signal_kinds() {
         let mut graph = AudioGraph::new();
-        graph.add_node(NodeSpec {
-            id: NodeId(1), name: "control-source".into(), inputs: vec![],
-            outputs: vec![Port::new("out", SignalKind::Control, 1)],
-        }).unwrap();
-        graph.add_node(NodeSpec {
-            id: NodeId(2), name: "audio-sink".into(), inputs: vec![Port::new("in", SignalKind::Audio, 2)],
-            outputs: vec![],
-        }).unwrap();
+        graph
+            .add_node(NodeSpec {
+                id: NodeId(1),
+                name: "control-source".into(),
+                inputs: vec![],
+                outputs: vec![Port::new("out", SignalKind::Control, 1)],
+            })
+            .unwrap();
+        graph
+            .add_node(NodeSpec {
+                id: NodeId(2),
+                name: "audio-sink".into(),
+                inputs: vec![Port::new("in", SignalKind::Audio, 2)],
+                outputs: vec![],
+            })
+            .unwrap();
         assert_eq!(
-            graph.connect(Connection { from_node: NodeId(1), from_port: 0, to_node: NodeId(2), to_port: 0 }),
-            Err(GraphError::IncompatiblePorts { from: NodeId(1), to: NodeId(2) })
+            graph.connect(Connection {
+                from_node: NodeId(1),
+                from_port: 0,
+                to_node: NodeId(2),
+                to_port: 0
+            }),
+            Err(GraphError::IncompatiblePorts {
+                from: NodeId(1),
+                to: NodeId(2)
+            })
         );
     }
 
@@ -249,9 +294,21 @@ mod tests {
         let mut graph = AudioGraph::new();
         graph.add_node(audio_node(1, true, true)).unwrap();
         graph.add_node(audio_node(2, true, true)).unwrap();
-        graph.connect(Connection { from_node: NodeId(1), from_port: 0, to_node: NodeId(2), to_port: 0 }).unwrap();
+        graph
+            .connect(Connection {
+                from_node: NodeId(1),
+                from_port: 0,
+                to_node: NodeId(2),
+                to_port: 0,
+            })
+            .unwrap();
         assert_eq!(
-            graph.connect(Connection { from_node: NodeId(2), from_port: 0, to_node: NodeId(1), to_port: 0 }),
+            graph.connect(Connection {
+                from_node: NodeId(2),
+                from_port: 0,
+                to_node: NodeId(1),
+                to_port: 0
+            }),
             Err(GraphError::CycleDetected)
         );
     }
