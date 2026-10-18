@@ -457,8 +457,9 @@ class _NativeEngineSession implements EngineController {
   Future<int> getTrackCount() async {
     if (_disposed) throw StateError('Native engine has been disposed.');
     final count = _trackCountNative(_handle);
-    if (count < 0)
+    if (count < 0) {
       throw StateError('Native track count query failed (error $count).');
+    }
     return count;
   }
 
@@ -488,8 +489,9 @@ class _NativeEngineSession implements EngineController {
 
   void _check(String operation, int result) {
     if (_disposed) throw StateError('Native engine has been disposed.');
-    if (result != 0)
+    if (result != 0) {
       throw StateError('Native $operation failed (error $result).');
+    }
   }
 
   @override
@@ -518,7 +520,8 @@ class _NativeEngineSession implements EngineController {
     _pollTimer = null;
     final result = _destroyNative(_handle);
     await _telemetry.close();
-    if (result != 0)
+    if (result != 0) {
       throw StateError('Native engine destruction failed (error $result).');
+    }
   }
 }

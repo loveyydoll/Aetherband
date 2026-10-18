@@ -5,6 +5,7 @@ Scope: `fix/real-audio-import`, based on main `2c4c475`. This is an automated Wi
 ## Implemented
 
 - Repaired Rust formatting in graph/core source that prevented CI from reaching compilation/tests.
+- Checked in Flutter's analyzer configuration so local checks use the same Flutter lint rules as CI-generated runners, and fixed the brace warnings exposed by CI. Only generated build output is excluded; application and test code remain analyzed.
 - Added ABI 0.3.0 source-frame/rate/channel metadata and matching Dart declarations; source duration determines imported clip width in the ruler/playhead coordinate system. Zero/missing duration is labelled unknown.
 - Added a visible import action, loading guard, cancellation/error handling and loaded-track count. Import rewinds transport. Imported audio does not show invented waveforms or permit visual-only dragging/mixing.
 - Moved synchronous FFI operations to a long-lived Dart isolate. The opaque C handle keeps the actual non-Send engine/CPAL stream on a dedicated Rust thread. Calls, polling and shutdown are serialized; both control backlogs are bounded at 64. No new package/crate was added.

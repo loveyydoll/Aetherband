@@ -243,15 +243,18 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         _engineError = null;
       });
     } catch (error) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Audio import failed: $error')),
         );
+      }
     } finally {
-      if (mounted) setState(() {
-        _trackOperationPending = false;
-        _importingAudio = false;
-      });
+      if (mounted) {
+        setState(() {
+          _trackOperationPending = false;
+          _importingAudio = false;
+        });
+      }
     }
   }
 
@@ -277,10 +280,11 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         }
       });
     } catch (error) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Track removal failed: $error')),
         );
+      }
     } finally {
       if (mounted) setState(() => _trackOperationPending = false);
     }
