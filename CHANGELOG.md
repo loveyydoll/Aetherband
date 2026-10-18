@@ -6,6 +6,8 @@ All notable changes to Aetherband are recorded here. This is a development chang
 
 ### Added
 
+- **2026-10-18 — Native mixer controls (pending merge):** Connected imported track gain, pan, and mute controls from the Flutter mixer and timeline through the existing native C ABI. Added UI and native integration regressions; physical audio verification remains pending.
+
 - **2026-10-17 — PR #22, Engine foundation:** Added a typed, control-thread audio graph model with Audio, Control, Event, and Analysis signal kinds; port/channel compatibility validation; cycle rejection; and topological ordering. This is graph metadata and validation only; it is not yet executed by the real-time audio callback.
 - **2026-10-17 — PR #22, Audio import:** Added desktop file selection and connected imported audio files to the native decoder/track engine. Added Dart FFI/controller operations for loading, removing, and counting native tracks.
 - **2026-10-17 — PR #22, Regression coverage:** Added a Rust regression test for Pause silence and Play resume.

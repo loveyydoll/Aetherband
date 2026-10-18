@@ -34,6 +34,29 @@ void main() {
       expect(track.durationSeconds, 2);
       expect(await engine.getTrackCount(), 1);
 
+      // Mixer commands exercise the real Dart isolate -> C ABI -> Rust path.
+      await expectLater(
+          engine.setTrackVolume(track.id, double.nan), throwsArgumentError);
+      await expectLater(
+          engine.setTrackPan(track.id, double.infinity), throwsArgumentError);
+      await engine.setTrackVolume(track.id, 0.4);
+      await engine.setTrackPan(track.id, 0.75);
+      await engine.muteTrack(track.id, true);
+      await engine.play();
+      final muted = await engine.telemetry
+          .firstWhere((frame) =>
+              frame.isPlaying &&
+              frame.playheadSeconds > 0 &&
+              frame.peakLeft == 0 &&
+              frame.peakRight == 0)
+          .timeout(const Duration(seconds: 5));
+      expect(muted.isPlaying, isTrue);
+      await engine.muteTrack(track.id, false);
+      await engine.telemetry
+          .firstWhere((frame) => frame.isPlaying && frame.peakLeft > 0)
+          .timeout(const Duration(seconds: 5));
+      await engine.stop();
+
       await engine.play();
       final playing = await engine.telemetry
           .firstWhere((frame) => frame.isPlaying && frame.peakLeft > 0)

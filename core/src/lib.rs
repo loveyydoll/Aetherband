@@ -437,7 +437,13 @@ impl DAWEngine {
     // ── Per-track mixing controls ─────────────────────────────────────────
 
     pub fn set_track_volume(&mut self, track_id: TrackId, gain: f32) -> bool {
+        if !gain.is_finite() {
+            return false;
+        }
         let gain = gain.clamp(0.0, 2.0);
+        let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) else {
+            return false;
+        };
         if self
             .ui_endpoints
             .cmd_producer
@@ -450,16 +456,18 @@ impl DAWEngine {
         {
             return false;
         }
-        if let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) {
-            track.gain = gain;
-            true
-        } else {
-            false
-        }
+        track.gain = gain;
+        true
     }
 
     pub fn set_track_pan(&mut self, track_id: TrackId, pan: f32) -> bool {
+        if !pan.is_finite() {
+            return false;
+        }
         let pan = pan.clamp(0.0, 1.0);
+        let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) else {
+            return false;
+        };
         if self
             .ui_endpoints
             .cmd_producer
@@ -468,15 +476,14 @@ impl DAWEngine {
         {
             return false;
         }
-        if let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) {
-            track.pan = pan;
-            true
-        } else {
-            false
-        }
+        track.pan = pan;
+        true
     }
 
     pub fn mute_track(&mut self, track_id: TrackId, muted: bool) -> bool {
+        let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) else {
+            return false;
+        };
         if self
             .ui_endpoints
             .cmd_producer
@@ -485,12 +492,8 @@ impl DAWEngine {
         {
             return false;
         }
-        if let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) {
-            track.muted = muted;
-            true
-        } else {
-            false
-        }
+        track.muted = muted;
+        true
     }
 
     // ── Telemetry ─────────────────────────────────────────────────────────

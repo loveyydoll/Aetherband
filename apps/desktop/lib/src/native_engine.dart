@@ -23,6 +23,10 @@ typedef _LoadTrackD = int Function(
     Pointer<Void>, Pointer<Utf8>, Pointer<Uint32>);
 typedef _RemoveTrackN = Int32 Function(Pointer<Void>, Uint32);
 typedef _RemoveTrackD = int Function(Pointer<Void>, int);
+typedef _TrackFloatN = Int32 Function(Pointer<Void>, Uint32, Float);
+typedef _TrackFloatD = int Function(Pointer<Void>, int, double);
+typedef _TrackMuteN = Int32 Function(Pointer<Void>, Uint32, Uint8);
+typedef _TrackMuteD = int Function(Pointer<Void>, int, int);
 typedef _TrackCountN = Int32 Function(Pointer<Void>);
 typedef _TrackCountD = int Function(Pointer<Void>);
 typedef _TrackInfoN = Int32 Function(
@@ -172,6 +176,28 @@ class NativeEngineController implements EngineController {
 
   @override
   Future<void> removeTrack(int trackId) => _request<void>('remove', trackId);
+  static void _checkUnitParameter(String name, double value) {
+    if (!value.isFinite || value < 0 || value > 1) {
+      throw ArgumentError.value(value, name, 'Must be a finite value in [0, 1]');
+    }
+  }
+
+  @override
+  Future<void> setTrackVolume(int trackId, double gain) {
+    _checkUnitParameter('gain', gain);
+    return _request<void>('volume', (trackId, gain));
+  }
+
+  @override
+  Future<void> setTrackPan(int trackId, double pan) {
+    _checkUnitParameter('pan', pan);
+    return _request<void>('pan', (trackId, pan));
+  }
+
+  @override
+  Future<void> muteTrack(int trackId, bool muted) =>
+      _request<void>('mute', (trackId, muted));
+
   @override
   Future<int> getTrackCount() => _request<int>('count');
 
@@ -221,6 +247,15 @@ Future<void> _runNativeEngine((SendPort, String?) configuration) async {
             result = await session.loadTrack(argument as String);
           case 'remove':
             await session.removeTrack(argument as int);
+          case 'volume':
+            final (trackId, gain) = argument as (int, double);
+            await session.setTrackVolume(trackId, gain);
+          case 'pan':
+            final (trackId, pan) = argument as (int, double);
+            await session.setTrackPan(trackId, pan);
+          case 'mute':
+            final (trackId, muted) = argument as (int, bool);
+            await session.muteTrack(trackId, muted);
           case 'count':
             result = await session.getTrackCount();
           case 'dispose':
@@ -260,6 +295,9 @@ class _NativeEngineSession implements EngineController {
     required _RemoveTrackD removeTrackNative,
     required _TrackCountD trackCountNative,
     required _TrackInfoD trackInfoNative,
+    required _TrackFloatD trackVolumeNative,
+    required _TrackFloatD trackPanNative,
+    required _TrackMuteD muteTrackNative,
   })  : _library = library,
         _handle = handle,
         _playNative = playNative,
@@ -270,7 +308,10 @@ class _NativeEngineSession implements EngineController {
         _loadTrackNative = loadTrackNative,
         _removeTrackNative = removeTrackNative,
         _trackCountNative = trackCountNative,
-        _trackInfoNative = trackInfoNative {
+        _trackInfoNative = trackInfoNative,
+        _trackVolumeNative = trackVolumeNative,
+        _trackPanNative = trackPanNative,
+        _muteTrackNative = muteTrackNative {
     _pollTimer =
         Timer.periodic(const Duration(milliseconds: 33), (_) => _poll());
   }
@@ -288,6 +329,9 @@ class _NativeEngineSession implements EngineController {
   final _RemoveTrackD _removeTrackNative;
   final _TrackCountD _trackCountNative;
   final _TrackInfoD _trackInfoNative;
+  final _TrackFloatD _trackVolumeNative;
+  final _TrackFloatD _trackPanNative;
+  final _TrackMuteD _muteTrackNative;
   final int sampleRateHz;
   final StreamController<EngineTelemetry> _telemetry =
       StreamController<EngineTelemetry>.broadcast();
@@ -336,6 +380,12 @@ class _NativeEngineSession implements EngineController {
         'daw_engine_get_track_count');
     final trackInfo = library
         .lookupFunction<_TrackInfoN, _TrackInfoD>('daw_engine_get_track_info');
+    final trackVolume = library.lookupFunction<_TrackFloatN, _TrackFloatD>(
+        'daw_engine_set_track_volume');
+    final trackPan = library.lookupFunction<_TrackFloatN, _TrackFloatD>(
+        'daw_engine_set_track_pan');
+    final muteTrack = library.lookupFunction<_TrackMuteN, _TrackMuteD>(
+        'daw_engine_mute_track');
 
     final outHandle = calloc<Pointer<Void>>();
     try {
@@ -371,6 +421,9 @@ class _NativeEngineSession implements EngineController {
           removeTrackNative: removeTrack,
           trackCountNative: trackCount,
           trackInfoNative: trackInfo,
+          trackVolumeNative: trackVolume,
+          trackPanNative: trackPan,
+          muteTrackNative: muteTrack,
         );
       } finally {
         calloc.free(outSampleRate);
@@ -451,6 +504,24 @@ class _NativeEngineSession implements EngineController {
   Future<void> removeTrack(int trackId) async {
     if (_disposed) throw StateError('Native engine has been disposed.');
     _check('remove track', _removeTrackNative(_handle, trackId));
+  }
+
+  @override
+  Future<void> setTrackVolume(int trackId, double gain) async {
+    if (_disposed) throw StateError('Native engine has been disposed.');
+    _check('track volume', _trackVolumeNative(_handle, trackId, gain));
+  }
+
+  @override
+  Future<void> setTrackPan(int trackId, double pan) async {
+    if (_disposed) throw StateError('Native engine has been disposed.');
+    _check('track pan', _trackPanNative(_handle, trackId, pan));
+  }
+
+  @override
+  Future<void> muteTrack(int trackId, bool muted) async {
+    if (_disposed) throw StateError('Native engine has been disposed.');
+    _check('track mute', _muteTrackNative(_handle, trackId, muted ? 1 : 0));
   }
 
   @override

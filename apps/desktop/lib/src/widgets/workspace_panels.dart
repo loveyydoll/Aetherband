@@ -160,6 +160,8 @@ class InstrumentDock extends StatelessWidget {
     required this.onKnobChanged,
     required this.tracks,
     required this.onVolumeChanged,
+    required this.onPanChanged,
+    required this.onMuteChanged,
     required this.peakLeft,
     required this.peakRight,
     super.key,
@@ -173,6 +175,8 @@ class InstrumentDock extends StatelessWidget {
   final void Function(String, double) onKnobChanged;
   final List<TrackModel> tracks;
   final void Function(TrackModel, double) onVolumeChanged;
+  final void Function(TrackModel, double) onPanChanged;
+  final void Function(TrackModel, bool) onMuteChanged;
   final double peakLeft;
   final double peakRight;
 
@@ -308,30 +312,79 @@ class InstrumentDock extends StatelessWidget {
   Widget _buildMixer() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Row(
-        children: [
-          for (final track in tracks)
-            Expanded(
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-                padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-                decoration: BoxDecoration(
-                  color: AetherColors.background,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border(top: BorderSide(color: track.color, width: 2)),
+      child: Scrollbar(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (final track in tracks)
+                SizedBox(
+                  width: 156,
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+                    decoration: BoxDecoration(
+                      color: AetherColors.background,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border(top: BorderSide(color: track.color, width: 2)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(track.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 10, color: AetherColors.paper)),
+                        const Spacer(),
+                        Text('Gain ${(track.volume * 100).round()}%',
+                            style: const TextStyle(
+                                fontSize: 10, color: AetherColors.secondaryText)),
+                        SizedBox(
+                          height: 24,
+                          child: Slider(
+                            value: track.volume.clamp(0.0, 1.0).toDouble(),
+                            onChanged: (value) => onVolumeChanged(track, value),
+                            min: 0,
+                            max: 1,
+                          ),
+                        ),
+                        Text('Pan ${((track.pan - 0.5) * 200).round()}',
+                            style: const TextStyle(
+                                fontSize: 10, color: AetherColors.secondaryText)),
+                        SizedBox(
+                          height: 24,
+                          child: Slider(
+                            value: track.pan.clamp(0.0, 1.0).toDouble(),
+                            onChanged: (value) => onPanChanged(track, value),
+                            min: 0,
+                            max: 1,
+                          ),
+                        ),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: IconButton(
+                            tooltip: 'Mute ${track.name}',
+                            onPressed: () => onMuteChanged(track, !track.muted),
+                            constraints: const BoxConstraints(
+                                minWidth: 32, minHeight: 26),
+                            padding: EdgeInsets.zero,
+                            iconSize: 16,
+                            icon: Icon(
+                              track.muted ? Icons.volume_off : Icons.volume_up,
+                              color: track.muted
+                                  ? AetherColors.magenta
+                                  : AetherColors.secondaryText,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(track.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: AetherColors.paper)),
-                    const Spacer(),
-                    Text('${(track.volume * 100).round()}%', style: const TextStyle(fontSize: 10, color: AetherColors.secondaryText)),
-                    Slider(value: track.volume.clamp(0.0, 1.0).toDouble(), onChanged: (value) => onVolumeChanged(track, value), min: 0, max: 1),
-                  ],
-                ),
-              ),
-            ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }

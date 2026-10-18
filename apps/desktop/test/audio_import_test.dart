@@ -7,6 +7,7 @@ import 'package:aetherband_desktop/src/aetherband_app.dart';
 import 'package:aetherband_desktop/src/engine_controller.dart';
 import 'package:aetherband_desktop/src/models.dart';
 import 'package:aetherband_desktop/src/widgets/clip_tile.dart';
+import 'package:aetherband_desktop/src/widgets/workspace_panels.dart';
 
 class FakeEngine implements EngineController {
   final frames = StreamController<EngineTelemetry>.broadcast();
@@ -14,6 +15,7 @@ class FakeEngine implements EngineController {
   Completer<LoadedAudioTrack>? importResult;
   Completer<void>? removalResult;
   Object? importError;
+  Object? mixerError;
   int disposeCount = 0;
   int count = 0;
 
@@ -53,6 +55,22 @@ class FakeEngine implements EngineController {
   Future<void> removeTrack(int trackId) async {
     calls.add('remove:$trackId');
     await removalResult?.future;
+  }
+
+  @override
+  Future<void> setTrackVolume(int trackId, double gain) async {
+    calls.add('volume:$trackId:$gain');
+    if (mixerError != null) throw mixerError!;
+  }
+
+  @override
+  Future<void> setTrackPan(int trackId, double pan) async {
+    calls.add('pan:$trackId:$pan');
+  }
+
+  @override
+  Future<void> muteTrack(int trackId, bool muted) async {
+    calls.add('mute:$trackId:$muted');
   }
 
   @override
@@ -282,4 +300,45 @@ void main() {
     await tester.pump();
     expect(replacement.disposeCount, 1);
   });
+  testWidgets('imported audio mixer uses native volume, pan and mute',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    final dock = tester.widget<InstrumentDock>(find.byType(InstrumentDock));
+    final importedTrack =
+        dock.tracks.singleWhere((track) => track.id.startsWith('native-'));
+    expect(importedTrack.pan, 0.5);
+    dock.onVolumeChanged(importedTrack, 0.25);
+    dock.onPanChanged(importedTrack, 0.75);
+    dock.onMuteChanged(importedTrack, true);
+    await tester.pumpAndSettle();
+    expect(engine.calls, containsAllInOrder([
+      'volume:1:0.25',
+      'pan:1:0.75',
+      'mute:1:true',
+    ]));
+    expect(importedTrack.volume, 0.25);
+    expect(importedTrack.pan, 0.75);
+    expect(importedTrack.muted, isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('rejected native fader operation restores previous UI value',
+      (tester) async {
+    final engine = FakeEngine()..mixerError = StateError('command queue full');
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    final dock = tester.widget<InstrumentDock>(find.byType(InstrumentDock));
+    final importedTrack =
+        dock.tracks.singleWhere((track) => track.id.startsWith('native-'));
+    expect(importedTrack.volume, 0.8);
+    dock.onVolumeChanged(importedTrack, 0.3);
+    await tester.pumpAndSettle();
+    expect(engine.calls, contains('volume:1:0.3'));
+    expect(importedTrack.volume, 0.8);
+    expect(find.textContaining('Track volume failed:'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
 }

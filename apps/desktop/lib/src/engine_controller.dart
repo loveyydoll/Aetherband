@@ -40,6 +40,9 @@ abstract class EngineController {
   Future<void> stop();
   Future<LoadedAudioTrack> loadTrack(String path);
   Future<void> removeTrack(int trackId);
+  Future<void> setTrackVolume(int trackId, double gain);
+  Future<void> setTrackPan(int trackId, double pan);
+  Future<void> muteTrack(int trackId, bool muted);
   Future<int> getTrackCount();
   Future<void> dispose();
 }
