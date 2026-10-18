@@ -373,7 +373,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       return widget.pickSessionSavePath!();
     }
     final location = await getSaveLocation(
-      suggestedName: '${_sessionTitle}.aetherband.json',
+      suggestedName: '$_sessionTitle.aetherband.json',
       acceptedTypeGroups: const <XTypeGroup>[
         XTypeGroup(label: 'Aetherband session', extensions: ['json']),
       ],
