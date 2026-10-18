@@ -226,6 +226,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
           kind: 'AUDIO',
           color: AetherColors.sage,
           volume: 0.8,
+          pan: 0.5,
           clips: <ClipModel>[
             ClipModel(
               id: '$id-clip',
@@ -347,12 +348,95 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     });
   }
 
+  // Native operations are asynchronous; the UI responds immediately, while
+  // rejecting operations roll back the value if it has not since changed.
+  // This keeps control errors visible rather than silently pretending success.
+  void _reportMixerFailure(String label, Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$label failed: $error')),
+    );
+  }
+
   void _setTrackVolume(TrackModel track, double value) {
-    if (_nativeTrackIds.containsKey(track.id)) {
-      _showFeatureUnavailable('Native track volume controls');
+    final id = _nativeTrackIds[track.id];
+    final engine = _engine;
+    if (id != null && engine == null) {
+      _showEngineUnavailable();
       return;
     }
+    final previous = track.volume;
     setState(() => track.volume = value);
+    if (id != null) {
+      unawaited(_commitVolume(engine!, track, id, value, previous));
+    }
+  }
+
+  Future<void> _commitVolume(EngineController engine, TrackModel track,
+      int id, double value, double previous) async {
+    try {
+      await engine.setTrackVolume(id, value);
+    } catch (error) {
+      if (!mounted) return;
+      if (_nativeTrackIds[track.id] == id && track.volume == value) {
+        setState(() => track.volume = previous);
+      }
+      _reportMixerFailure('Track volume', error);
+    }
+  }
+
+  void _setTrackPan(TrackModel track, double value) {
+    final id = _nativeTrackIds[track.id];
+    final engine = _engine;
+    if (id != null && engine == null) {
+      _showEngineUnavailable();
+      return;
+    }
+    final previous = track.pan;
+    setState(() => track.pan = value);
+    if (id != null) {
+      unawaited(_commitPan(engine!, track, id, value, previous));
+    }
+  }
+
+  Future<void> _commitPan(EngineController engine, TrackModel track,
+      int id, double value, double previous) async {
+    try {
+      await engine.setTrackPan(id, value);
+    } catch (error) {
+      if (!mounted) return;
+      if (_nativeTrackIds[track.id] == id && track.pan == value) {
+        setState(() => track.pan = previous);
+      }
+      _reportMixerFailure('Track pan', error);
+    }
+  }
+
+  void _setTrackMute(TrackModel track, bool value) {
+    final id = _nativeTrackIds[track.id];
+    final engine = _engine;
+    if (id != null && engine == null) {
+      _showEngineUnavailable();
+      return;
+    }
+    final previous = track.muted;
+    setState(() => track.muted = value);
+    if (id != null) {
+      unawaited(_commitMute(engine!, track, id, value, previous));
+    }
+  }
+
+  Future<void> _commitMute(EngineController engine, TrackModel track,
+      int id, bool value, bool previous) async {
+    try {
+      await engine.muteTrack(id, value);
+    } catch (error) {
+      if (!mounted) return;
+      if (_nativeTrackIds[track.id] == id && track.muted == value) {
+        setState(() => track.muted = previous);
+      }
+      _reportMixerFailure('Track mute', error);
+    }
   }
 
   @override
@@ -441,14 +525,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                                 onTrackSelected: _selectTrack,
                                 onClipSelected: _selectClip,
                                 onClipMoved: _moveClip,
-                                onMuteChanged: (track, value) {
-                                  if (_nativeTrackIds.containsKey(track.id)) {
-                                    _showFeatureUnavailable(
-                                        'Native track mute controls');
-                                  } else {
-                                    setState(() => track.muted = value);
-                                  }
-                                },
+                                onMuteChanged: _setTrackMute,
                                 onSoloChanged: (track, value) {
                                   if (_nativeTrackIds.containsKey(track.id)) {
                                     _showFeatureUnavailable(
@@ -485,6 +562,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                       setState(() => _knobValues[name] = value),
                   tracks: _tracks,
                   onVolumeChanged: _setTrackVolume,
+                  onPanChanged: _setTrackPan,
+                  onMuteChanged: _setTrackMute,
                   peakLeft: _telemetry.peakLeft,
                   peakRight: _telemetry.peakRight,
                 ),
