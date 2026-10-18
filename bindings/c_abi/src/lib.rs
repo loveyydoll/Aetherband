@@ -345,8 +345,8 @@ pub unsafe extern "C" fn daw_engine_select_device(engine: *mut DAWEngine, index:
 /// On failure the caller's output is unchanged.
 ///
 /// # Safety
-/// `engine` must be a live handle, with calls serialized on its owning control
-/// thread. `out_info` must be writable and aligned for one `DAWTrackInfo`.
+/// `engine` must be a live handle, with calls serialized against destruction.
+/// `out_info` must be writable and aligned for one `DAWTrackInfo`.
 #[no_mangle]
 pub unsafe extern "C" fn daw_engine_get_track_info(
     engine: *mut DAWEngine,

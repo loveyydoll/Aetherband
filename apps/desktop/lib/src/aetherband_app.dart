@@ -68,6 +68,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   bool _showMixer = false;
   bool _initializingEngine = false;
   bool _trackOperationPending = false;
+  bool _importingAudio = false;
   double _zoom = 1;
 
   TrackModel get _selectedTrack =>
@@ -200,7 +201,10 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       label: 'Audio',
       extensions: <String>['wav', 'aiff', 'aif', 'flac', 'mp3', 'ogg', 'm4a'],
     );
-    setState(() => _trackOperationPending = true);
+    setState(() {
+      _trackOperationPending = true;
+      _importingAudio = true;
+    });
     try {
       final file = await (widget.pickAudioFile?.call() ??
           openFile(acceptedTypeGroups: <XTypeGroup>[audioTypes]));
@@ -244,7 +248,10 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
           SnackBar(content: Text('Audio import failed: $error')),
         );
     } finally {
-      if (mounted) setState(() => _trackOperationPending = false);
+      if (mounted) setState(() {
+        _trackOperationPending = false;
+        _importingAudio = false;
+      });
     }
   }
 
@@ -407,7 +414,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                           children: [
                             _TimelineToolbar(
                               selectedTrack: _selectedTrack.name,
-                              importing: _trackOperationPending,
+                              importing: _importingAudio,
                               onImport:
                                   _initializingEngine || _trackOperationPending
                                       ? null
