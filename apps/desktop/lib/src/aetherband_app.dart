@@ -1,20 +1,30 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
 
 import 'engine_controller.dart';
 import 'native_engine.dart';
+import 'session_store.dart';
 import 'models.dart';
 import 'theme.dart';
 import 'widgets/timeline_view.dart';
 import 'widgets/workspace_panels.dart';
 
 class AetherbandApp extends StatelessWidget {
-  const AetherbandApp({this.createEngine, this.pickAudioFile, super.key});
+  const AetherbandApp({
+    this.createEngine,
+    this.pickAudioFile,
+    this.pickSessionFile,
+    this.pickSessionSavePath,
+    super.key,
+  });
 
   final Future<EngineController> Function()? createEngine;
   final Future<XFile?> Function()? pickAudioFile;
+  final Future<XFile?> Function()? pickSessionFile;
+  final Future<String?> Function()? pickSessionSavePath;
 
   @override
   Widget build(BuildContext context) {
@@ -23,16 +33,28 @@ class AetherbandApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AetherTheme.dark,
       home: AetherbandWorkspace(
-          createEngine: createEngine, pickAudioFile: pickAudioFile),
+        createEngine: createEngine,
+        pickAudioFile: pickAudioFile,
+        pickSessionFile: pickSessionFile,
+        pickSessionSavePath: pickSessionSavePath,
+      ),
     );
   }
 }
 
 class AetherbandWorkspace extends StatefulWidget {
-  const AetherbandWorkspace({this.createEngine, this.pickAudioFile, super.key});
+  const AetherbandWorkspace({
+    this.createEngine,
+    this.pickAudioFile,
+    this.pickSessionFile,
+    this.pickSessionSavePath,
+    super.key,
+  });
 
   final Future<EngineController> Function()? createEngine;
   final Future<XFile?> Function()? pickAudioFile;
+  final Future<XFile?> Function()? pickSessionFile;
+  final Future<String?> Function()? pickSessionSavePath;
 
   @override
   State<AetherbandWorkspace> createState() => _AetherbandWorkspaceState();
@@ -43,6 +65,14 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   Object? _engineError;
   final List<TrackModel> _tracks = createDemoTracks();
   final Map<String, int> _nativeTrackIds = <String, int>{};
+  final Map<String, String> _nativeTrackSources = <String, String>{};
+  final AudioSessionStore _sessionStore = const AudioSessionStore();
+  final Set<Future<void>> _mixerActions = <Future<void>>{};
+  String _sessionTitle = 'Untitled Session';
+  String? _sessionPath;
+  bool _sessionDirty = false;
+  int _sessionRevision = 0;
+  int _nextPersistentTrackSerial = 0;
   final Map<String, double> _knobValues = {
     'Tone': 0.62,
     'Motion': 0.44,
@@ -74,6 +104,14 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   TrackModel get _selectedTrack =>
       _tracks.firstWhere((track) => track.id == _selectedTrackId);
 
+  String _createPersistentTrackId() =>
+      'native-${DateTime.now().microsecondsSinceEpoch}-${_nextPersistentTrackSerial++}';
+
+  void _markSessionChanged() {
+    _sessionRevision++;
+    _sessionDirty = true;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -94,6 +132,12 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       setState(() {
         _tracks.removeWhere((track) => _nativeTrackIds.containsKey(track.id));
         _nativeTrackIds.clear();
+        _nativeTrackSources.clear();
+        // The replacement engine has no imported media inventory. Never keep
+        // showing a previously loaded project as if it were still available.
+        _sessionPath = null;
+        _sessionTitle = 'Untitled Session';
+        _sessionDirty = false;
         if (!_tracks.any((track) => track.id == _selectedTrackId)) {
           _selectedTrackId = _tracks.first.id;
           _selectedClipId = null;
@@ -217,9 +261,11 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       if (!mounted) return;
       final nativeId = loaded.id;
       final name = file.name;
-      final id = 'native-$nativeId';
+      final id = _createPersistentTrackId();
       setState(() {
         _nativeTrackIds[id] = nativeId;
+        _nativeTrackSources[id] = file.path;
+        _markSessionChanged();
         _tracks.add(TrackModel(
           id: id,
           name: name,
@@ -275,6 +321,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       setState(() {
         _tracks.removeWhere((track) => track.id == selectedId);
         _nativeTrackIds.remove(selectedId);
+        _nativeTrackSources.remove(selectedId);
+        _markSessionChanged();
         if (_selectedTrackId == selectedId) {
           _selectedTrackId = _tracks.first.id;
           _selectedClipId = null;
@@ -365,8 +413,12 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       _showEngineUnavailable();
       return;
     }
+    if (_trackOperationPending) return;
     final previous = track.volume;
-    setState(() => track.volume = value);
+    setState(() {
+      track.volume = value;
+      if (id != null) _markSessionChanged();
+    });
     if (id != null) {
       unawaited(_commitVolume(engine!, track, id, value, previous));
     }
@@ -392,8 +444,12 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       _showEngineUnavailable();
       return;
     }
+    if (_trackOperationPending) return;
     final previous = track.pan;
-    setState(() => track.pan = value);
+    setState(() {
+      track.pan = value;
+      if (id != null) _markSessionChanged();
+    });
     if (id != null) {
       unawaited(_commitPan(engine!, track, id, value, previous));
     }
@@ -419,8 +475,12 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       _showEngineUnavailable();
       return;
     }
+    if (_trackOperationPending) return;
     final previous = track.muted;
-    setState(() => track.muted = value);
+    setState(() {
+      track.muted = value;
+      if (id != null) _markSessionChanged();
+    });
     if (id != null) {
       unawaited(_commitMute(engine!, track, id, value, previous));
     }
@@ -460,7 +520,11 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                       )
                     ],
                   ),
-                _MenuBar(onSelected: _handleMenuCommand),
+                _MenuBar(
+                  onSelected: _handleMenuCommand,
+                  sessionTitle: _sessionTitle,
+                  sessionDirty: _sessionDirty,
+                ),
                 _TopBar(
                   isPlaying: _telemetry.isPlaying,
                   isRecording: false,
@@ -591,9 +655,15 @@ class _MenuAction {
 }
 
 class _MenuBar extends StatelessWidget {
-  const _MenuBar({required this.onSelected});
+  const _MenuBar({
+    required this.onSelected,
+    required this.sessionTitle,
+    required this.sessionDirty,
+  });
 
   final ValueChanged<_MenuAction> onSelected;
+  final String sessionTitle;
+  final bool sessionDirty;
 
   static const Map<String, List<_MenuAction>> _menus = {
     'File': [
@@ -745,8 +815,11 @@ class _MenuBar extends StatelessWidget {
           ),
           const Icon(Icons.circle, size: 6, color: AetherColors.magenta),
           const SizedBox(width: 7),
-          const Text('Untitled Session',
-              style: TextStyle(color: AetherColors.paper, fontSize: 11)),
+          Text(sessionDirty ? '$sessionTitle *' : sessionTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  color: AetherColors.paper, fontSize: 11)),
           const SizedBox(width: 11),
         ],
       ),
