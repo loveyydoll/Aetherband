@@ -345,6 +345,49 @@ mod tests {
     use crate::ringbuf::{create_engine_queues, create_stream_queue, DecodedBlock, TrackId};
     use crate::track::TrackPlayer;
 
+    /// Unsupported/multichannel device layouts must never leak stale buffer data.
+    /// This exercises the real callback with an active signal, not just silence.
+    #[test]
+    fn multichannel_output_clears_channels_beyond_stereo_while_playing() {
+        let (mut ui, audio) = create_engine_queues(16, 16);
+        let mut processor = AudioProcessor::new(48_000.0, audio);
+        ui.cmd_producer.push(EngineCommand::SetTestTone {
+            enabled: true,
+            frequency_hz: 440.0,
+        }).unwrap();
+        ui.cmd_producer.push(EngineCommand::Play).unwrap();
+
+        let mut output = vec![1.0f32; 128 * 6];
+        processor.process_interleaved(&mut output, 6);
+        assert!(output.chunks_exact(6).any(|frame| frame[0] != 0.0));
+        for frame in output.chunks_exact(6) {
+            assert_eq!(&frame[2..], &[0.0; 4]);
+        }
+    }
+
+    /// If the backend unexpectedly supplies a larger block than the preallocated
+    /// scratch capacity, the unprocessed tail must be deterministically silent.
+    #[test]
+    fn oversized_callback_clears_output_tail() {
+        let (mut ui, audio) = create_engine_queues(16, 16);
+        let mut processor = AudioProcessor::new(48_000.0, audio);
+        ui.cmd_producer.push(EngineCommand::SetTestTone {
+            enabled: true,
+            frequency_hz: 440.0,
+        }).unwrap();
+        ui.cmd_producer.push(EngineCommand::Play).unwrap();
+
+        let frames = AudioProcessor::MAX_BLOCK_FRAMES + 19;
+        let mut output = vec![1.0f32; frames * 2];
+        processor.process_interleaved(&mut output, 2);
+        assert!(output[..AudioProcessor::MAX_BLOCK_FRAMES * 2]
+            .iter()
+            .any(|sample| *sample != 0.0));
+        assert!(output[AudioProcessor::MAX_BLOCK_FRAMES * 2..]
+            .iter()
+            .all(|sample| *sample == 0.0));
+    }
+
     #[test]
     fn test_silence_when_stopped() {
         let (_, audio) = create_engine_queues(16, 16);
