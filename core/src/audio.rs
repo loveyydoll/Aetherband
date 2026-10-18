@@ -351,10 +351,12 @@ mod tests {
     fn multichannel_output_clears_channels_beyond_stereo_while_playing() {
         let (mut ui, audio) = create_engine_queues(16, 16);
         let mut processor = AudioProcessor::new(48_000.0, audio);
-        ui.cmd_producer.push(EngineCommand::SetTestTone {
-            enabled: true,
-            frequency_hz: 440.0,
-        }).unwrap();
+        ui.cmd_producer
+            .push(EngineCommand::SetTestTone {
+                enabled: true,
+                frequency_hz: 440.0,
+            })
+            .unwrap();
         ui.cmd_producer.push(EngineCommand::Play).unwrap();
 
         let mut output = vec![1.0f32; 128 * 6];
@@ -371,10 +373,12 @@ mod tests {
     fn oversized_callback_clears_output_tail() {
         let (mut ui, audio) = create_engine_queues(16, 16);
         let mut processor = AudioProcessor::new(48_000.0, audio);
-        ui.cmd_producer.push(EngineCommand::SetTestTone {
-            enabled: true,
-            frequency_hz: 440.0,
-        }).unwrap();
+        ui.cmd_producer
+            .push(EngineCommand::SetTestTone {
+                enabled: true,
+                frequency_hz: 440.0,
+            })
+            .unwrap();
         ui.cmd_producer.push(EngineCommand::Play).unwrap();
 
         let frames = AudioProcessor::MAX_BLOCK_FRAMES + 19;
