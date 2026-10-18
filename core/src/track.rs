@@ -67,7 +67,7 @@ impl TrackPlayer {
     /// (decoder hasn't caught up) we output silence for the missing frames.
     #[inline]
     pub fn mix_into(&mut self, out_left: &mut [f32], out_right: &mut [f32], frames: usize) {
-        if self.muted || self.finished {
+        if self.finished {
             return;
         }
 
@@ -110,12 +110,16 @@ impl TrackPlayer {
 
             for i in 0..to_copy {
                 let frame_idx = (self.block_cursor + i) * 2;
-                let sample_l = block.samples[frame_idx];
-                let sample_r = block.samples[frame_idx + 1];
                 let gain = self.gain.next_gain();
-
-                out_left[written + i] += sample_l * gain * pan_l;
-                out_right[written + i] += sample_r * gain * pan_r;
+                // A muted track still consumes its stream in transport time.
+                // Otherwise unmuting would replay buffered audio from the
+                // old position instead of rejoining the active arrangement.
+                if !self.muted {
+                    let sample_l = block.samples[frame_idx];
+                    let sample_r = block.samples[frame_idx + 1];
+                    out_left[written + i] += sample_l * gain * pan_l;
+                    out_right[written + i] += sample_r * gain * pan_r;
+                }
             }
 
             self.block_cursor += to_copy;
@@ -298,6 +302,34 @@ mod tests {
         assert!(player.finished);
         assert!(left.iter().all(|sample| *sample == 0.0));
         assert!(right.iter().all(|sample| *sample == 0.0));
+    }
+
+    #[test]
+    fn muted_track_consumes_frames_and_unmute_resumes_at_current_position() {
+        let (mut player, mut producer) = make_track(10, 128);
+        let mut block = DecodedBlock::silent(128);
+        for frame in 0..128 {
+            let sample = if frame < 64 { 0.1 } else { 0.8 };
+            block.samples[frame * 2] = sample;
+            block.samples[frame * 2 + 1] = sample;
+        }
+        block.is_last = true;
+        producer.push(block).unwrap();
+
+        player.muted = true;
+        let mut left = [0.0f32; 64];
+        let mut right = [0.0f32; 64];
+        player.mix_into(&mut left, &mut right, 64);
+        assert!(left.iter().all(|sample| *sample == 0.0));
+        assert!(right.iter().all(|sample| *sample == 0.0));
+
+        player.muted = false;
+        player.mix_into(&mut left, &mut right, 64);
+        // With equal-power center pan, the second half is around 0.566;
+        // replaying the first half instead would yield roughly 0.071.
+        assert!(left.iter().all(|sample| *sample > 0.5));
+        assert!(right.iter().all(|sample| *sample > 0.5));
+        assert!(player.finished);
     }
 
     #[test]
