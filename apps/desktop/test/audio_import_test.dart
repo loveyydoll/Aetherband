@@ -56,6 +56,21 @@ class FakeEngine implements EngineController {
   }
 
   @override
+  Future<void> setTrackVolume(int trackId, double gain) async {
+    calls.add('volume:$trackId:$gain');
+  }
+
+  @override
+  Future<void> setTrackPan(int trackId, double pan) async {
+    calls.add('pan:$trackId:$pan');
+  }
+
+  @override
+  Future<void> muteTrack(int trackId, bool muted) async {
+    calls.add('mute:$trackId:$muted');
+  }
+
+  @override
   Future<int> getTrackCount() async => count;
   @override
   Future<void> dispose() async {
