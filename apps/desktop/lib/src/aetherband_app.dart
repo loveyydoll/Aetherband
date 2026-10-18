@@ -633,6 +633,18 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
 
   void _handleMenuCommand(_MenuAction action) {
     switch (action.id) {
+      case 'file.new':
+        unawaited(_newSession());
+        return;
+      case 'file.open':
+        unawaited(_openSession());
+        return;
+      case 'file.save':
+        unawaited(_saveSession());
+        return;
+      case 'file.saveAs':
+        unawaited(_saveSession(saveAs: true));
+        return;
       case 'view.browser':
         setState(() => _browserOpen = !_browserOpen);
         return;
@@ -698,6 +710,11 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     );
   }
 
+  void _queueMixerAction(Future<void> action) {
+    _mixerActions.add(action);
+    unawaited(action.whenComplete(() => _mixerActions.remove(action)));
+  }
+
   void _setTrackVolume(TrackModel track, double value) {
     final id = _nativeTrackIds[track.id];
     final engine = _engine;
@@ -712,7 +729,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       if (id != null) _markSessionChanged();
     });
     if (id != null) {
-      unawaited(_commitVolume(engine!, track, id, value, previous));
+      _queueMixerAction(_commitVolume(engine!, track, id, value, previous));
     }
   }
 
@@ -743,7 +760,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       if (id != null) _markSessionChanged();
     });
     if (id != null) {
-      unawaited(_commitPan(engine!, track, id, value, previous));
+      _queueMixerAction(_commitPan(engine!, track, id, value, previous));
     }
   }
 
@@ -774,7 +791,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       if (id != null) _markSessionChanged();
     });
     if (id != null) {
-      unawaited(_commitMute(engine!, track, id, value, previous));
+      _queueMixerAction(_commitMute(engine!, track, id, value, previous));
     }
   }
 
