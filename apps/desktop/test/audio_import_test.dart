@@ -331,6 +331,30 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('beat snapping can be disabled for free clip placement',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    await tester.tap(find.byTooltip('Snap to beats (on)'));
+    await tester.pumpAndSettle();
+    final clip = tester.widget<ClipTile>(importedClip).clip;
+    await tester.ensureVisible(importedClip);
+    await tester.dragFrom(
+      tester.getTopLeft(importedClip) + const Offset(20, 20),
+      const Offset(150, 0),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    final beatSeconds = 60 / 92;
+    expect(
+      (clip.startSeconds / beatSeconds).round() * beatSeconds,
+      isNot(closeTo(clip.startSeconds, 1e-6)),
+    );
+    expect(engine.calls.last, startsWith('start:1:'));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('picker cancellation leaves transport and inventory untouched',
       (tester) async {
     final engine = FakeEngine();

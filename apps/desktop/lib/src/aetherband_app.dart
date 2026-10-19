@@ -122,6 +122,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   bool _trackOperationPending = false;
   bool _importingAudio = false;
   bool _isRecording = false;
+  bool _snapToBeat = true;
   String? _recordingPath;
   double _recordingStartSeconds = 0;
   double _zoom = 1;
@@ -1209,7 +1210,10 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     final pixelsPerSecond = timelinePixelsPerSecond(_performance.tempo);
     final beatSeconds = 60 / _performance.tempo;
     final unsnapped = clip.startSeconds + deltaPx / _zoom / pixelsPerSecond;
-    final next = ((unsnapped / beatSeconds).round() * beatSeconds)
+    final positioned = _snapToBeat
+        ? (unsnapped / beatSeconds).round() * beatSeconds
+        : unsnapped;
+    final next = positioned
         .clamp(0.0, 3600.0)
         .toDouble();
     setState(() {
@@ -1628,6 +1632,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                                   zoom: _zoom,
                                   onZoomChanged: (value) =>
                                       setState(() => _zoom = value),
+                                  snapToBeat: _snapToBeat,
+                                  onSnapChanged: (value) =>
+                                      setState(() => _snapToBeat = value),
                                   browserOpen: _browserOpen,
                                   onBrowser: () => setState(
                                       () => _browserOpen = !_browserOpen),
@@ -2115,6 +2122,8 @@ class _TimelineToolbar extends StatelessWidget {
     required this.selectedTrack,
     required this.zoom,
     required this.onZoomChanged,
+    required this.snapToBeat,
+    required this.onSnapChanged,
     required this.browserOpen,
     required this.onBrowser,
     required this.onImport,
@@ -2124,6 +2133,8 @@ class _TimelineToolbar extends StatelessWidget {
   final String selectedTrack;
   final double zoom;
   final ValueChanged<double> onZoomChanged;
+  final bool snapToBeat;
+  final ValueChanged<bool> onSnapChanged;
   final bool browserOpen;
   final VoidCallback onBrowser;
   final VoidCallback? onImport;
@@ -2170,6 +2181,14 @@ class _TimelineToolbar extends StatelessWidget {
           const SizedBox(width: 12),
           Container(width: 1, height: 20, color: AetherColors.raised),
           const SizedBox(width: 12),
+          IconButton(
+            tooltip: snapToBeat ? 'Snap to beats (on)' : 'Snap to beats (off)',
+            onPressed: () => onSnapChanged(!snapToBeat),
+            visualDensity: VisualDensity.compact,
+            color: snapToBeat ? AetherColors.sage : AetherColors.secondaryText,
+            icon: const Icon(Icons.grid_on, size: 16),
+          ),
+          const SizedBox(width: 4),
           const Icon(Icons.layers_outlined, size: 15, color: AetherColors.sage),
           const SizedBox(width: 6),
           Expanded(
