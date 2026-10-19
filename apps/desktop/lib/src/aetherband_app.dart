@@ -113,6 +113,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   bool _trackOperationPending = false;
   bool _importingAudio = false;
   double _zoom = 1;
+  int? _selectedOutputDeviceIndex;
+  String? _selectedOutputDeviceName;
 
   TrackModel? get _selectedTrack =>
       _tracks.where((track) => track.id == _selectedTrackId).firstOrNull;
@@ -829,6 +831,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       case 'file.export':
         unawaited(_exportMixdown());
         return;
+      case 'audio.output':
+        unawaited(_chooseOutputDevice());
+        return;
       case 'view.browser':
         setState(() => _browserOpen = !_browserOpen);
         return;
@@ -868,6 +873,73 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
             duration: const Duration(seconds: 2),
           ),
         );
+    }
+  }
+
+  Future<void> _chooseOutputDevice() async {
+    final engine = _engine;
+    if (engine == null || engine is! AudioOutputEngine) {
+      _showFeatureUnavailable('Windows audio output selection');
+      return;
+    }
+    final outputEngine = engine as AudioOutputEngine;
+    try {
+      final devices = await outputEngine.getOutputDevices();
+      if (!mounted) return;
+      if (devices.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No Windows audio output devices were found.'),
+        ));
+        return;
+      }
+      final selected = await showDialog<int>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Audio Output'),
+          content: SizedBox(
+            width: 420,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final device in devices)
+                  ListTile(
+                    title: Text(device.name),
+                    subtitle: Text(
+                        '${device.sampleRateHz} Hz · ${device.channels} channels${device.isDefault ? ' · Windows default' : ''}'),
+                    trailing: _selectedOutputDeviceIndex == device.index ||
+                            (_selectedOutputDeviceIndex == null &&
+                                device.isDefault)
+                        ? const Icon(Icons.check, color: AetherColors.sage)
+                        : null,
+                    onTap: () => Navigator.pop(dialogContext, device.index),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+          ],
+        ),
+      );
+      if (selected == null) return;
+      await outputEngine.selectOutputDevice(selected);
+      final device = devices.firstWhere((value) => value.index == selected);
+      if (!mounted) return;
+      setState(() {
+        _selectedOutputDeviceIndex = selected;
+        _selectedOutputDeviceName = device.name;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Audio output: ${device.name}')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not change audio output: $error')),
+      );
     }
   }
 
@@ -1275,6 +1347,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                       isPlaying: _telemetry.isPlaying,
                       engineError: _engineError,
                       loadedTrackCount: _nativeTrackIds.length,
+                      outputDeviceName: _selectedOutputDeviceName,
                     ),
                   ],
                 );
@@ -1344,6 +1417,9 @@ class _MenuBar extends StatelessWidget {
       _MenuAction('transport.record', 'Toggle Recording', 'R'),
       _MenuAction('record.metronome', 'Toggle Metronome', 'K'),
       _MenuAction('record.countIn', 'Count-in Settings…'),
+    ],
+    'Audio': [
+      _MenuAction('audio.output', 'Choose Output Device…'),
     ],
     'Mix': [
       _MenuAction('view.mixer', 'Show / Hide Mixer'),
@@ -1764,12 +1840,14 @@ class _StatusBar extends StatelessWidget {
     required this.isPlaying,
     required this.engineError,
     required this.loadedTrackCount,
+    required this.outputDeviceName,
   });
 
   final bool engineConnected;
   final bool isPlaying;
   final Object? engineError;
   final int loadedTrackCount;
+  final String? outputDeviceName;
 
   @override
   Widget build(BuildContext context) {
@@ -1797,13 +1875,26 @@ class _StatusBar extends StatelessWidget {
             engineConnected
                 ? (loadedTrackCount > 0
                     ? '$loadedTrackCount AUDIO ${loadedTrackCount == 1 ? 'TRACK' : 'TRACKS'} LOADED · ${isPlaying ? 'PLAYING' : 'READY'}'
-                    : 'NATIVE ENGINE CONNECTED · DEMO CLIPS ONLY')
-                : 'ENGINE UNAVAILABLE · DEMO CLIPS ONLY',
+                    : 'EMPTY SESSION · ${isPlaying ? 'PLAYING' : 'READY'}')
+                : 'ENGINE UNAVAILABLE',
             style: const TextStyle(
                 color: AetherColors.secondaryText,
                 fontSize: 8,
                 letterSpacing: 0.4),
           ),
+          if (outputDeviceName != null) ...[
+            const SizedBox(width: 10),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 180),
+              child: Text(
+                'OUTPUT · $outputDeviceName',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    color: AetherColors.sage, fontSize: 8, letterSpacing: 0.4),
+              ),
+            ),
+          ],
           if (engineError != null) ...[
             const SizedBox(width: 8),
             const Icon(Icons.warning_amber_rounded,
@@ -1811,7 +1902,7 @@ class _StatusBar extends StatelessWidget {
           ],
           const SizedBox(width: 8),
           const Text(
-            'WINDOWS / macOS',
+            'WINDOWS ONLY',
             style: TextStyle(
                 color: AetherColors.sage, fontSize: 8, letterSpacing: 0.5),
           ),

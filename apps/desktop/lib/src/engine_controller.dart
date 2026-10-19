@@ -33,6 +33,22 @@ class EngineTelemetry {
   final bool isPlaying;
 }
 
+class AudioOutputDevice {
+  const AudioOutputDevice({
+    required this.index,
+    required this.name,
+    required this.sampleRateHz,
+    required this.channels,
+    required this.isDefault,
+  });
+
+  final int index;
+  final String name;
+  final int sampleRateHz;
+  final int channels;
+  final bool isDefault;
+}
+
 abstract class EngineController {
   Stream<EngineTelemetry> get telemetry;
   Future<void> play();
@@ -58,4 +74,10 @@ abstract interface class PerformanceEngine {
 
 abstract interface class ExportEngine {
   Future<void> exportWav(String path);
+}
+
+/// Optional native output-device discovery and selection.
+abstract interface class AudioOutputEngine {
+  Future<List<AudioOutputDevice>> getOutputDevices();
+  Future<void> selectOutputDevice(int index);
 }

@@ -27,6 +27,15 @@ void main() {
     final engine =
         await NativeEngineController.create(libraryPath: libraryPath);
     try {
+      final outputDevices = await engine.getOutputDevices();
+      expect(outputDevices, isNotEmpty);
+      expect(outputDevices.any((device) => device.isDefault), isTrue);
+      expect(outputDevices.every((device) => device.name.isNotEmpty), isTrue);
+      final defaultOutput =
+          outputDevices.firstWhere((device) => device.isDefault);
+      await engine.selectOutputDevice(defaultOutput.index);
+      expect(defaultOutput.sampleRateHz, greaterThan(0));
+
       final track = await engine.loadTrack(file.path);
       expect(track.totalFrames, 88200);
       expect(track.sampleRateHz, 44100);

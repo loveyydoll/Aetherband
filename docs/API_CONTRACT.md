@@ -113,7 +113,7 @@ These are current implementation conventions, not yet a single exhaustive typed 
 - Telemetry polling is a bounded, periodic control-side operation; it must not run from a paint/build callback.
 - Stop polling and prevent new control calls before destroying the engine.
 - The audio callback communicates through bounded native queues; it does not call Dart/Flutter.
-- Device selection builds a replacement queue/processor, recreates decoders at the selected output rate, and re-installs existing track IDs plus stored gain/pan/mute settings before committing the new pipeline. This path still requires automated testing and real-device verification; do not call it production-safe until those pass.
+- Device selection builds a replacement queue/processor, recreates decoders at the selected output rate, and re-installs existing track IDs plus stored gain/pan/mute settings before committing the new pipeline. The Windows Flutter Audio menu now enumerates/selects devices through these existing exports; the local WASAPI integration test switches to the enumerated default device and then exercises playback. Physical listening and switching to alternate hardware remain unverified.
 - The Flutter import path rewinds transport, loads the file, queries its metadata and creates a duration-scaled clip only on success. Unknown duration is labelled; imported clips can be moved while stopped at the start and the native scheduler follows their saved position. Real waveforms are unavailable. Engine retry starts a fresh inventory and clears old native clip IDs.
 
 ## Verification checklist
