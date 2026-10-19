@@ -933,7 +933,11 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         _selectedOutputDeviceName = device.name;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Audio output: ${device.name}')),
+        SnackBar(
+          content: Text(
+            'Audio output: ${device.name}. Playback stops and returns to the start when the output changes.',
+          ),
+        ),
       );
     } catch (error) {
       if (!mounted) return;
