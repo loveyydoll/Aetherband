@@ -250,8 +250,7 @@ void main() {
     expect(
         engine.calls.any((call) => call.startsWith('pattern:1:0.0:')), isTrue);
     expect(find.text('HypnoSynth pattern'), findsOneWidget);
-    expect(
-        find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
+    expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
         findsOneWidget);
   });
 
@@ -638,6 +637,45 @@ void main() {
     await tester.tap(find.text('Redo'));
     await tester.pumpAndSettle();
     expect(clip.startSeconds, movedSeconds);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('undo and redo restore a moved HypnoSynth pattern region',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await tester.tap(find.text('Add pattern to arrangement'));
+    await tester.pumpAndSettle();
+    final patternFinder =
+        find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern');
+    final clip = tester.widget<ClipTile>(patternFinder).clip;
+    await tester.ensureVisible(patternFinder);
+    await tester.dragFrom(
+      tester.getTopLeft(patternFinder) + const Offset(20, 20),
+      const Offset(150, 0),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+    final movedSeconds = clip.startSeconds;
+    expect(movedSeconds, greaterThan(0));
+    expect(engine.calls.last, startsWith('pattern:1:$movedSeconds:'));
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, 0);
+    expect(engine.calls.last, startsWith('pattern:1:0.0:'));
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, movedSeconds);
+    expect(engine.calls.last, startsWith('pattern:1:$movedSeconds:'));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });

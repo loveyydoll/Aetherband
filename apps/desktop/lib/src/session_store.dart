@@ -150,8 +150,8 @@ class SavedAudioRegion {
   }
 }
 
-/// A native HypnoSynth track. Synth performance settings and the current
-/// sequence remain session-wide until per-track MIDI routing is available.
+/// A HypnoSynth arrangement track. Voice settings remain session-wide; each
+/// track's playable 16-step pattern regions are saved with their positions.
 class SavedInstrumentTrack {
   const SavedInstrumentTrack({
     required this.id,

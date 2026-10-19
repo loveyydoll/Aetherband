@@ -2430,7 +2430,13 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     }
     final nativeId = _nativeIdForClip(clip);
     final engine = _engine;
-    if (nativeId == null || engine == null) return;
+    final sequenceRegionId = _nativeSequenceRegionIds[clip.id];
+    if (engine == null ||
+        (clip.isSequenceRegion &&
+            (sequenceRegionId == null || engine is! SequenceRegionEngine)) ||
+        (!clip.isSequenceRegion && nativeId == null)) {
+      return;
+    }
     _clipPositionTimers.remove(clip.id)?.cancel();
     final edit = _ClipMoveEdit(
       trackId: track.id,
@@ -2438,9 +2444,18 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       beforeSeconds: before,
       afterSeconds: clip.startSeconds,
     );
-    _queueMixerAction(_commitClipStart(
-        engine, track, clip, nativeId, edit.afterSeconds,
-        historyEdit: edit));
+    if (clip.isSequenceRegion) {
+      _queueMixerAction(_commitSequenceRegionPosition(
+          engine as SequenceRegionEngine,
+          clip,
+          sequenceRegionId!,
+          edit.afterSeconds,
+          historyEdit: edit));
+    } else {
+      _queueMixerAction(_commitClipStart(
+          engine, track, clip, nativeId!, edit.afterSeconds,
+          historyEdit: edit));
+    }
   }
 
   Future<void> _undoClipMove() => _applyEditHistory(redo: false);
@@ -2506,7 +2521,15 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     final clip =
         track?.clips.where((item) => item.id == edit.clipId).firstOrNull;
     final nativeId = clip == null ? null : _nativeIdForClip(clip);
-    if (engine == null || track == null || clip == null || nativeId == null) {
+    final sequenceRegionId =
+        clip == null ? null : _nativeSequenceRegionIds[clip.id];
+    final sequenceEngine = engine is SequenceRegionEngine;
+    if (engine == null ||
+        track == null ||
+        clip == null ||
+        (clip.isSequenceRegion &&
+            (!sequenceEngine || sequenceRegionId == null)) ||
+        (!clip.isSequenceRegion && nativeId == null)) {
       _showEngineUnavailable();
       return;
     }
@@ -2518,12 +2541,20 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       _markSessionChanged();
     });
     try {
-      await engine.setTrackStartSeconds(nativeId, next);
+      if (clip.isSequenceRegion) {
+        await (engine as SequenceRegionEngine)
+            .setSequenceRegion(sequenceRegionId!, next, clip.sequenceNotes);
+      } else {
+        await engine.setTrackStartSeconds(nativeId!, next);
+      }
       _confirmedClipStarts[clip.id] = next;
       source.removeLast();
       destination.add(edit);
     } catch (error) {
-      if (mounted && _nativeIdForClip(clip) == nativeId) {
+      final stillRegistered = clip.isSequenceRegion
+          ? _nativeSequenceRegionIds[clip.id] == sequenceRegionId
+          : _nativeIdForClip(clip) == nativeId;
+      if (mounted && stillRegistered) {
         setState(() => clip.startSeconds = previous);
       }
       _reportMixerFailure('Clip move history', error);
@@ -2730,15 +2761,13 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   Future<void> _commitSequenceRegionPosition(
-    SequenceRegionEngine engine,
-    ClipModel clip,
-    int regionId,
-    double seconds,
-  ) async {
+      SequenceRegionEngine engine, ClipModel clip, int regionId, double seconds,
+      {_ClipMoveEdit? historyEdit}) async {
     final previous = _confirmedClipStarts[clip.id] ?? 0;
     try {
       await engine.setSequenceRegion(regionId, seconds, clip.sequenceNotes);
       _confirmedClipStarts[clip.id] = seconds;
+      if (historyEdit != null) _pushHistory(historyEdit);
     } catch (error) {
       if (!mounted) return;
       if (_nativeSequenceRegionIds[clip.id] == regionId &&
