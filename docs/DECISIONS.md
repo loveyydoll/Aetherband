@@ -122,3 +122,17 @@ The audio core uses a bounded SPSC command queue; the UI's immediate timer reset
 - **Decision:** Keep the Dart FFI adapter, but execute it in one long-lived worker isolate. The opaque C ABI handle owns a dedicated Rust control thread that creates and destroys the actual engine. A bounded 64-job standard-library channel carries owned operations and Send results; a per-call reply channel returns success/error. Full/disconnected channels fail. Accepted work drains before shutdown. No new dependency, unsafe Send implementation, audio-buffer transfer or callback lock is introduced.
 - **Consequences:** Native calls remain synchronous for ABI clients and must stay off their UI thread. The extra control-thread hop adds overhead to be profiled; it does not touch the real-time SPSC path. Worker initialization, destruction thread ownership, import/transport and queued shutdown have automated coverage. Forced isolate termination/hot restart and device-loss recovery still require dedicated testing.
 - **References:** [Dart VM thread-pool model](https://dart.googlesource.com/sdk/+/main/runtime/docs/README.md), [CPAL 0.15.3 platform stream](https://github.com/RustAudio/cpal/blob/v0.15.3/src/platform/mod.rs).
+
+
+---
+
+## ADR-008: Native C++ Foundation and DSP Ownership
+
+- **Status:** Accepted for the migration branch; implementation and framework choice remain in progress.
+- **Date:** 2026-10-19
+- **Context:** The project has decided to move away from Flutter/Dart and the Rust-first target architecture. Maintaining a cross-language FFI boundary and UI-first prototyping before proving a complete audio workflow is not the intended long-term direction.
+- **Decision:** Build the target application and audio runtime in C++20 or newer where supported, using CMake. Windows and macOS are required targets. Build an Aetherband-owned DSP architecture with a graph that actually executes audio processing. JUCE is a leading desktop/audio framework candidate but must be validated with a focused cross-platform spike before being treated as final. C# may be introduced only for a concrete justified integration, not as a required core runtime.
+- **Migration constraint:** Keep the existing Rust/C ABI/Flutter/Dart implementation available as a behavioral reference until the C++ replacement meets explicit acceptance criteria. Do not delete the legacy implementation wholesale. Port verified behavior, not source mechanically.
+- **Real-time constraint:** The audio callback must not perform file/network I/O, unpredictable allocation, blocking calls or wait on contended locks. Processor preparation, graph changes and teardown need explicit safe lifecycle rules.
+- **Consequences:** The project must create new C++ build/test infrastructure and port capabilities incrementally. This adds short-term migration work but simplifies the intended target architecture and makes native audio behavior the primary proof point. Feature claims must distinguish implementation from platform and hardware verification.
+- **Supersedes:** ADR-002's decision to make Rust the audio/DSP core and Flutter/Dart the target desktop frontend. Historical ADRs remain for context but do not describe the current target architecture.
