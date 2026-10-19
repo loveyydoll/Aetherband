@@ -1,7 +1,7 @@
 # Aetherband — Project State Handoff
 
 **Snapshot date:** 2026-10-19
-**Evidence level:** Windows Rust tests, C ABI build, core Clippy and Dart analysis pass for the current branch. An opt-in WASAPI smoke test produced nonzero HypnoSynth callback samples and shut down cleanly. Flutter test execution is blocked locally by SDK lockfile access; speaker listening/loopback capture is not independently verified.
+**Evidence level:** Windows Rust tests, C ABI build, core Clippy and Dart analysis pass for the current branch. An opt-in WASAPI smoke test produced nonzero HypnoSynth callback samples and shut down cleanly. Flutter analysis and all 30 tests pass locally; a separate Windows Dart FFI integration test passes against the release DLL; speaker listening/loopback capture is not independently verified.
 
 ## Product identity
 
@@ -41,7 +41,7 @@ Do not reintroduce C#/.NET/Avalonia as a second desktop frontend. Verify current
 
 See [Feature Tracker](FEATURE_TRACKER.md) for the living backlog. Initial order:
 1. Listen to HypnoSynth and imported audio through actual Windows output hardware.
-2. Add real stereo export and input recording as separately tested vertical slices.
+2. Verify input recording with a real Windows microphone/line-in device and listen to output through speakers.
 3. Add waveform/clip editing, undo/redo and MIDI data persistence.
 
 ## Known uncertainty
