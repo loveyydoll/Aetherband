@@ -1,7 +1,7 @@
 # Aetherband — Project State Handoff
 
 **Snapshot date:** 2026-10-19
-**Latest local verification:** PR #33 includes the Windows audio repair, HypnoSynth, and DAW editing foundations. Rust workspace tests, callback-allocation, opt-in WASAPI output, Clippy, the release C ABI DLL, full Dart analysis, and 63 desktop Flutter tests pass locally (one optional hardware integration test skipped). Latest-head CI is running. Physical speaker/headphone listening and real microphone/line-in capture remain unverified.
+**Latest local verification:** PR #33 includes the Windows audio repair, HypnoSynth, and DAW editing foundations. Rust workspace tests, callback-allocation, opt-in WASAPI output, Clippy, the release C ABI DLL, full Dart analysis and all 63 desktop Flutter tests pass locally. The opt-in native integration test also passes against the default Windows output device and reports nonzero arranged-pattern telemetry. Latest-head CI is running. Speaker/headphone audibility and microphone/line-in capture remain unverified.
 
 ## Product identity
 
@@ -46,7 +46,7 @@ See [Feature Tracker](FEATURE_TRACKER.md) for the living backlog. Initial order:
 
 ## Current verification and uncertainty
 
-On 2026-10-19, local verification passed for Rust audio/core/FFI and the complete desktop Flutter suite (63 passed; one optional hardware test skipped). The release DLL emitted nonzero stereo pattern-region samples to the WASAPI callback through a direct Dart FFI test. CI is running for the current PR head. These results do not prove audible output through speakers or successful microphone/line-in capture.
+On 2026-10-19, local verification passed for Rust audio/core/FFI and the complete desktop Flutter suite (63 passed). The opt-in native integration test passed against the default Windows output device and observed nonzero arranged-pattern telemetry; the release DLL also emitted nonzero stereo pattern-region samples to the WASAPI callback through direct Dart FFI. CI is running for the current PR head. These results do not prove speaker/headphone audibility or successful microphone/line-in capture.
 
 PR #33 remains open, mergeable and unmerged. New local edits must be published to the same PR and checked by remote CI; do not infer sound quality or hardware recording from callback/unit tests alone.
 ## Required handoff format
