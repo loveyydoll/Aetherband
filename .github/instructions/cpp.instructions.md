@@ -2,17 +2,19 @@
 applyTo: "**/*.cpp, **/*.cc, **/*.cxx, **/*.hpp, **/*.h, **/CMakeLists.txt"
 ---
 
-# C++ Engineering — Aetherband
+# C++/JUCE Engineering — Aetherband
 
-- Read `AGENTS.md`, `docs/CPP_MIGRATION_PLAN.md`, `docs/ARCHITECTURE.md`, and `docs/PROJECT_STATE.md` before substantial changes.
-- Target C++20 unless a verified compiler/platform constraint requires otherwise.
-- Keep code buildable on Windows and macOS; do not silently add platform-specific assumptions to shared code.
-- Keep UI, session model, media, audio runtime, DSP and instruments in distinct modules with documented interfaces.
-- Treat real-time callback safety as a hard constraint: no file/network I/O, unpredictable allocation, blocking calls, or contended locks in the callback.
-- Prepare processors and buffers off the audio thread and define safe ownership, replacement and teardown.
-- Add deterministic unit tests for DSP and audio-buffer behavior; use offline render tests before hardware-only validation.
-- Validate buffer dimensions, channel layouts, parameter ranges and failure paths explicitly.
-- Do not claim a graph is functional until it actually processes audio.
-- Prefer clear ownership and RAII; avoid hidden global mutable state.
-- Keep third-party dependencies compatible with GPL-3.0-or-later and record significant license or architecture decisions.
-- Report the exact builds/tests run and clearly state if Windows/macOS or hardware testing was unavailable.
+- Read AGENTS.md, docs/ARCHITECTURE.md, docs/CPP_MIGRATION_PLAN.md, and docs/PROJECT_STATE.md before substantial changes.
+- Use C++20 or newer unless a verified platform/compiler constraint requires otherwise.
+- JUCE is the committed native framework. Do not replace it with Flutter, Tauri, or another framework without an explicit owner decision.
+- Keep code buildable on Windows and macOS; validate both independently.
+- Separate UI, session model, media, runtime, DSP, and instruments behind clear contracts.
+- The audio callback must not perform I/O, unpredictable allocation/deallocation, blocking calls, or wait on contended locks.
+- Prepare buffers/processors away from the callback; define safe handoff, ownership, replacement, and teardown.
+- Do not assume JUCE abstractions automatically make code real-time safe.
+- Add deterministic buffer/DSP/offline-audio tests and integration/device tests for lifecycle behavior.
+- Validate buffer dimensions, channel layouts, parameter ranges, graph connections, and failure paths.
+- Do not claim a graph works unless it processes samples.
+- Prefer RAII and explicit ownership; avoid hidden mutable global state.
+- Review JUCE version, modules, licence/distribution obligations, and all third-party dependencies.
+- Report exact commands, tests, outcomes, OSes, and device coverage; state what was not tested.
