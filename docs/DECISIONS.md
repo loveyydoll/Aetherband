@@ -1,138 +1,64 @@
-# Architecture Decision Records (ADRs): Aetherband
+# Aetherband Architecture Decision Records
 
-## Index of Decisions
+An accepted ADR is binding until a later accepted ADR explicitly supersedes it. Historical decisions remain for context and must not be mistaken for current guidance.
 
-- [ADR-001: Desktop-First Architecture with Decoupled Mobile Companion](#adr-001-desktop-first-architecture-with-decoupled-mobile-companion)
-- [ADR-002: Rust Audio/DSP Core with Flutter Desktop Frontend](#adr-002-rust-audiodsp-core-with-flutter-desktop-frontend)
-- [ADR-003: Lock-Free SPSC Ring Buffers for Audio Thread Synchronization](#adr-003-lock-free-spsc-ring-buffers-for-audio-thread-synchronization)
-- [ADR-004: Versioned C ABI with Dart FFI](#adr-004-versioned-c-abi-with-dart-ffi)
-- [ADR-005: Encapsulated AudioBackend Trait over Direct cpal Coupling](#adr-005-encapsulated-audiobackend-trait-over-direct-cpal-coupling)
-- [ADR-006: Bundled Zip Container (.dawproject) for Project Files](#adr-006-bundled-zip-container-dawproject-for-project-files)
-- [ADR-007: High-Quality Internal DSP First; Defer External Plugin Hosting](#adr-007-high-quality-internal-dsp-first-defer-external-plugin-hosting)
+## ADR-001: Desktop-first product
 
----
+**Status:** Accepted · **Date:** 2026-10-16
 
-### ADR-001: Desktop-First Architecture with Decoupled Mobile Companion
-- **Status:** Approved
-- **Date:** 2026-10-16
-- **Context:**
-  The project vision encompasses desktop platforms (Windows, macOS) and mobile/touch platforms (iOS, iPadOS, Android). Building a single UI to serve both paradigms creates ergonomic compromises: desktop users need high information density, multi-window support, and precision mouse editing, while mobile users need large touch targets and simplified single-window workflows. Additionally, developing iOS on Windows requires remote macOS build agents.
-- **Decision:**
-  Develop Aetherband as a dedicated desktop-first flagship application for Windows and macOS. The audio engine (`daw_core`) and project format (`.dawproject`) remain 100% platform-agnostic. A separate mobile companion DAW for iOS/iPadOS and Android will be developed later, reusing the proven Rust core.
-- **Consequences:**
-  - Dramatically accelerates desktop development; eliminates iOS build overhead from Windows.
-  - Allows the desktop UI to be optimized specifically for keyboard/mouse without touch compromises.
-  - Guarantees seamless project sharing when the mobile app is built.
+Windows and macOS are the required initial desktop targets. Prioritize dense editing, keyboard/mouse workflows, native device behavior, and reliable packaging. Mobile applications are out of scope unless explicitly reconsidered later.
 
----
+## ADR-002: Rust engine and Flutter UI
 
-### ADR-002: Rust Audio/DSP Core with Flutter Desktop Frontend
-- **Status:** Approved (replaces the original C# / Avalonia decision)
-- **Original date:** 2026-10-16
-- **Updated:** 2026-10-17
-- **Context:**
-  The initial UI decision selected C# / Avalonia. The project owner subsequently chose Flutter for the full-scale Windows/macOS desktop UI. The audio engine must remain independent of the presentation framework.
-- **Decision:**
-  Keep audio I/O, decoding, mixing, DSP, and real-time scheduling in Rust. Use Flutter/Dart for the desktop UI and Dart FFI over the versioned C ABI. The former Avalonia frontend has been removed from the desktop application.
-- **Consequences:**
-  - One maintained desktop UI instead of duplicated frontend implementations.
-  - Custom arrangement/mixer presentation remains in Dart; real-time audio stays native.
-  - Native FFI ownership, ABI versioning, lifecycle, and cross-platform packaging require explicit tests.
-  - This decision does not claim the Flutter frontend has feature parity or that real playback is fully verified.
+**Status:** Superseded by ADR-008 · **Original dates:** 2026-10-16 to 2026-10-17
 
----
+The earlier architecture used a Rust audio engine and Flutter/Dart UI with a C ABI/Dart FFI boundary. It remains migration-reference material only, not the target stack.
 
-### ADR-003: Lock-Free SPSC Ring Buffers for Audio Thread Synchronization
-- **Status:** Approved
-- **Date:** 2026-10-16
-- **Context:**
-  The UI thread and audio thread must exchange commands (Play, Stop, Gain changes) and telemetry (metering, playhead positions). Using standard OS mutexes (`std::sync::Mutex`) risks priority inversion, leading to audio dropouts (xruns).
-- **Decision:**
-  Use wait-free Single-Producer Single-Consumer (SPSC) ring buffers (`rtrb` crate) for all cross-thread communication. The audio callback never acquires a lock or waits on a worker thread.
-- **Consequences:**
-  - Guaranteed real-time audio thread execution.
-  - Commands and telemetry must be structured as fixed-size value types.
-  - Telemetry is lossy (old frames dropped if UI is sluggish), which is acceptable for meters.
+## ADR-003: Real-time thread safety
 
----
+**Status:** Accepted · **Date:** 2026-10-16
 
-### ADR-004: Versioned C ABI with Dart FFI
-- **Status:** Approved
-- **Date:** 2026-10-17
-- **Context:**
-  Flutter needs a stable, testable boundary to the native Rust engine. Managed UI code must not depend on private Rust implementation details, and ABI drift must be detected before creating native resources.
-- **Decision:**
-  Keep the flat `extern "C"` ABI in `bindings/c_abi/src/lib.rs`; consume it from Flutter through Dart `dart:ffi`. Validate `daw_get_api_version()` before other calls, mirror `#[repr(C)]` layouts exactly, check return codes, and serialize access to each engine handle. The former `csbindgen` C# binding generation is no longer part of the desktop build.
-- **Consequences:**
-  - The C ABI remains the stable boundary between Rust and Flutter.
-  - Dart FFI bindings must be tested against the actual Rust exports and native library on Windows/macOS.
-  - API contract changes must update Rust, Dart and documentation together; do not assume `csbindgen` generates Dart bindings.
+The audio callback must have bounded, predictable work. It must not perform I/O, unpredictable allocation/deallocation, blocking synchronization, or wait for worker/UI threads. Use a bounded command/telemetry strategy with documented overflow behavior. Verify the concrete implementation; no queue is safe merely because it is called lock-free.
 
----
+## ADR-004: Legacy C ABI and Dart FFI
 
-### ADR-005: Encapsulated AudioBackend Trait over Direct cpal Coupling
-- **Status:** Approved
-- **Date:** 2026-10-16
-- **Context:**
-  `cpal` is a low-level cross-platform audio stream wrapper, but professional audio interfaces on Windows often require ASIO for sub-5ms latency. Direct coupling to `cpal` would make swapping backends difficult.
-- **Decision:**
-  Abstract device management and stream callbacks behind an internal `AudioBackend` trait in Rust. Provide `CpalBackend` as the primary implementation, leaving a clean integration point for an optional `AsioBackend`.
-- **Consequences:**
-  - Engine logic is fully decoupled from the audio driver library.
-  - Headless unit testing can use a `DummyAudioBackend` to simulate hardware callbacks at arbitrary speeds without real sound cards.
+**Status:** Historical; superseded for target development by ADR-008
 
----
+The versioned C ABI and Dart FFI belong to the old Rust/Flutter integration. Do not expand them for new target features. Keep only what is required for legacy maintenance and behavioral comparison.
 
-### ADR-006: Bundled Zip Container (.dawproject) for Project Files
-- **Status:** Approved
-- **Date:** 2026-10-16
-- **Context:**
-  Musicians frequently encounter "missing audio file" errors when moving project files between computers because audio files were linked via absolute filesystem paths.
-- **Decision:**
-  Package project files as standard ZIP archives (`.dawproject`) containing `project.json` for timeline metadata and an `assets/` directory containing all recorded and imported audio files.
-- **Consequences:**
-  - Projects are 100% self-contained and effortlessly shared.
-  - Standard ZIP compression saves disk space for project metadata.
-  - Can be inspected or recovered using standard archive tools.
+## ADR-005: Legacy Rust audio backend
 
----
+**Status:** Historical; superseded for target development by ADR-008
 
-### ADR-007: High-Quality Internal DSP First; Defer External Plugin Hosting
-- **Status:** Approved
-- **Date:** 2026-10-16
-- **Context:**
-  Third-party plugin hosting (VST3, AU) introduces severe complexity: out-of-process sandboxing, Steinberg SDK licensing, unstable third-party GUI windows, and unexpected plugin crashes.
-- **Decision:**
-  Focus initial phases on rock-solid internal DSP: subtractive synthesizer, drum sampler, parametric EQ, compressor, delay, and reverb. Defer third-party plugin hosting to Phase 5, adopting the open **CLAP** standard first, followed by VST3.
-- **Consequences:**
-  - Guarantees immediate host stability and zero licensing hurdles for the MVP.
-  - Users get a complete, functional out-of-the-box production experience without requiring paid plugins.
+The old Rust implementation abstracted device access around CPAL. The C++/JUCE target must define its own device lifecycle and error contracts. Reuse useful behavior, not Rust interfaces or dependencies by default.
 
+## ADR-006: Legacy JSON session format
 
-## Current implementation note — transport stabilization (2026-10-16)
+**Status:** Historical implementation; native format not yet finalized
 
-The audio core uses a bounded SPSC command queue; the UI's immediate timer reset is not authoritative evidence that Stop was processed. A runtime report indicates that audio continues after the visible playhead resets. This is a bug to diagnose, not an intended design decision. Add regression tests and verify command acceptance, callback handling, output silence, decoder rewind/restart, and UI telemetry before closing the stabilization gate. Do not add locks, blocking calls, or heap allocation to the audio callback to work around it.
+The old Flutter application has an early-alpha .aetherband.json format with imported audio references and basic track controls. It is not a committed native project format. Audit compatibility needs before selecting the native schema.
 
----
+## ADR-007: Internal DSP first; plugin hosting later
 
-### ADR-008: Native Control Work Outside Flutter with Explicit OS-Thread Ownership
-- **Status:** Implemented; macOS runtime verification pending
-- **Date:** 2026-10-18
-- **Context:** Import probes files synchronously and Stop joins/restarts decoders. Calling these on Flutter's UI isolate stalls presentation. A Dart isolate serializes calls but does not ensure OS-thread affinity; CPAL 0.15's platform stream is non-Send. Moving raw engine ownership between scheduler threads would rely on unsupported assumptions.
-- **Decision:** Keep the Dart FFI adapter, but execute it in one long-lived worker isolate. The opaque C ABI handle owns a dedicated Rust control thread that creates and destroys the actual engine. A bounded 64-job standard-library channel carries owned operations and Send results; a per-call reply channel returns success/error. Full/disconnected channels fail. Accepted work drains before shutdown. No new dependency, unsafe Send implementation, audio-buffer transfer or callback lock is introduced.
-- **Consequences:** Native calls remain synchronous for ABI clients and must stay off their UI thread. The extra control-thread hop adds overhead to be profiled; it does not touch the real-time SPSC path. Worker initialization, destruction thread ownership, import/transport and queued shutdown have automated coverage. Forced isolate termination/hot restart and device-loss recovery still require dedicated testing.
-- **References:** [Dart VM thread-pool model](https://dart.googlesource.com/sdk/+/main/runtime/docs/README.md), [CPAL 0.15.3 platform stream](https://github.com/RustAudio/cpal/blob/v0.15.3/src/platform/mod.rs).
+**Status:** Accepted · **Date:** 2026-10-17
 
+Establish a reliable internal processing graph, instruments, effects, and project workflow before committing to external plugin hosting. Evaluate plugin formats after the core runtime is stable. This does not prohibit reuse of compatible DSP algorithms.
 
----
+## ADR-008: Native C++ application and JUCE framework
 
-## ADR-008: Native C++ Foundation and DSP Ownership
+**Status:** Accepted · **Date:** 2026-10-19
 
-- **Status:** Accepted for the migration branch; implementation and framework choice remain in progress.
-- **Date:** 2026-10-19
-- **Context:** The project has decided to move away from Flutter/Dart and the Rust-first target architecture. Maintaining a cross-language FFI boundary and UI-first prototyping before proving a complete audio workflow is not the intended long-term direction.
-- **Decision:** Build the target application and audio runtime in C++20 or newer where supported, using CMake. Windows and macOS are required targets. Build an Aetherband-owned DSP architecture with a graph that actually executes audio processing. JUCE is a leading desktop/audio framework candidate but must be validated with a focused cross-platform spike before being treated as final. C# may be introduced only for a concrete justified integration, not as a required core runtime.
-- **Migration constraint:** Keep the existing Rust/C ABI/Flutter/Dart implementation available as a behavioral reference until the C++ replacement meets explicit acceptance criteria. Do not delete the legacy implementation wholesale. Port verified behavior, not source mechanically.
-- **Real-time constraint:** The audio callback must not perform file/network I/O, unpredictable allocation, blocking calls or wait on contended locks. Processor preparation, graph changes and teardown need explicit safe lifecycle rules.
-- **Consequences:** The project must create new C++ build/test infrastructure and port capabilities incrementally. This adds short-term migration work but simplifies the intended target architecture and makes native audio behavior the primary proof point. Feature claims must distinguish implementation from platform and hardware verification.
-- **Supersedes:** ADR-002's decision to make Rust the audio/DSP core and Flutter/Dart the target desktop frontend. Historical ADRs remain for context but do not describe the current target architecture.
+**Context:** The project owner has committed to C++ as the foundation and JUCE as the framework.
+
+**Decision:**
+1. C++20 or newer is the primary language for the application, runtime, DSP, media systems, and instruments.
+2. JUCE is the committed framework for the native desktop UI and audio/platform integration.
+3. CMake is the build system.
+4. Windows and macOS are mandatory targets.
+5. Aetherband owns DSP graph execution, processor lifecycle, routing, parameter/automation behavior, transport semantics, and offline-rendering rules.
+6. JUCE is infrastructure, not the engine's identity. Compatible external algorithms and libraries may be used where appropriate.
+7. Rust, the old C ABI/Dart FFI, Flutter, and Dart are migration references only. Preserve them until the native replacement passes acceptance criteria; do not delete them wholesale.
+8. C# is not part of the planned core. Another language requires a concrete, approved use case.
+9. Verify the exact JUCE version, modules, licence obligations, packaging, and dependency compatibility before release.
+
+**Consequences:** New product work targets C++/JUCE. First prove a minimal application builds and launches on both platforms, enumerates devices, plays a known signal, and closes safely. The existing C++ buffer/mixer foundation is not a working DAW.
