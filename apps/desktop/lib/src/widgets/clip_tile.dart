@@ -11,6 +11,8 @@ class ClipTile extends StatelessWidget {
     required this.isSelected,
     required this.onTap,
     required this.onMove,
+    required this.onMoveStart,
+    required this.onMoveEnd,
     super.key,
   });
 
@@ -18,6 +20,8 @@ class ClipTile extends StatelessWidget {
   final bool isSelected;
   final VoidCallback onTap;
   final ValueChanged<double> onMove;
+  final VoidCallback onMoveStart;
+  final VoidCallback onMoveEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +39,9 @@ class ClipTile extends StatelessWidget {
           : '${clip.title} · ${duration == null ? 'Duration unknown' : '${duration.toStringAsFixed(2)} s'} · $waveformStatus',
       child: GestureDetector(
         onTap: onTap,
+        onHorizontalDragStart: (_) => onMoveStart(),
         onHorizontalDragUpdate: (details) => onMove(details.delta.dx),
+        onHorizontalDragEnd: (_) => onMoveEnd(),
         child: Container(
           height: 50,
           decoration: BoxDecoration(

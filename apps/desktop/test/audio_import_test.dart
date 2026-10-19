@@ -284,6 +284,40 @@ void main() {
     expect(engine.disposeCount, 1);
   });
 
+  testWidgets('undo and redo restore a moved audio clip in the engine',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    final clip = tester.widget<ClipTile>(importedClip).clip;
+    await tester.ensureVisible(importedClip);
+    await tester.dragFrom(
+      tester.getTopLeft(importedClip) + const Offset(20, 20),
+      const Offset(150, 0),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+    final movedSeconds = clip.startSeconds;
+    expect(movedSeconds, greaterThan(0));
+    expect(engine.calls.last, startsWith('start:1:'));
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo Clip Move'));
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, 0);
+    expect(engine.calls.last, 'start:1:0.0');
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Redo Clip Move'));
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, movedSeconds);
+    expect(engine.calls.last, 'start:1:$movedSeconds');
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('picker cancellation leaves transport and inventory untouched',
       (tester) async {
     final engine = FakeEngine();

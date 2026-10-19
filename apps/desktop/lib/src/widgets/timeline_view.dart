@@ -17,6 +17,8 @@ class TimelineView extends StatelessWidget {
     required this.onTrackSelected,
     required this.onClipSelected,
     required this.onClipMoved,
+    required this.onClipMoveStarted,
+    required this.onClipMoveFinished,
     required this.onMuteChanged,
     required this.onSoloChanged,
     required this.onVolumeChanged,
@@ -32,6 +34,8 @@ class TimelineView extends StatelessWidget {
   final ValueChanged<TrackModel> onTrackSelected;
   final void Function(TrackModel, ClipModel) onClipSelected;
   final void Function(TrackModel, ClipModel, double) onClipMoved;
+  final void Function(TrackModel, ClipModel) onClipMoveStarted;
+  final void Function(TrackModel, ClipModel) onClipMoveFinished;
   final void Function(TrackModel, bool) onMuteChanged;
   final void Function(TrackModel, bool) onSoloChanged;
   final void Function(TrackModel, double) onVolumeChanged;
@@ -48,8 +52,8 @@ class TimelineView extends StatelessWidget {
             math.max(1400.0, constraints.maxWidth / zoom).toDouble();
         final clipEnd = tracks.expand((track) => track.clips).fold<double>(
               0,
-              (end, clip) =>
-              math.max(end, clip.timelineLeft(tempo) + clip.timelineWidth(tempo)),
+              (end, clip) => math.max(
+                  end, clip.timelineLeft(tempo) + clip.timelineWidth(tempo)),
             );
         final contentWidth = math.max(baseWidth, clipEnd + 84) * zoom;
         final availableHeight = constraints.hasBoundedHeight
@@ -140,6 +144,10 @@ class TimelineView extends StatelessWidget {
                                         onClipSelected(track, clip),
                                     onClipMoved: (clip, dx) =>
                                         onClipMoved(track, clip, dx),
+                                    onClipMoveStarted: (clip) =>
+                                        onClipMoveStarted(track, clip),
+                                    onClipMoveFinished: (clip) =>
+                                        onClipMoveFinished(track, clip),
                                   ),
                               ],
                             ),
@@ -198,7 +206,8 @@ class _TrackHeader extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(9, 5, 7, 4),
           decoration: BoxDecoration(
             border: Border(
-              right: BorderSide(color: track.color.withValues(alpha: 0.8), width: 3),
+              right: BorderSide(
+                  color: track.color.withValues(alpha: 0.8), width: 3),
               bottom: const BorderSide(color: AetherColors.raised, width: 0.7),
             ),
           ),
@@ -213,13 +222,19 @@ class _TrackHeader extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: selected ? AetherColors.paper : AetherColors.paper.withValues(alpha: 0.9),
+                        color: selected
+                            ? AetherColors.paper
+                            : AetherColors.paper.withValues(alpha: 0.9),
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
-                  Text(track.kind, style: const TextStyle(color: AetherColors.secondaryText, fontSize: 8, letterSpacing: 0.6)),
+                  Text(track.kind,
+                      style: const TextStyle(
+                          color: AetherColors.secondaryText,
+                          fontSize: 8,
+                          letterSpacing: 0.6)),
                 ],
               ),
               const SizedBox(height: 4),
@@ -228,20 +243,31 @@ class _TrackHeader extends StatelessWidget {
                 height: 23,
                 child: Row(
                   children: [
-                    _MiniButton(label: 'M', active: track.muted, color: AetherColors.magenta, onTap: onMute),
+                    _MiniButton(
+                        label: 'M',
+                        active: track.muted,
+                        color: AetherColors.magenta,
+                        onTap: onMute),
                     const SizedBox(width: 3),
-                    _MiniButton(label: 'S', active: track.solo, color: AetherColors.sage, onTap: onSolo),
+                    _MiniButton(
+                        label: 'S',
+                        active: track.solo,
+                        color: AetherColors.sage,
+                        onTap: onSolo),
                     const SizedBox(width: 5),
                     Expanded(
                       child: Theme(
                         data: Theme.of(context).copyWith(
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
                         ),
                         child: SliderTheme(
                           data: SliderTheme.of(context).copyWith(
                             trackHeight: 2,
-                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4),
-                            overlayShape: const RoundSliderOverlayShape(overlayRadius: 7),
+                            thumbShape: const RoundSliderThumbShape(
+                                enabledThumbRadius: 4),
+                            overlayShape:
+                                const RoundSliderOverlayShape(overlayRadius: 7),
                           ),
                           child: SizedBox(
                             height: 23,
@@ -336,7 +362,8 @@ class _TimelineRuler extends StatelessWidget {
               ),
               child: Text(
                 (i + 1).toString().padLeft(2, '0'),
-                style: const TextStyle(color: AetherColors.secondaryText, fontSize: 10),
+                style: const TextStyle(
+                    color: AetherColors.secondaryText, fontSize: 10),
               ),
             ),
         ],
@@ -355,6 +382,8 @@ class _TimelineLane extends StatelessWidget {
     required this.selectedClipId,
     required this.onClipSelected,
     required this.onClipMoved,
+    required this.onClipMoveStarted,
+    required this.onClipMoveFinished,
     super.key,
   });
 
@@ -366,6 +395,8 @@ class _TimelineLane extends StatelessWidget {
   final String? selectedClipId;
   final ValueChanged<ClipModel> onClipSelected;
   final void Function(ClipModel, double) onClipMoved;
+  final ValueChanged<ClipModel> onClipMoveStarted;
+  final ValueChanged<ClipModel> onClipMoveFinished;
 
   @override
   Widget build(BuildContext context) {
@@ -387,6 +418,8 @@ class _TimelineLane extends StatelessWidget {
                 isSelected: clip.id == selectedClipId,
                 onTap: () => onClipSelected(clip),
                 onMove: (dx) => onClipMoved(clip, dx),
+                onMoveStart: () => onClipMoveStarted(clip),
+                onMoveEnd: () => onClipMoveFinished(clip),
               ),
             ),
         ],

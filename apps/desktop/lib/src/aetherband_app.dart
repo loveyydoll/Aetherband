@@ -84,6 +84,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   final Map<String, String> _nativeTrackSources = <String, String>{};
   final Map<String, Timer> _clipPositionTimers = <String, Timer>{};
   final Map<String, double> _confirmedClipStarts = <String, double>{};
+  final Map<String, double> _clipMoveStarts = <String, double>{};
+  final List<_ClipMoveEdit> _undoClipMoves = <_ClipMoveEdit>[];
+  final List<_ClipMoveEdit> _redoClipMoves = <_ClipMoveEdit>[];
   bool _positionMoveDeniedShown = false;
   final AudioSessionStore _sessionStore = const AudioSessionStore();
   final Set<Future<void>> _mixerActions = <Future<void>>{};
@@ -161,6 +164,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         _tracks.removeWhere((track) => _nativeTrackIds.containsKey(track.id));
         _nativeTrackIds.clear();
         _nativeTrackSources.clear();
+        _clipMoveStarts.clear();
+        _undoClipMoves.clear();
+        _redoClipMoves.clear();
         for (final timer in _clipPositionTimers.values) {
           timer.cancel();
         }
@@ -531,8 +537,11 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
           for (final clip in removedTrack.clips) {
             _clipPositionTimers.remove(clip.id)?.cancel();
             _confirmedClipStarts.remove(clip.id);
+            _clipMoveStarts.remove(clip.id);
           }
         }
+        _undoClipMoves.removeWhere((edit) => edit.trackId == selectedId);
+        _redoClipMoves.removeWhere((edit) => edit.trackId == selectedId);
         _markSessionChanged();
         if (_selectedTrackId == selectedId) {
           _selectedTrackId = _tracks.isEmpty ? '' : _tracks.first.id;
@@ -772,6 +781,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         timer.cancel();
       }
       _clipPositionTimers.clear();
+      _clipMoveStarts.clear();
+      _undoClipMoves.clear();
+      _redoClipMoves.clear();
       _confirmedClipStarts
         ..clear()
         ..addEntries(preparedTracks.expand((track) => track.clips.map(
@@ -1031,6 +1043,12 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
 
   void _handleMenuCommand(_MenuAction action) {
     switch (action.id) {
+      case 'edit.undo':
+        unawaited(_undoClipMove());
+        return;
+      case 'edit.redo':
+        unawaited(_redoClipMove());
+        return;
       case 'file.new':
         unawaited(_newSession());
         return;
@@ -1207,22 +1225,124 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     });
   }
 
+  void _beginClipMove(TrackModel track, ClipModel clip) {
+    if (!clip.isDemo) _clipMoveStarts[clip.id] = clip.startSeconds;
+  }
+
+  void _finishClipMove(TrackModel track, ClipModel clip) {
+    final before = _clipMoveStarts.remove(clip.id);
+    if (before == null ||
+        clip.isDemo ||
+        (clip.startSeconds - before).abs() < 1e-9) {
+      return;
+    }
+    final nativeId = _nativeTrackIds[track.id];
+    final engine = _engine;
+    if (nativeId == null || engine == null) return;
+    _clipPositionTimers.remove(clip.id)?.cancel();
+    final edit = _ClipMoveEdit(
+      trackId: track.id,
+      clipId: clip.id,
+      beforeSeconds: before,
+      afterSeconds: clip.startSeconds,
+    );
+    _queueMixerAction(_commitClipStart(
+        engine, track, clip, nativeId, edit.afterSeconds,
+        historyEdit: edit));
+  }
+
+  Future<void> _undoClipMove() => _applyClipMoveHistory(
+        source: _undoClipMoves,
+        destination: _redoClipMoves,
+        target: (edit) => edit.beforeSeconds,
+        emptyMessage: 'There is no clip move to undo.',
+      );
+
+  Future<void> _redoClipMove() => _applyClipMoveHistory(
+        source: _redoClipMoves,
+        destination: _undoClipMoves,
+        target: (edit) => edit.afterSeconds,
+        emptyMessage: 'There is no clip move to redo.',
+      );
+
+  Future<void> _applyClipMoveHistory({
+    required List<_ClipMoveEdit> source,
+    required List<_ClipMoveEdit> destination,
+    required double Function(_ClipMoveEdit) target,
+    required String emptyMessage,
+  }) async {
+    if (_trackOperationPending || _initializingEngine) return;
+    if (source.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(emptyMessage)));
+      return;
+    }
+    if (_telemetry.isPlaying || _telemetry.playheadSeconds > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Stop playback before undoing or redoing a clip move.'),
+      ));
+      return;
+    }
+    final engine = _engine;
+    final edit = source.removeLast();
+    final track = _tracks.where((item) => item.id == edit.trackId).firstOrNull;
+    final clip =
+        track?.clips.where((item) => item.id == edit.clipId).firstOrNull;
+    final nativeId = track == null ? null : _nativeTrackIds[track.id];
+    if (engine == null || track == null || clip == null || nativeId == null) {
+      source.add(edit);
+      _showEngineUnavailable();
+      return;
+    }
+    final previous = clip.startSeconds;
+    final next = target(edit);
+    _clipPositionTimers.remove(clip.id)?.cancel();
+    setState(() {
+      clip.startSeconds = next;
+      _markSessionChanged();
+    });
+    try {
+      await engine.setTrackStartSeconds(nativeId, next);
+      _confirmedClipStarts[clip.id] = next;
+      destination.add(edit);
+    } catch (error) {
+      if (mounted && _nativeTrackIds[track.id] == nativeId) {
+        setState(() => clip.startSeconds = previous);
+      }
+      source.add(edit);
+      _reportMixerFailure('Clip move history', error);
+    }
+  }
+
   Future<void> _commitClipStart(
     EngineController engine,
     TrackModel track,
     ClipModel clip,
     int nativeId,
-    double seconds,
-  ) async {
+    double seconds, {
+    _ClipMoveEdit? historyEdit,
+  }) async {
     final previous = _confirmedClipStarts[clip.id] ?? 0;
     try {
       await engine.setTrackStartSeconds(nativeId, seconds);
       _confirmedClipStarts[clip.id] = seconds;
+      if (historyEdit != null) {
+        _undoClipMoves.add(historyEdit);
+        if (_undoClipMoves.length > 100) _undoClipMoves.removeAt(0);
+        _redoClipMoves.clear();
+      }
     } catch (error) {
       if (!mounted) return;
       if (_nativeTrackIds[track.id] == nativeId &&
           (clip.startSeconds - seconds).abs() < 0.000001) {
         setState(() => clip.startSeconds = previous);
+      }
+      if (historyEdit != null) {
+        final index = _undoClipMoves.lastIndexWhere((edit) =>
+            edit.trackId == historyEdit.trackId &&
+            edit.clipId == historyEdit.clipId &&
+            edit.afterSeconds == historyEdit.afterSeconds);
+        if (index >= 0) _undoClipMoves.removeAt(index);
       }
       _reportMixerFailure('Clip position', error);
     }
@@ -1389,6 +1509,16 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
             unawaited(_togglePlay()),
         const SingleActivator(LogicalKeyboardKey.keyR): () =>
             unawaited(_toggleRecording()),
+        const SingleActivator(LogicalKeyboardKey.keyZ, control: true): () =>
+            unawaited(_undoClipMove()),
+        const SingleActivator(LogicalKeyboardKey.keyZ,
+            control: true, shift: true): () => unawaited(_redoClipMove()),
+        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): () =>
+            unawaited(_undoClipMove()),
+        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true, shift: true):
+            () => unawaited(_redoClipMove()),
+        const SingleActivator(LogicalKeyboardKey.keyY, control: true): () =>
+            unawaited(_redoClipMove()),
         const SingleActivator(LogicalKeyboardKey.keyS, control: true): () =>
             unawaited(_saveSession()),
         const SingleActivator(LogicalKeyboardKey.keyS, meta: true): () =>
@@ -1513,6 +1643,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                                     onTrackSelected: _selectTrack,
                                     onClipSelected: _selectClip,
                                     onClipMoved: _moveClip,
+                                    onClipMoveStarted: _beginClipMove,
+                                    onClipMoveFinished: _finishClipMove,
                                     onMuteChanged: _setTrackMute,
                                     onSoloChanged: _setTrackSolo,
                                     onVolumeChanged: _setTrackVolume,
@@ -1582,6 +1714,20 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 }
 
+class _ClipMoveEdit {
+  const _ClipMoveEdit({
+    required this.trackId,
+    required this.clipId,
+    required this.beforeSeconds,
+    required this.afterSeconds,
+  });
+
+  final String trackId;
+  final String clipId;
+  final double beforeSeconds;
+  final double afterSeconds;
+}
+
 class _MenuAction {
   const _MenuAction(this.id, this.label, [this.shortcut]);
 
@@ -1610,8 +1756,8 @@ class _MenuBar extends StatelessWidget {
       _MenuAction('file.export', 'Export Mixdown…', 'Ctrl+Alt+E'),
     ],
     'Edit': [
-      _MenuAction('edit.undo', 'Undo', 'Ctrl+Z'),
-      _MenuAction('edit.redo', 'Redo', 'Ctrl+Shift+Z'),
+      _MenuAction('edit.undo', 'Undo Clip Move', 'Ctrl+Z'),
+      _MenuAction('edit.redo', 'Redo Clip Move', 'Ctrl+Shift+Z'),
       _MenuAction('edit.cut', 'Cut', 'Ctrl+X'),
       _MenuAction('edit.copy', 'Copy', 'Ctrl+C'),
       _MenuAction('edit.paste', 'Paste', 'Ctrl+V'),
