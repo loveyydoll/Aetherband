@@ -104,7 +104,7 @@ For the precise implementation status, read [What works today?](#what-works-toda
 
 The architecture is designed to keep real-time audio processing separate from interface rendering. That design still needs platform testing and ongoing engineering to deliver the intended experience.
 
-**Go deeper:** [Architecture](docs/ARCHITECTURE.md) · [C ABI contract](docs/API_CONTRACT.md) · [Development and release tracking](docs/DEVELOPMENT_AND_RELEASE_TRACKING.md) · [Creative engine & spatial audio direction](docs/CREATIVE_ENGINE_AND_SPATIAL_AUDIO.md)
+**Go deeper:** [DAW product definition and implementation priorities](docs/DAW_PRODUCT_DEFINITION.md) · [Architecture](docs/ARCHITECTURE.md) · [C ABI contract](docs/API_CONTRACT.md) · [Development and release tracking](docs/DEVELOPMENT_AND_RELEASE_TRACKING.md) · [Creative engine & spatial audio direction](docs/CREATIVE_ENGINE_AND_SPATIAL_AUDIO.md)
 
 ## A note on the identity
 
