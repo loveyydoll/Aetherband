@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'theme.dart';
 
-double timelinePixelsPerSecond(int tempo) => tempo / 240 * 84;
+double timelinePixelsPerSecond(num tempo) => tempo / 240 * 84;
 
 class ClipModel {
   ClipModel({
