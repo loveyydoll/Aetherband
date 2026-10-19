@@ -1,53 +1,67 @@
-# Aetherband C++ Migration Plan
+# Native C++/JUCE Migration Plan
 
-**Status:** Initial migration branch  
-**Target platforms:** Windows and macOS  
-**Direction:** Native C++ desktop application and audio runtime; Flutter/Dart are no longer the target UI stack.
+**Status:** In progress · **Target platforms:** Windows and macOS · **Binding decision:** ADR-008 in DECISIONS.md
 
-## Migration rule
+## Purpose
 
-This is a clean architectural restart, not a destructive deletion of the current implementation. Keep the Rust/Dart/Flutter implementation available on existing branches and in Git history while the C++ replacement is built and verified. Do not remove the old implementation from the mainline until the replacement has a tested, usable vertical slice and an explicit migration decision.
+Replace the Rust/Flutter/Dart target architecture with a native C++/JUCE desktop application. This is a deliberate architectural migration, not permission to erase the old implementation before its behavior is understood and the replacement is proven.
 
-Port behavior and validated requirements, not Rust source line-for-line. For every subsystem, record what exists, what is tested, what is merely assumed, and what remains to be implemented.
+## Binding rules
 
-## Proposed boundaries
+- New target product work uses C++20+ and JUCE, built with CMake.
+- Windows and macOS are mandatory; both require independent build and runtime evidence.
+- Aetherband owns DSP graph execution, processor lifecycle, routing, transport, parameter/automation semantics, and offline-rendering rules.
+- JUCE provides application/audio/platform infrastructure; it is not a substitute for engine design.
+- Preserve Rust/C ABI/Flutter/Dart as a reference until the new target passes acceptance criteria. Do not bulk-delete it.
+- Do not mechanically translate Rust code. Audit behavior, tests, assumptions, licensing, and platform constraints first.
+- C# is not part of the core migration.
 
-- **Application model:** project/session state, tracks, clips, commands, undo/redo, serialization.
-- **Audio runtime:** device lifecycle, callback, transport, bounded command queues, telemetry, and thread ownership.
-- **DSP:** a modular, actually executing processing graph; processors, routing, automation, and parameter changes.
-- **Media:** import/decode, resampling, recording, and offline rendering/export.
-- **Instruments:** HypnoSynth and future instruments as independent processors.
-- **Desktop UI:** native C++ UI framework, selected after a small cross-platform technical spike.
-- **Tests:** deterministic unit tests, offline audio tests, serialization compatibility tests, and Windows/macOS build checks.
+## Stage 0 — Audit and migration map
 
-JUCE is a leading candidate for the desktop/audio-device layer, but framework adoption should be confirmed with a small Windows/macOS build and audio-device prototype before making it a hard dependency. Keep application and DSP interfaces independent of UI widgets.
+Inventory legacy engine modules, UI workflows, tests, project formats, dependencies, and known defects. Distinguish source-level behavior from automated tests, offline tests, and physical-device evidence. Record migration mappings for transport, mixer, media, sessions, instruments, and export.
 
-## Real-time audio requirements
+**Exit:** auditable behavior matrix and no unsupported parity claims.
 
-- Never allocate, lock a contended mutex, perform file/network I/O, or destroy complex objects on the audio callback.
-- Prepare processors and buffers off the audio thread.
-- Transfer commands through bounded, real-time-safe queues.
-- Define sample-rate, block-size, channel-layout, and processor-lifecycle contracts.
-- Keep offline rendering deterministic and testable independently of hardware.
+## Stage 1 — JUCE platform proof
 
-## Port sequence
+Integrate JUCE through a documented, reproducible CMake setup. Build and launch a minimal native window on Windows and macOS. Enumerate devices, open/close a stream, and render a known test signal. Verify repeated start/stop/close, device errors, and clean shutdown. Record JUCE version, modules, licence implications, and platform prerequisites.
 
-1. **Inventory and baseline:** audit Rust modules, public C ABI, tests, session schema, and current feature claims. Mark each feature as implemented, tested, partially implemented, or planned.
-2. **C++ foundation:** establish CMake, compiler warnings, cross-platform CI, unit tests, buffer primitives, and a minimal mixer.
-3. **Audio proof:** produce a known signal, process it through the DSP path, render it offline, and verify device playback on Windows and macOS.
-4. **Session model:** define a versioned project format and tests for save/reopen, tracks, clips, and media references.
-5. **Vertical slice:** import WAV, arrange clips, play multiple tracks, use HypnoSynth or a minimal test instrument, mix, save/reopen, and export WAV.
-6. **Feature parity:** port recording, supported media formats, mixer controls, effects, MIDI, automation, routing, and undo/redo one tested slice at a time.
-7. **Retirement:** remove Flutter/Dart and Rust integration from the active product only after the C++ replacement meets agreed acceptance criteria. Preserve history and archival tags.
+**Exit:** successful builds and recorded device/runtime checks on both platforms. A compile alone is insufficient.
 
-## First acceptance criteria
+## Stage 2 — Core audio contracts
 
-- CMake configures and builds on Windows and macOS.
-- CTest runs the native unit tests.
-- Audio buffer operations are deterministic and bounds-safe.
-- Mixer behavior is tested for multiple inputs and headroom is preserved internally.
-- No claim of hardware playback is made until it is actually tested on the target OS and device.
+Define audio-buffer, sample-rate, block-size, channel-layout, parameter, transport, and processor lifecycle contracts. Establish bounded command/telemetry flow with documented overflow behavior. Implement an audio runtime whose callback performs bounded processing only. Add deterministic unit and offline audio tests.
 
-## Existing implementation disposition
+**Exit:** known-signal offline tests pass; callback path is reviewed for allocations, blocking, I/O, and unsafe destruction; device lifecycle is verified on both OSes.
 
-The Rust engine is a behavioral reference, not the permanent architecture. Keep it available during migration to compare expected behavior, session semantics, decoding/resampling decisions, and HypnoSynth behavior. Do not assume a feature works merely because its API exists. In particular, distinguish metadata/control graphs from an executing real-time DSP graph and distinguish WAV-only validation from support for other formats.
+## Stage 3 — Executing DSP graph
+
+Implement processor interfaces, graph validation, channel compatibility, and actual sample processing. Add gain/pan, summing, routing, parameter changes, and graph lifecycle. Define safe graph updates during playback and offline-render semantics.
+
+**Exit:** offline golden-signal tests cover routing and edge cases; invalid graphs fail safely; graph updates do not destroy live callback-owned state.
+
+## Stage 4 — First usable DAW vertical slice
+
+Implement a versioned session model and native save/open flow. Import WAV using background media work. Arrange and play multiple tracks; mix; save and reopen; export stereo WAV. Build a functional JUCE shell with menus, arrangement, and mixer sufficient for this workflow.
+
+**Exit:** import → arrange → playback/mix → save → reopen → export succeeds end-to-end on Windows and macOS, with failure-path tests and documented limitations.
+
+## Stage 5 — Instruments and production features
+
+Port HypnoSynth with regression fixtures and state tests. Add MIDI event/piano-roll foundations, recording, effects, routing, automation, undo/redo, and recovery in small slices. Test additional formats individually; WAV success does not imply FLAC/MP3 support.
+
+**Exit:** each feature has repeatable tests and a clear support statement.
+
+## Stage 6 — Hardening and ecosystem
+
+Profile realistic sessions, stress test, improve accessibility and keyboard workflows, package both platforms, and audit dependencies/licenses. Evaluate plugin hosting and interchange only after the core workflow is stable.
+
+**Exit:** reproducible builds, published platform support matrix, no known critical data-loss/audio-safety defects, and clear release documentation.
+
+## Real-time constraints
+
+No file/network I/O, unpredictable allocation/deallocation, blocking waits, contended mutexes, decoding, resampling, graph compilation, or complex object destruction in the audio callback. Prepare resources away from the callback and document safe handoff and retirement.
+
+## Definition of done
+
+A migration task must include relevant tests, commands and results, platform coverage, known limitations, and updates to FEATURE_TRACKER.md and PROJECT_STATE.md when status changes.
