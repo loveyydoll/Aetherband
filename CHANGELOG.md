@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Arrangement track actions can move lanes up/down. Track ordering marks the session dirty and supports undo/redo; a Flutter widget regression test covers reorder, undo, and redo.
+- Added `docs/DAW_PRODUCT_DEFINITION.md` as the canonical DAW capability map, definition of done, and staged implementation priorities.
+
 All notable changes to Aetherband are recorded here. This is a development changelog, not a substitute for Git tags or GitHub Releases. Dates below identify the merge date of the relevant pull request unless explicitly stated otherwise.
 
 ## [Unreleased]
