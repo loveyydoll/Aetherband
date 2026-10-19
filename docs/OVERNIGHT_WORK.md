@@ -17,9 +17,9 @@ Branch: `feat/hypnosynth-daw-foundations`. PR: [#33](https://github.com/loveyydo
 
 - Windows `cargo test --workspace --jobs 1`: 49 core tests, 10 C ABI tests, callback-allocation test and WASAPI smoke target pass. Generated WAV tests verify source seek and bounded region decode; the C ABI crate disables irrelevant doctests to avoid duplicate `daw_core` crate candidates.
 - Windows workspace Clippy passes with existing C ABI missing-`# Safety` documentation warnings; optimized C ABI DLL build passes.
-- Direct Dart analysis reports no errors (one informational context-lifetime lint remains); Flutter widget tests could not run in this session because the local Flutter launcher cannot acquire `C:\src\flutter\bin\cache\lockfile`. Earlier 52 Flutter tests and the optional native test status are recorded at the previous PR head. Session-store tests now cover region-range round-trip; latest-head CI is required to verify this new UI/session slice.
+- Direct Dart analysis reports no errors. The local Flutter launcher could not run because the SDK lockfile at `C:\src\flutter\bin\cache\lockfile` is inaccessible; latest-head Windows CI run 96 passed analysis, all 54 Flutter tests (one optional device test skipped), and the desktop build. The new split UI and schema-v4 round-trip tests passed.
 - A separate opt-in WASAPI smoke test reaches nonzero HypnoSynth samples and shuts down cleanly. This confirms callback output, not speaker audibility.
-- The Windows runner is now checked into the desktop project; its local debug build passes. The advertised Ctrl+Alt+E export shortcut, selected-track Delete action, F2 rename shortcut and Ctrl+arrow bar seeking are tested. Current local verification is clean analysis, all 52 Flutter tests, and a Windows debug build. Rust run 297 (`39256120422`) and Flutter desktop run 93 (`39256120438`) pass on `8c4a667`.
+- The Windows runner is checked into the desktop project. The advertised Ctrl+Alt+E export shortcut, selected-track Delete action, F2 rename shortcut and Ctrl+arrow bar seeking are tested. Current-head Rust run 300 and Flutter desktop run 96 pass on `0c52b66`; the Flutter run includes the Windows desktop build. Earlier local Rust run 297 and Flutter desktop run 93 pass on `8c4a667`.
 
 ## Remaining limits and next work
 
