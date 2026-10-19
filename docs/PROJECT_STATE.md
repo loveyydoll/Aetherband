@@ -1,7 +1,7 @@
 # Aetherband — Project State Handoff
 
 **Snapshot date:** 2026-10-19
-**Evidence level:** Windows Rust tests, C ABI build, core Clippy and Dart analysis pass for the current branch. An opt-in WASAPI smoke test produced nonzero HypnoSynth callback samples and shut down cleanly. Flutter analysis and all 32 tests pass locally; a separate Windows Dart FFI integration test passes against the release DLL; speaker listening/loopback capture is not independently verified.
+**Evidence level:** Windows Rust tests, C ABI build, core Clippy and Dart analysis pass for the current branch. An opt-in WASAPI smoke test produced nonzero HypnoSynth callback samples and shut down cleanly. Flutter analysis and all 33 tests pass locally; a separate Windows Dart FFI integration test passes against the release DLL; speaker listening/loopback capture is not independently verified.
 
 ## Product identity
 
@@ -46,11 +46,9 @@ See [Feature Tracker](FEATURE_TRACKER.md) for the living backlog. Initial order:
 
 ## Current verification and uncertainty
 
-On 2026-10-19, the Windows Rust workflow (47 core tests, 8 ABI tests, callback-allocation test and Windows smoke target) and Windows Flutter workflow (analysis, 32 tests and desktop build) passed on PR #33 head `bec19b7`. Locally, the focused Dart FFI integration test also passed against the release DLL and the default output device; a separate opt-in WASAPI smoke produced nonzero callback samples. These results do not prove audible output through speakers or successful microphone/line-in capture. Clippy passes with existing missing-`# Safety` documentation warnings in C ABI exports.
+On 2026-10-19, the Windows Rust workflow (47 core tests, 8 ABI tests, callback-allocation test and Windows smoke target) and Windows Flutter workflow (analysis, 33 tests and desktop build) passed on PR #33 head `bec19b7`. Locally, the focused Dart FFI integration test also passed against the release DLL and the default output device; a separate opt-in WASAPI smoke produced nonzero callback samples. These results do not prove audible output through speakers or successful microphone/line-in capture. Clippy passes with existing missing-`# Safety` documentation warnings in C ABI exports.
 
 PR #33 remains open and unmerged. Continue from its current head and validate CI against the latest commit; do not infer sound quality or hardware recording from callback/unit tests alone.
 ## Required handoff format
 
 For each agent task, report **Implemented**, **Not implemented**, **Verified**, **Not verified**, **Known risks**, and **Next step**. Link the relevant PR/commit and checks when available.
-
-

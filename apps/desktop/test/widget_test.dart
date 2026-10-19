@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aetherband_desktop/src/aetherband_app.dart';
@@ -66,6 +67,23 @@ void main() {
     expect(engine.calls, contains('recordStop'));
     expect(engine.calls, contains('load:C:/takes/night-take.wav'));
     expect(find.text('night-take.wav'), findsWidgets);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('Space toggles the native transport', (tester) async {
+    tester.view.physicalSize = const Size(1440, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final engine = FakeEngine();
+
+    await tester.pumpWidget(AetherbandApp(createEngine: () async => engine));
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pumpAndSettle();
+
+    expect(engine.calls, contains('play'));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });

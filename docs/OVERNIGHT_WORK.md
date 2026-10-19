@@ -14,10 +14,15 @@ Working branch: `feat/hypnosynth-daw-foundations`. Pull request: [#33](https://g
 ## Verification
 
 - Windows Rust: formatting, workspace Clippy, 47 core tests, 8 C ABI tests, callback allocation test, output-device smoke target and release C ABI build pass. Clippy emits existing C ABI missing-safety-documentation warnings.
-- Windows Flutter: analysis clean, 32 tests pass, native FFI integration test passes against the release DLL and default output device, and the Windows desktop debug build succeeds.
+- Windows Flutter: analysis clean, 33 tests pass, native FFI integration test passes against the release DLL and default output device, and the Windows desktop debug build succeeds.
 - Remote Rust and Windows Flutter CI pass on head `bec19b7`, including the Windows desktop build.
 - Targeted sequence tests cover callback note/rest output, offline export, session round trips and older-session defaults, UI edits through the native event path, and sequence restoration after an output-device change.
 
 ## Remaining gaps and limits
 
 Physical listening through speakers/loopback and real microphone/line-in recording remain unverified. Full MIDI regions/file interchange, waveform rendering, clip split/trim/resize, undo/redo, automation, effects processing and plugin hosting remain incomplete. These are recorded in `docs/FEATURE_TRACKER.md`; the PR does not claim complete commercial DAW parity.
+
+
+## DAW transport shortcut follow-up (2026-10-19)
+
+- Space now toggles the real native transport play/pause operation. Added a widget regression test; Flutter analysis is clean and all 33 widget tests pass. This small DAW workflow improvement is being added to PR #33.

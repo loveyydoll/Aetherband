@@ -1357,6 +1357,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   Widget build(BuildContext context) {
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.space): () =>
+            unawaited(_togglePlay()),
         const SingleActivator(LogicalKeyboardKey.keyS, control: true): () =>
             unawaited(_saveSession()),
         const SingleActivator(LogicalKeyboardKey.keyS, meta: true): () =>
