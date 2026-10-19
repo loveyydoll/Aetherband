@@ -2,7 +2,7 @@
 
 Implement the user's Windows-only audio repair, original HypnoSynth, and core DAW workflows in one PR. Preserve the existing UI and conflicting Desktop checkout; `sources/` is read-only. Soundcraft reuse is limited to its MIT-licensed ADSR envelope, with attribution and licence in `third_party/soundcraft/`. Rust remains the real-time engine and Flutter/Dart the desktop UI.
 
-Branch: `feat/hypnosynth-daw-foundations`. PR: [#33](https://github.com/loveyydoll/Aetherband/pull/33), open and unmerged. GitHub currently reports head `6fe45319de278508bf46dcd5398f5698cecaabfb`; local branch has later commits through `380d85d` and a larger uncommitted implementation/update. Keep all work in this one PR and refresh remote CI after publishing.
+Branch: `feat/hypnosynth-daw-foundations`. PR: [#33](https://github.com/loveyydoll/Aetherband/pull/33), open and unmerged. The local branch now includes fetched PR head `6fe45319de278508bf46dcd5398f5698cecaabfb` plus its earlier device-switch work and this update. Keep all work in this one PR and refresh remote CI after publishing.
 
 ## Implemented in the current working tree
 
