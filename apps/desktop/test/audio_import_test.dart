@@ -541,7 +541,36 @@ void main() {
     await tester.drag(endHandle, const Offset(-80, 0));
     await tester.pumpAndSettle();
     expect(clip.durationSeconds, lessThan(durationBeforeEndTrim));
+    final trimmedStart = clip.startSeconds;
+    final trimmedSourceStart = clip.sourceStartSeconds;
+    final trimmedDuration = clip.durationSeconds;
     expect(engine.calls.any((call) => call.startsWith('region:1:')), isTrue);
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, greaterThan(0));
+    expect(clip.durationSeconds, durationBeforeEndTrim);
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, 0);
+    expect(clip.sourceStartSeconds, 0);
+    expect(clip.durationSeconds, 120);
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Redo'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Redo'));
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, trimmedStart);
+    expect(clip.sourceStartSeconds, trimmedSourceStart);
+    expect(clip.durationSeconds, trimmedDuration);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
