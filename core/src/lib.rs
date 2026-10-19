@@ -96,6 +96,13 @@ fn next_track_id() -> TrackId {
     TrackId(NEXT_TRACK_ID.fetch_add(1, Ordering::Relaxed))
 }
 
+fn rescale_frame(frame: i64, from_rate: u32, to_rate: u32) -> i64 {
+    if frame <= 0 {
+        return frame;
+    }
+    (frame as f64 * to_rate as f64 / from_rate.max(1) as f64).round() as i64
+}
+
 /// The primary high-level engine controller.
 ///
 /// Lives on the control/UI thread. Communicates with the audio thread
@@ -181,8 +188,8 @@ impl DAWEngine {
             player.muted = track.muted;
             // Arrangement positions are stored in output-rate frames. Preserve
             // their time when the newly selected device uses another rate.
-            let start_frame = (track.start_frame as f64 * sample_rate as f64
-                / self.output_sample_rate as f64) as i64;
+            let start_frame =
+                rescale_frame(track.start_frame, self.output_sample_rate, sample_rate);
             player.start_frame = start_frame;
             player.solo = track.solo;
             new_players.push(player);
@@ -696,6 +703,14 @@ impl DAWEngine {
 #[cfg(test)]
 mod engine_tests {
     use super::*;
+
+    #[test]
+    fn output_frame_positions_keep_the_same_time_across_rates() {
+        assert_eq!(rescale_frame(48_000, 48_000, 96_000), 96_000);
+        assert_eq!(rescale_frame(44_100, 44_100, 48_000), 48_000);
+        assert_eq!(rescale_frame(0, 48_000, 96_000), 0);
+        assert_eq!(rescale_frame(-1, 48_000, 96_000), -1);
+    }
 
     #[test]
     fn removal_retains_track_on_queue_saturation_and_can_be_retried() {
