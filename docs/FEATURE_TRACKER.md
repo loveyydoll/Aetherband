@@ -18,6 +18,8 @@ Do not promote a feature to Verified based only on a README claim, code presence
 
 The project is early alpha. Favor visible, end-to-end progress over speculative subsystems. Keep real-time audio safety, project data integrity and truthful UI behaviour as hard constraints.
 
+The canonical capability map, definition of done, and staged implementation plan are in [DAW_PRODUCT_DEFINITION.md](DAW_PRODUCT_DEFINITION.md). Work against that document, but confirm current code and tests before claiming a capability is implemented or verified. Windows is the current target; Flutter remains the primary UI and Rust remains the native engine behind the versioned C ABI.
+
 | Priority | Area | Current understanding | Next useful outcome | Acceptance evidence |
 |---|---|---|---|---|
 | P0 | Windows audio output | Native sample formats, full callback buffers, surfaced stream errors, deferred cleanup and CPAL 0.18.2 stream lifecycle are implemented. Device switching restores synth/transport/mixer settings and rescales clip positions for the selected output rate; it stops playback and returns transport to the start. | Verify physical listening and device/error recovery on alternate hardware; add explicit sample-rate and buffer-size selection. | Latest local Rust workspace tests, callback-allocation and opt-in WASAPI smoke targets pass; the native integration test against the default Windows output device observes nonzero arranged-pattern telemetry. Speaker/headphone audibility remains unverified. |
