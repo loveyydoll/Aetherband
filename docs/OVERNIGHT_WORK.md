@@ -25,4 +25,4 @@ Physical listening through speakers/loopback and real microphone/line-in recordi
 
 ## DAW transport shortcut follow-up (2026-10-19)
 
-- Space now toggles the real native transport play/pause operation. Added a widget regression test; Flutter analysis is clean and all 33 widget tests pass. This small DAW workflow improvement is being added to PR #33.
+- Space now toggles native transport play/pause and R toggles real input recording. Widget tests cover both shortcuts; Flutter analysis is clean and all 33 widget tests pass.

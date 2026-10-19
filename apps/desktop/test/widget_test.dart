@@ -57,7 +57,7 @@ void main() {
       pickRecordingSavePath: () async => 'C:/takes/night-take.wav',
     ));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Record from Windows input'));
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyR);
     await tester.pumpAndSettle();
     expect(engine.calls, contains('recordStart:C:/takes/night-take.wav'));
     expect(find.byTooltip('Stop recording'), findsOneWidget);

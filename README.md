@@ -123,7 +123,7 @@ Aetherband is in an early stage. The distinction between existing code, verified
 - A Rust audio-engine workspace and a C ABI for communication with the desktop UI.
 - Native multi-track playback and mixing, master gain, per-track gain/pan/mute/solo, native device sample formats, and full-buffer callback processing.
 - HypnoSynth, an original polyphonic software instrument with three original atmospheric and post-punk presets, a live keyboard, performance macros, tempo, metronome, phrase playback and panic.
-- Versioned C ABI 0.8.0 and Dart FFI routes for engine, audio, mixer, clip positioning, synth, editable 16-step sequence and session settings, Windows output-device selection, stereo WAV export and Windows input recording.
+- Versioned C ABI 0.8.0 and Dart FFI routes for engine, audio, mixer, clip positioning, synth, editable 16-step sequence, Space/R transport shortcuts and session settings, Windows output-device selection, stereo WAV export and Windows input recording.
 - Windows is the only current target. Rust signal, transport, callback and FFI tests pass; the opt-in WASAPI callback smoke test passes; Dart analysis passed during implementation.
 
 ### Known gaps
