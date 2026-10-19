@@ -1,17 +1,26 @@
-# Native C++ Foundation
+# Native C++/JUCE Target
 
-This directory is the start of the C++ replacement for Aetherband's application and audio runtime. It is deliberately small and framework-independent while the cross-platform desktop/audio framework is evaluated.
+This directory begins Aetherband's native replacement. JUCE is the committed framework; the current small C++ foundation may remain framework-independent while JUCE integration is added.
 
-## Build and test
+## Committed direction
+
+- C++20 or newer, CMake, JUCE.
+- Windows and macOS are required.
+- Aetherband owns DSP graph execution, processor lifecycle, routing, transport semantics, and offline-rendering rules.
+- Rust/Flutter/Dart remain migration references only.
+
+## Current foundation build
 
 Requires CMake 3.20+ and a C++20 compiler.
 
-```sh
-cmake -S native -B build/native
-cmake --build build/native --config Debug
-ctest --test-dir build/native --output-on-failure
-```
+    cmake -S native -B build/native
+    cmake --build build/native --config Debug
+    ctest --test-dir build/native --output-on-failure
 
-The current code contains planar float audio buffers and a simple additive mixer. It does **not** yet open an audio device, schedule playback, decode files, or provide a complete DSP graph. Those are separate milestones; this foundation should not be mistaken for a usable DAW yet.
+These commands describe the existing framework-independent foundation and must be verified on the machine where run. They do not yet build a complete JUCE DAW, enumerate devices, or prove hardware playback. Add JUCE setup and platform prerequisites after integration and verification.
 
-See [the migration plan](../docs/CPP_MIGRATION_PLAN.md) for architecture rules and acceptance criteria.
+## Current limitations
+
+The foundation contains a planar float audio buffer and basic additive mixer with initial tests. It is not yet a usable DAW: device playback/recording, transport, executing DSP graph, media decoding, project persistence, HypnoSynth port, and native arrangement/mixer workflow are not established.
+
+Follow docs/ARCHITECTURE.md, docs/CPP_MIGRATION_PLAN.md, and docs/FEATURE_TRACKER.md.
