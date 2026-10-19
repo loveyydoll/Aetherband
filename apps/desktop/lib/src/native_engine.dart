@@ -54,8 +54,13 @@ typedef _MasterN = Int32 Function(Pointer<Void>, Float);
 typedef _MasterD = int Function(Pointer<Void>, double);
 typedef _ExportN = Int32 Function(Pointer<Void>, Pointer<Utf8>);
 typedef _ExportD = int Function(Pointer<Void>, Pointer<Utf8>);
+typedef _StartRecordingN = Int32 Function(Pointer<Void>, Pointer<Utf8>);
+typedef _StartRecordingD = int Function(Pointer<Void>, Pointer<Utf8>);
+typedef _StopRecordingN = Int32 Function(
+    Pointer<Void>, Pointer<_RecordingStats>);
+typedef _StopRecordingD = int Function(Pointer<Void>, Pointer<_RecordingStats>);
 
-const int _expectedApiVersion = 0x00000600;
+const int _expectedApiVersion = 0x00000700;
 
 final class _TrackInfo extends Struct {
   @Uint64()
@@ -98,6 +103,15 @@ final class _NativeDeviceInfo extends Struct {
   external int isDefault;
 }
 
+final class _RecordingStats extends Struct {
+  @Uint32()
+  external int sampleRate;
+  @Uint64()
+  external int framesWritten;
+  @Uint64()
+  external int framesDropped;
+}
+
 /// The worker isolate owns every native pointer and serializes all calls,
 /// including polling and destruction. Only commands/metadata cross isolates;
 /// importing, restarting decoders and releasing hardware cannot block Flutter.
@@ -106,7 +120,8 @@ class NativeEngineController
         EngineController,
         PerformanceEngine,
         ExportEngine,
-        AudioOutputEngine {
+        AudioOutputEngine,
+        AudioRecordingEngine {
   NativeEngineController._() {
     _events.listen(_onEvent);
   }
@@ -217,6 +232,19 @@ class NativeEngineController
     }
     return _request<void>('export', path);
   }
+
+  @override
+  Future<void> startRecording(String path) {
+    if (path.isEmpty || path.contains('\u0000')) {
+      return Future.error(ArgumentError(
+          'Recording path must be nonempty and contain no NUL bytes.'));
+    }
+    return _request<void>('startRecording', path);
+  }
+
+  @override
+  Future<AudioRecordingStats> stopRecording() =>
+      _request<AudioRecordingStats>('stopRecording');
 
   @override
   Future<List<AudioOutputDevice>> getOutputDevices() =>
@@ -333,6 +361,10 @@ Future<void> _runNativeEngine((SendPort, String?) configuration) async {
             await session.setMasterVolume(argument as double);
           case 'export':
             await session.exportWav(argument as String);
+          case 'startRecording':
+            await session.startRecording(argument as String);
+          case 'stopRecording':
+            result = await session.stopRecording();
           case 'outputDevices':
             result = await session.getOutputDevices();
           case 'selectOutputDevice':
@@ -392,12 +424,15 @@ class _NativeEngineSession
         EngineController,
         PerformanceEngine,
         ExportEngine,
-        AudioOutputEngine {
+        AudioOutputEngine,
+        AudioRecordingEngine {
   _NativeEngineSession._({
     required this.synthNative,
     required this.transportNative,
     required this.masterNative,
     required this.exportNative,
+    required this.startRecordingNative,
+    required this.stopRecordingNative,
     required DynamicLibrary library,
     required Pointer<Void> handle,
     required _CommandD playNative,
@@ -461,6 +496,8 @@ class _NativeEngineSession
   final _TransportD transportNative;
   final _MasterD masterNative;
   final _ExportD exportNative;
+  final _StartRecordingD startRecordingNative;
+  final _StopRecordingD stopRecordingNative;
   final _SampleRateD getSampleRateNative;
   final _DeviceCountD deviceCountNative;
   final _DeviceInfoD deviceInfoNative;
@@ -538,6 +575,12 @@ class _NativeEngineSession
         .lookupFunction<_MasterN, _MasterD>('daw_engine_set_master_volume');
     final export =
         library.lookupFunction<_ExportN, _ExportD>('daw_engine_export_wav');
+    final startRecording =
+        library.lookupFunction<_StartRecordingN, _StartRecordingD>(
+            'daw_engine_start_recording');
+    final stopRecording =
+        library.lookupFunction<_StopRecordingN, _StopRecordingD>(
+            'daw_engine_stop_recording');
     final outHandle = calloc<Pointer<Void>>();
     try {
       final result = create(outHandle);
@@ -564,6 +607,8 @@ class _NativeEngineSession
           transportNative: transport,
           masterNative: master,
           exportNative: export,
+          startRecordingNative: startRecording,
+          stopRecordingNative: stopRecording,
           library: library,
           handle: handle,
           playNative: play,
@@ -741,6 +786,42 @@ class _NativeEngineSession
       }
     } finally {
       calloc.free(nativePath);
+    }
+  }
+
+  @override
+  Future<void> startRecording(String path) async {
+    if (_disposed) throw StateError('Native engine has been disposed.');
+    final nativePath = path.toNativeUtf8();
+    try {
+      final result = startRecordingNative(_handle, nativePath);
+      if (result != 0) {
+        throw StateError(
+          'Could not start Windows audio recording (error $result). Check microphone permissions, input device, and choose a new WAV filename.',
+        );
+      }
+    } finally {
+      calloc.free(nativePath);
+    }
+  }
+
+  @override
+  Future<AudioRecordingStats> stopRecording() async {
+    if (_disposed) throw StateError('Native engine has been disposed.');
+    final stats = calloc<_RecordingStats>();
+    try {
+      final result = stopRecordingNative(_handle, stats);
+      if (result != 0) {
+        throw StateError(
+            'Could not finish Windows audio recording (error $result).');
+      }
+      return AudioRecordingStats(
+        sampleRateHz: stats.ref.sampleRate,
+        framesWritten: stats.ref.framesWritten,
+        framesDropped: stats.ref.framesDropped,
+      );
+    } finally {
+      calloc.free(stats);
     }
   }
 

@@ -102,6 +102,13 @@ impl EngineHandle {
         let path = path.to_owned();
         self.call(move |engine| engine.export_mixdown(&path).map_err(|_| ()))?
     }
+    pub fn start_recording(&self, path: &Path) -> Result<u32, ()> {
+        let path = path.to_owned();
+        self.call(move |engine| engine.start_recording(&path).map_err(|_| ()))?
+    }
+    pub fn stop_recording(&self) -> Result<daw_core::device::RecordingStats, ()> {
+        self.call(|engine| engine.stop_recording().map_err(|_| ()))?
+    }
     command!(set_test_tone, enabled: bool, frequency: f32);
     command!(remove_track, id: TrackId);
     command!(set_track_volume, id: TrackId, gain: f32);

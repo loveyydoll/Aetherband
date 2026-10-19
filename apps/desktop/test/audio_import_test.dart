@@ -144,6 +144,24 @@ class FakeAudioEngine extends FakeEngine implements AudioOutputEngine {
   }
 }
 
+class FakeRecordingEngine extends FakeAudioEngine
+    implements AudioRecordingEngine {
+  @override
+  Future<void> startRecording(String path) async {
+    calls.add('recordStart:$path');
+  }
+
+  @override
+  Future<AudioRecordingStats> stopRecording() async {
+    calls.add('recordStop');
+    return const AudioRecordingStats(
+      sampleRateHz: 48000,
+      framesWritten: 48000,
+      framesDropped: 0,
+    );
+  }
+}
+
 Finder get importedClip => find
     .byWidgetPredicate((widget) => widget is ClipTile && !widget.clip.isDemo);
 
@@ -155,6 +173,7 @@ Future<void> mountWorkspace(
   Future<XFile?> Function()? sessionPicker,
   Future<String?> Function()? sessionSavePicker,
   Future<String?> Function()? exportSavePicker,
+  Future<String?> Function()? recordingSavePicker,
   double width = 1440,
   double height = 1000,
 }) async {
@@ -168,6 +187,7 @@ Future<void> mountWorkspace(
     pickSessionFile: sessionPicker,
     pickSessionSavePath: sessionSavePicker,
     pickExportSavePath: exportSavePicker,
+    pickRecordingSavePath: recordingSavePicker,
   ));
   await tester.pumpAndSettle();
 }

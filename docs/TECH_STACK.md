@@ -8,7 +8,7 @@
 | Windows audio device I/O | CPAL 0.18.2 | The current Windows engine uses CPAL's WASAPI backend and the device's native output sample format. A local stream lifecycle test found clean shutdown after upgrading from 0.15.3. |
 | Audio decoding and sample-rate conversion | Symphonia and Rubato | Symphonia decodes the configured media formats; Rubato is used for worker-side conversion. Support is limited to formats verified by tests and actual media, not every format a dependency can theoretically parse. |
 | Real-time communication | `rtrb` and bounded standard-library control channel | SPSC queues carry audio-thread work without locks; control operations remain serialized away from the callback. |
-| Native/UI boundary | Versioned C ABI and Dart FFI | The boundary keeps audio buffers and Rust internals out of Flutter while allowing the UI to send bounded commands and read telemetry. ABI 0.6.0 is checked against the Dart adapter at startup. |
+| Native/UI boundary | Versioned C ABI and Dart FFI | The boundary keeps audio buffers and Rust internals out of Flutter while allowing the UI to send bounded commands and read telemetry. ABI 0.7.0 is checked against the Dart adapter at startup. |
 | Desktop interface | Flutter and Dart | The existing product UI, custom arrangement and instrument panels already use Flutter. Keeping it avoids an unneeded frontend migration while Rust stays responsible for time-critical audio. |
 
 ## Why these languages

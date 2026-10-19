@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aetherband_desktop/src/aetherband_app.dart';
-import 'audio_import_test.dart' show FakeAudioEngine, FakeEngine;
+import 'audio_import_test.dart'
+    show FakeAudioEngine, FakeEngine, FakeRecordingEngine;
 
 void main() {
   testWidgets('renders the Aetherband workspace without Flutter exceptions',
@@ -27,9 +28,11 @@ void main() {
     expect(tester.takeException(), isNull,
         reason: 'The initial workspace should fit without overflow.');
 
-    await tester.tap(find.byTooltip('Recording unavailable'));
+    await tester.tap(find.byTooltip('Record from Windows input'));
     await tester.pump();
-    expect(find.textContaining('Audio recording is not implemented yet'),
+    expect(
+        find.textContaining(
+            'Windows audio input recording is not implemented yet'),
         findsOneWidget);
     expect(tester.takeException(), isNull,
         reason:
@@ -37,6 +40,33 @@ void main() {
 
     // Native loading has a separate integration test; widget tests do not open
     // real hardware or depend on a machine-specific native library.
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('records a WAV input and adds it as a real audio track',
+      (tester) async {
+    tester.view.physicalSize = const Size(1440, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final engine = FakeRecordingEngine();
+
+    await tester.pumpWidget(AetherbandApp(
+      createEngine: () async => engine,
+      pickRecordingSavePath: () async => 'C:/takes/night-take.wav',
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Record from Windows input'));
+    await tester.pumpAndSettle();
+    expect(engine.calls, contains('recordStart:C:/takes/night-take.wav'));
+    expect(find.byTooltip('Stop recording'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Stop recording'));
+    await tester.pumpAndSettle();
+    expect(engine.calls, contains('recordStop'));
+    expect(engine.calls, contains('load:C:/takes/night-take.wav'));
+    expect(find.text('night-take.wav'), findsWidgets);
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

@@ -22,11 +22,11 @@ Do not reintroduce C#/.NET/Avalonia as a second desktop frontend. Verify current
 - The launch arrangement is a real empty session rather than six visual demo tracks. Imported audio remains duration-aware and native playback is routed to the default Windows device using its native sample format.
 - The real-time Rust callback now renders imported tracks and HypnoSynth, supports full oversized buffers, and defers decoder/player reclamation to the control thread. Device stream errors are surfaced through telemetry.
 - HypnoSynth is an original polyphonic instrument with three original presets, live keyboard input, tempo/metronome, and a generated phrase. Its musical references do not use copied recordings or claim to recreate a specific patch.
-- ABI 0.6.0, Dart FFI and session schema v3 carry synth, transport, master gain, track solo state, imported-audio clip positions, and offline stereo WAV export. Sessions stage media in a fresh engine before replacing active state; schema v1 and v2 remain readable.
+- ABI 0.7.0, Dart FFI and session schema v3 carry synth, transport, master gain, track solo state, imported-audio clip positions, offline stereo WAV export and Windows input recording. Sessions stage media in a fresh engine before replacing active state; schema v1 and v2 remain readable.
 - Rust callback tests confirm audible generated and decoded signals; physical speaker or loopback listening still requires a user machine with an audio output.
-- Record UI controls must not imply actual recording unless a real recording path exists.
+- Windows recording uses the default input device and a background stereo PCM16 WAV writer; stopping finalizes and imports the take at the transport position. Input hardware behavior remains unverified.
 - Live meters must use actual engine telemetry, not invented animation.
-- MIDI editing/recording, stereo export, effects, automation, plugin hosting, waveform rendering, split/trim/resize, undo/redo and device selection remain incomplete; imported audio clips can be moved and their start positions persist.
+- MIDI editing, effects, automation, plugin hosting, waveform rendering, split/trim/resize and undo/redo remain incomplete; imported audio clips can be moved and their start positions persist.
 
 ## Critical invariants
 

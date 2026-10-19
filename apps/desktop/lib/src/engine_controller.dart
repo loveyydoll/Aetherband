@@ -49,6 +49,21 @@ class AudioOutputDevice {
   final bool isDefault;
 }
 
+class AudioRecordingStats {
+  const AudioRecordingStats({
+    required this.sampleRateHz,
+    required this.framesWritten,
+    required this.framesDropped,
+  });
+
+  final int sampleRateHz;
+  final int framesWritten;
+  final int framesDropped;
+
+  double get durationSeconds =>
+      sampleRateHz > 0 ? framesWritten / sampleRateHz : 0;
+}
+
 abstract class EngineController {
   Stream<EngineTelemetry> get telemetry;
   Future<void> play();
@@ -80,4 +95,10 @@ abstract interface class ExportEngine {
 abstract interface class AudioOutputEngine {
   Future<List<AudioOutputDevice>> getOutputDevices();
   Future<void> selectOutputDevice(int index);
+}
+
+/// Optional default-input capture support for Windows audio tracks.
+abstract interface class AudioRecordingEngine {
+  Future<void> startRecording(String path);
+  Future<AudioRecordingStats> stopRecording();
 }
