@@ -181,13 +181,15 @@ impl DAWEngine {
             player.muted = track.muted;
             // Arrangement positions are stored in output-rate frames. Preserve
             // their time when the newly selected device uses another rate.
-            player.start_frame = (track.start_frame as f64 * sample_rate as f64
+            let start_frame = (track.start_frame as f64 * sample_rate as f64
                 / self.output_sample_rate as f64) as i64;
+            player.start_frame = start_frame;
             player.solo = track.solo;
             new_players.push(player);
             new_decoders.insert(track.id.0, decoder);
             let mut updated = track.clone();
             updated.output_frames = output_frames;
+            updated.start_frame = start_frame;
             new_track_infos.push(updated);
         }
 
