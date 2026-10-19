@@ -6,7 +6,7 @@ All notable changes to Aetherband are recorded here. This is a development chang
 
 ### Added
 
-- **2026-10-19 — PR #33, HypnoSynth arrangement patterns (pending merge):** Added playable 16-step note/rest pattern regions to the timeline, with move/delete, session schema v6 persistence, real-time callback scheduling and offline stereo mixdown. The native API is versioned at ABI 0.11.0; standalone Dart FFI and Windows WASAPI callback checks pass. Speaker audibility and Flutter widget CI remain unverified.
+- **2026-10-19 — PR #33, HypnoSynth and DAW editing foundations (pending merge):** Added playable 16-step note/rest pattern regions to the timeline with move, copy, cut, paste, duplicate, delete, and undo/redo for insertion/removal, step-note edits and moves. Schema v6 persists pattern notes and positions; the engine schedules regions in the real-time callback and offline stereo mixdown. Local Windows Rust and Flutter checks pass, and the opt-in native integration test observes nonzero arranged-pattern output telemetry on the default Windows audio device. Speaker audibility and microphone capture remain unverified; current-head CI is pending.
 
 - **2026-10-18 — Audio session persistence (pending merge):** Added a versioned early-alpha `.aetherband.json` format for imported audio source paths and stable track IDs, plus mixer gain/pan/mute settings. The File menu now supports Save, Save As, Open and New Session; project reads/writes run off the UI isolate. Open validates files before staging a new native engine, avoiding destructive partial session replacement. Demo clips, real clip editing and bundled assets remain unimplemented.
 
@@ -39,11 +39,10 @@ All notable changes to Aetherband are recorded here. This is a development chang
 ### Known limitations
 
 - A successful CI build does not prove that real audio hardware behaves correctly on every machine. Manual device switching and playback testing is still required.
-- Imported timeline clip width is a placeholder; native audio duration is not yet exposed to the UI.
-- The UI still contains illustrative demo tracks.
+- Waveform peaks currently support PCM and IEEE-float WAV; other formats show an explicit unavailable state.
 - The typed graph model is not yet connected to the real-time processing callback; arbitrary graph DSP, instruments, effects, routing, and a complete plugin system are not delivered by this work.
 - MIDI support is limited to the single HypnoSynth track and fixed 16-step pattern regions; independent MIDI tracks, velocity/duration editing and standard MIDI interchange are not implemented. Automation, effects, plugin hosting and spatial rendering are also incomplete.
-- Physical speaker audibility and real microphone/line-in capture remain unverified. Local Flutter widget execution is currently blocked by the SDK launcher lock; latest-head Windows CI remains pending.
+- Physical speaker/headphone audibility and real microphone/line-in capture remain unverified. Local widget and native-device integration checks pass; latest-head Windows CI remains pending.
 - These changes remain part of the unreleased early-alpha development line. No version or release date is implied by these entries.
 
 ## Release history
