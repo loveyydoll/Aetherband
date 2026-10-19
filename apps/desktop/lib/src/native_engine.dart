@@ -591,6 +591,7 @@ class _NativeEngineSession implements EngineController, PerformanceEngine {
     _check('track pan', _trackPanNative(_handle, trackId, pan));
   }
 
+  @override
   Future<void> setTrackStartSeconds(int trackId, double seconds) async {
     if (_disposed) throw StateError('Native engine has been disposed.');
     _check('track clip position', _trackStartNative(_handle, trackId, seconds));
