@@ -27,7 +27,7 @@
 
 ### 1.4 Project Persistence & Export
 - **FR-4.1 (P1): Project Serialization:** Save and load project metadata (tracks, clip locations, tempo, mixer volumes) into a versioned format (`.dawproject`).
-- **FR-4.2 (P2): Offline Master Bounce:** Render the entire arrangement to a 24-bit 48 kHz stereo WAV file faster than real-time. Signed stereo PCM24 export is implemented at the active engine sample rate; fixed 48 kHz export remains open.
+- **FR-4.2 (P2): Offline Master Bounce:** Render the entire arrangement to a 24-bit 48 kHz stereo WAV file faster than real-time. Signed stereo PCM24 export at fixed 48 kHz is implemented; source offsets, clip durations and arrangement positions are rescaled to retain timing.
 
 ---
 

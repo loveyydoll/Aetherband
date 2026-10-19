@@ -145,6 +145,7 @@ void main() {
       expect(ByteData.sublistView(mixedBytes).getUint16(34, Endian.little), 24);
       final exportRate =
           ByteData.sublistView(mixedBytes).getUint32(24, Endian.little);
+      expect(exportRate, 48000);
       final exportFrames =
           ByteData.sublistView(mixedBytes).getUint32(40, Endian.little) ~/ 6;
       expect(exportFrames / exportRate, closeTo(1.0, 1 / exportRate));

@@ -717,9 +717,24 @@ impl DAWEngine {
             .iter()
             .map(|track| offline_export::ExportTrack {
                 path: Path::new(&track.file_path).to_owned(),
-                start_frame: track.start_frame.max(0) as u64,
-                source_start_frame: track.source_start_frame.max(0) as u64,
-                total_frames: track.output_frames.max(0) as u64,
+                start_frame: rescale_frame(
+                    track.start_frame,
+                    self.output_sample_rate,
+                    offline_export::EXPORT_SAMPLE_RATE,
+                )
+                .max(0) as u64,
+                source_start_frame: rescale_frame(
+                    track.source_start_frame,
+                    self.output_sample_rate,
+                    offline_export::EXPORT_SAMPLE_RATE,
+                )
+                .max(0) as u64,
+                total_frames: rescale_frame(
+                    track.output_frames,
+                    self.output_sample_rate,
+                    offline_export::EXPORT_SAMPLE_RATE,
+                )
+                .max(0) as u64,
                 gain: track.gain,
                 pan: track.pan,
                 muted: track.muted,
@@ -730,7 +745,7 @@ impl DAWEngine {
             path,
             &tracks,
             offline_export::ExportSettings {
-                sample_rate: self.output_sample_rate,
+                sample_rate: offline_export::EXPORT_SAMPLE_RATE,
                 master: self.master_gain,
                 bpm: self.bpm,
                 beats_per_bar: self.beats_per_bar,
@@ -740,8 +755,9 @@ impl DAWEngine {
                 sequence_regions: self.sequence_regions.map(|region| {
                     region.map(|region| offline_export::ExportSequenceRegion {
                         id: region.id,
-                        start_frame: (region.start_seconds * self.output_sample_rate as f64).round()
-                            as u64,
+                        start_frame: (region.start_seconds
+                            * offline_export::EXPORT_SAMPLE_RATE as f64)
+                            .round() as u64,
                         notes: region.notes,
                     })
                 }),

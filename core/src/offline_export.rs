@@ -12,6 +12,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 const OUTPUT_BLOCK_FRAMES: usize = 1024;
+pub const EXPORT_SAMPLE_RATE: u32 = 48_000;
 pub const MAX_SEQUENCE_REGIONS: usize = 64;
 const MAX_WAV_DATA_BYTES: u64 = u32::MAX as u64 - 36;
 const DECODER_WAIT_LIMIT: Duration = Duration::from_secs(30);
@@ -141,7 +142,7 @@ impl TrackReader {
     }
 }
 
-/// Render the session to interleaved signed 24-bit PCM WAV, using fresh
+/// Render the session to interleaved signed 24-bit PCM WAV at 48 kHz, using fresh
 /// decoders so export does not seek, pause, or otherwise change live playback.
 pub fn render_stereo_wav(
     path: &Path,
