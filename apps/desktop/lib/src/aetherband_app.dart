@@ -261,6 +261,14 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     }
   }
 
+  Future<void> _goToStart() async {
+    if (_isRecording) {
+      _showRecordingSessionGuard();
+      return;
+    }
+    await _stop();
+  }
+
   bool _rejectSessionChangeDuringRecording() {
     if (!_isRecording) return false;
     _showRecordingSessionGuard();
@@ -650,6 +658,53 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       }
       if (mounted) setState(() => _trackOperationPending = false);
     }
+  }
+
+  Future<void> _renameSelectedTrack() async {
+    final selected = _selectedTrack;
+    if (selected == null || !_nativeTrackSources.containsKey(selected.id)) {
+      _showFeatureUnavailable('Renaming demo or instrument tracks');
+      return;
+    }
+    var draft = selected.name;
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Rename audio track'),
+        content: TextFormField(
+          key: const ValueKey('rename-track-name'),
+          initialValue: selected.name,
+          autofocus: true,
+          maxLength: 120,
+          decoration: const InputDecoration(labelText: 'Track name'),
+          onChanged: (value) => draft = value,
+          onFieldSubmitted: (value) {
+            if (value.trim().isNotEmpty) Navigator.pop(dialogContext, value);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (draft.trim().isNotEmpty) {
+                Navigator.pop(dialogContext, draft);
+              }
+            },
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+    final name = result?.trim();
+    if (!mounted || name == null || name.isEmpty) return;
+    if (!_tracks.contains(selected)) return;
+    setState(() {
+      selected.name = name;
+      _markSessionChanged();
+    });
   }
 
   AudioSessionDocument _captureAudioSession(String title) {
@@ -1178,11 +1233,17 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       case 'track.duplicate':
         unawaited(_duplicateSelectedTrack());
         return;
+      case 'track.rename':
+        unawaited(_renameSelectedTrack());
+        return;
       case 'transport.play':
         unawaited(_togglePlay());
         return;
       case 'transport.stop':
         unawaited(_stop());
+        return;
+      case 'navigate.start':
+        unawaited(_goToStart());
         return;
       case 'transport.record':
         unawaited(_toggleRecording());
@@ -1606,6 +1667,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
             unawaited(_togglePlay()),
         const SingleActivator(LogicalKeyboardKey.keyR): () =>
             unawaited(_toggleRecording()),
+        const SingleActivator(LogicalKeyboardKey.home): () =>
+            unawaited(_goToStart()),
         const SingleActivator(LogicalKeyboardKey.keyZ, control: true): () =>
             unawaited(_undoClipMove()),
         const SingleActivator(LogicalKeyboardKey.keyZ,
@@ -1867,6 +1930,7 @@ class _MenuBar extends StatelessWidget {
       _MenuAction('track.addAudio', 'Add Audio Track'),
       _MenuAction('track.addInstrument', 'Add Instrument Track'),
       _MenuAction('track.addBus', 'Add Bus'),
+      _MenuAction('track.rename', 'Rename Selected Track'),
       _MenuAction('track.duplicate', 'Duplicate Selected Track'),
       _MenuAction('track.delete', 'Delete Selected Track'),
     ],

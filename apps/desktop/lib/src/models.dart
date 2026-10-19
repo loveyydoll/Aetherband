@@ -53,7 +53,7 @@ class TrackModel {
   });
 
   final String id;
-  final String name;
+  String name;
   final String kind;
   final Color color;
   final List<ClipModel> clips;

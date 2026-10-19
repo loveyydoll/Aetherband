@@ -88,6 +88,27 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('Home returns transport to the start', (tester) async {
+    tester.view.physicalSize = const Size(1440, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final engine = FakeEngine();
+
+    await tester.pumpWidget(AetherbandApp(createEngine: () async => engine));
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.home);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Navigate menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Go to Start'));
+    await tester.pumpAndSettle();
+
+    expect(engine.calls.where((call) => call == 'stop').length, 2);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('HypnoSynth sequence edits send a rest to the native engine',
       (tester) async {
     tester.view.physicalSize = const Size(1440, 1000);

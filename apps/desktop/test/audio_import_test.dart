@@ -396,6 +396,51 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('renamed audio track is written to the session', (tester) async {
+    final directory = Directory.systemTemp.createTempSync('aetherband-name-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final sessionPath = '${directory.path}/renamed.aetherband.json';
+    final audioPath = '${directory.path}/take.wav';
+    File(audioPath).writeAsBytesSync([82, 73, 70, 70]);
+    final engine = FakeEngine();
+    await mountWorkspace(
+      tester,
+      engine,
+      picker: () async => XFile(audioPath),
+      sessionSavePicker: () async => sessionPath,
+    );
+    await importAudio(tester);
+    await tester.tap(find.byTooltip('Track menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rename Selected Track'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('rename-track-name')), 'Room microphone');
+    await tester.tap(find.text('Rename'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Room microphone'), findsWidgets);
+
+    await tester.tap(find.byTooltip('File menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save Session'));
+    await tester.pump();
+    final saveCompleted = await tester.runAsync(() async {
+      final file = File(sessionPath);
+      for (var i = 0; i < 100 && !await file.exists(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      return await file.exists();
+    });
+    expect(saveCompleted, isTrue);
+    await tester.pumpAndSettle();
+    final saved = (await tester.runAsync(
+      () => const AudioSessionStore().open(sessionPath),
+    ))!;
+    expect(saved.tracks.single.name, 'Room microphone');
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('picker cancellation leaves transport and inventory untouched',
       (tester) async {
     final engine = FakeEngine();
