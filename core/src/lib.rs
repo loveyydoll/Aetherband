@@ -162,7 +162,7 @@ impl DAWEngine {
         // This means a device/configuration/decoder error leaves the old stream
         // and its queues untouched.
         let sample_rate = self.backend.output_sample_rate(Some(device_index))?;
-        let (new_ui_endpoints, audio_endpoints) = create_engine_queues(1024, 2048);
+        let (mut new_ui_endpoints, audio_endpoints) = create_engine_queues(1024, 2048);
         let mut new_decoders = HashMap::new();
         let mut new_track_infos = Vec::with_capacity(self.tracks.len());
         let mut new_players = Vec::with_capacity(self.tracks.len());
@@ -179,7 +179,10 @@ impl DAWEngine {
             let mut player = TrackPlayer::new(track.id, consumer, track.gain, output_frames);
             player.pan = track.pan;
             player.muted = track.muted;
-            player.start_frame = track.start_frame;
+            // Arrangement positions are stored in output-rate frames. Preserve
+            // their time when the newly selected device uses another rate.
+            player.start_frame = (track.start_frame as f64 * sample_rate as f64
+                / self.output_sample_rate as f64) as i64;
             player.solo = track.solo;
             new_players.push(player);
             new_decoders.insert(track.id.0, decoder);
@@ -188,6 +191,40 @@ impl DAWEngine {
             new_track_infos.push(updated);
         }
 
+        // Recreate processor state before the stream starts. A device switch
+        // must preserve session performance settings instead of reverting to
+        // AudioProcessor defaults.
+        let commands = &mut new_ui_endpoints.cmd_producer;
+        commands
+            .push(EngineCommand::ConfigureTransport {
+                bpm: self.bpm,
+                metronome: self.metronome,
+                sequence: self.sequence,
+            })
+            .expect("fresh device command queue has capacity");
+        commands
+            .push(EngineCommand::SynthEvent {
+                event: 2,
+                key: self.preset as u32,
+                value: 0.0,
+            })
+            .expect("fresh device command queue has capacity");
+        for (key, value) in self.macros.iter().copied().enumerate() {
+            commands
+                .push(EngineCommand::SynthEvent {
+                    event: 3,
+                    key: key as u32,
+                    value,
+                })
+                .expect("fresh device command queue has capacity");
+        }
+        commands
+            .push(EngineCommand::SetMasterVolume {
+                target_gain: self.master_gain,
+                ramp_frames: 0,
+            })
+            .expect("fresh device command queue has capacity");
+
         // Start the replacement stream only after decoder setup succeeds. It may
         // output silence briefly while the pre-built track players are installed.
         let processor = AudioProcessor::new(sample_rate as f32, audio_endpoints);
@@ -195,7 +232,6 @@ impl DAWEngine {
             .backend
             .start_output_stream(Some(device_index), processor)?;
 
-        let mut new_ui_endpoints = new_ui_endpoints;
         for player in new_players {
             let raw = Box::into_raw(Box::new(player)) as usize;
             if new_ui_endpoints
