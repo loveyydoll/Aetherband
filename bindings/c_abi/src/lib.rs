@@ -185,7 +185,7 @@ pub unsafe extern "C" fn daw_engine_stop_recording(
     }
 }
 
-/// Render the loaded audio session to stereo 16-bit PCM WAV without changing playback.
+/// Render the loaded audio session to stereo signed 24-bit PCM WAV without changing playback.
 ///
 /// # Safety
 /// `engine` must be a live engine handle with serialized calls; `path` must point to a

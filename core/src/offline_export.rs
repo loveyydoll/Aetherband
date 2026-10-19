@@ -141,7 +141,7 @@ impl TrackReader {
     }
 }
 
-/// Render the session to interleaved signed 16-bit PCM WAV, using fresh
+/// Render the session to interleaved signed 24-bit PCM WAV, using fresh
 /// decoders so export does not seek, pause, or otherwise change live playback.
 pub fn render_stereo_wav(
     path: &Path,
@@ -253,7 +253,7 @@ pub fn render_stereo_wav(
     } else {
         0
     };
-    if end_frame.saturating_add(tail_frames) > MAX_WAV_DATA_BYTES / 4 {
+    if end_frame.saturating_add(tail_frames) > MAX_WAV_DATA_BYTES / 6 {
         return Err(ExportError::TooLong);
     }
 
@@ -307,7 +307,7 @@ fn render_to_temporary(
     let mut click_remaining = 0_u32;
     let mut click_gain = 1.0_f32;
     let mut written_frames = 0_u64;
-    let mut bytes = Vec::with_capacity(OUTPUT_BLOCK_FRAMES * 4);
+    let mut bytes = Vec::with_capacity(OUTPUT_BLOCK_FRAMES * 6);
     let mut left = [0.0_f32; OUTPUT_BLOCK_FRAMES];
     let mut right = [0.0_f32; OUTPUT_BLOCK_FRAMES];
     let mut block_start = 0_u64;
@@ -414,10 +414,11 @@ fn render_to_temporary(
             }
             left[frame] *= settings.master;
             right[frame] *= settings.master;
-            let l = (left[frame].clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16;
-            let r = (right[frame].clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16;
-            bytes.extend_from_slice(&l.to_le_bytes());
-            bytes.extend_from_slice(&r.to_le_bytes());
+            const PCM24_MAX: f32 = 8_388_607.0;
+            let l = (left[frame].clamp(-1.0, 1.0) * PCM24_MAX).round() as i32;
+            let r = (right[frame].clamp(-1.0, 1.0) * PCM24_MAX).round() as i32;
+            bytes.extend_from_slice(&l.to_le_bytes()[..3]);
+            bytes.extend_from_slice(&r.to_le_bytes()[..3]);
         }
         if bytes.len() as u64 > MAX_WAV_DATA_BYTES {
             return Err(ExportError::TooLong);
@@ -428,9 +429,9 @@ fn render_to_temporary(
         block_start += frames as u64;
     }
 
-    let data_bytes = written_frames.saturating_mul(4);
+    let data_bytes = written_frames.saturating_mul(6);
     file.seek(SeekFrom::Start(0))?;
-    write_wav_header(&mut file, settings.sample_rate, data_bytes as u32)?;
+    write_wav_header(&mut file, settings.sample_rate, data_bytes as u32, 24)?;
     file.sync_all()?;
     Ok(())
 }
@@ -439,7 +440,10 @@ fn write_wav_header(
     file: &mut File,
     sample_rate: u32,
     data_bytes: u32,
+    bits_per_sample: u16,
 ) -> Result<(), std::io::Error> {
+    let bytes_per_sample = u32::from(bits_per_sample / 8);
+    let block_align = (2 * bytes_per_sample) as u16;
     file.write_all(b"RIFF")?;
     file.write_all(&(36_u32.saturating_add(data_bytes)).to_le_bytes())?;
     file.write_all(b"WAVEfmt ")?;
@@ -447,9 +451,13 @@ fn write_wav_header(
     file.write_all(&1_u16.to_le_bytes())?;
     file.write_all(&2_u16.to_le_bytes())?;
     file.write_all(&sample_rate.to_le_bytes())?;
-    file.write_all(&sample_rate.saturating_mul(4).to_le_bytes())?;
-    file.write_all(&4_u16.to_le_bytes())?;
-    file.write_all(&16_u16.to_le_bytes())?;
+    file.write_all(
+        &sample_rate
+            .saturating_mul(u32::from(block_align))
+            .to_le_bytes(),
+    )?;
+    file.write_all(&block_align.to_le_bytes())?;
+    file.write_all(&bits_per_sample.to_le_bytes())?;
     file.write_all(b"data")?;
     file.write_all(&data_bytes.to_le_bytes())?;
     Ok(())
@@ -505,7 +513,7 @@ mod tests {
     fn write_source(path: &Path) {
         let frames = 2048_u32;
         let mut file = File::create(path).unwrap();
-        write_wav_header(&mut file, 48_000, frames * 4).unwrap();
+        write_wav_header(&mut file, 48_000, frames * 4, 16).unwrap();
         for index in 0..frames {
             let sample =
                 ((index as f32 * 440.0 * std::f32::consts::TAU / 48_000.0).sin() * 12_000.0) as i16;
@@ -561,11 +569,19 @@ mod tests {
             u32::from_le_bytes(header[24..28].try_into().unwrap()),
             48_000
         );
-        assert_eq!(u16::from_le_bytes([header[34], header[35]]), 16);
-        assert_eq!(u32::from_le_bytes(header[40..44].try_into().unwrap()), 8192);
+        assert_eq!(
+            u32::from_le_bytes(header[28..32].try_into().unwrap()),
+            288_000
+        );
+        assert_eq!(u16::from_le_bytes([header[32], header[33]]), 6);
+        assert_eq!(u16::from_le_bytes([header[34], header[35]]), 24);
+        assert_eq!(
+            u32::from_le_bytes(header[40..44].try_into().unwrap()),
+            12_288
+        );
         let mut data = Vec::new();
         file.read_to_end(&mut data).unwrap();
-        assert_eq!(data.len(), 8192);
+        assert_eq!(data.len(), 12_288);
         assert!(data.iter().any(|sample| *sample != 0));
         let _ = fs::remove_file(input);
         let _ = fs::remove_file(output);
@@ -594,7 +610,8 @@ mod tests {
         let data = fs::read(&output).unwrap();
         assert_eq!(u16::from_le_bytes([data[22], data[23]]), 2);
         assert_eq!(u32::from_le_bytes(data[24..28].try_into().unwrap()), 8_000);
-        assert_eq!(data.len(), 44 + 14 * 8_000 * 4);
+        assert_eq!(u16::from_le_bytes([data[34], data[35]]), 24);
+        assert_eq!(data.len(), 44 + 14 * 8_000 * 6);
         assert!(data[44..].iter().any(|sample| *sample != 0));
         let _ = fs::remove_file(output);
     }
@@ -628,8 +645,8 @@ mod tests {
         };
         render_stereo_wav(&output, &[], settings).unwrap();
         let data = fs::read(&output).unwrap();
-        assert!(data[44..44 + 8_000 * 4].iter().all(|sample| *sample == 0));
-        assert!(data[44 + 8_000 * 4..].iter().any(|sample| *sample != 0));
+        assert!(data[44..44 + 8_000 * 6].iter().all(|sample| *sample == 0));
+        assert!(data[44 + 8_000 * 6..].iter().any(|sample| *sample != 0));
         let _ = fs::remove_file(output);
     }
 
@@ -657,8 +674,8 @@ mod tests {
         };
         render_stereo_wav(&output, &[], settings).unwrap();
         let data = fs::read(&output).unwrap();
-        assert!(data[44..44 + 800 * 4].iter().all(|sample| *sample == 0));
-        assert!(data[44 + 800 * 4..].iter().any(|sample| *sample != 0));
+        assert!(data[44..44 + 800 * 6].iter().all(|sample| *sample == 0));
+        assert!(data[44 + 800 * 6..].iter().any(|sample| *sample != 0));
         let _ = fs::remove_file(output);
     }
 
@@ -685,15 +702,10 @@ mod tests {
         render_stereo_wav(&left_output, &[], settings).unwrap();
         let data = fs::read(&left_output).unwrap();
         let frames = data[44..]
-            .as_chunks::<4>()
+            .as_chunks::<6>()
             .0
             .iter()
-            .map(|frame| {
-                (
-                    i16::from_le_bytes([frame[0], frame[1]]),
-                    i16::from_le_bytes([frame[2], frame[3]]),
-                )
-            })
+            .map(|frame| (decode_pcm24(&frame[0..3]), decode_pcm24(&frame[3..6])))
             .collect::<Vec<_>>();
         assert!(frames.iter().any(|frame| frame.0 != 0));
         assert!(frames.iter().all(|frame| frame.1 == 0));
@@ -711,6 +723,11 @@ mod tests {
         assert!(muted[44..].iter().all(|sample| *sample == 0));
         let _ = fs::remove_file(left_output);
         let _ = fs::remove_file(muted_output);
+    }
+
+    fn decode_pcm24(bytes: &[u8]) -> i32 {
+        let sign = if bytes[2] & 0x80 == 0 { 0 } else { 0xff };
+        i32::from_le_bytes([bytes[0], bytes[1], bytes[2], sign])
     }
 
     #[test]

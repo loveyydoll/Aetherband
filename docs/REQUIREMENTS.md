@@ -17,17 +17,17 @@
 ### 1.2 Transport & Timeline
 - **FR-2.1 (P0): Transport Controls:** Play, Pause, Stop and Seek must produce immediate, observable engine behavior. Stop must silence the output, reset the playhead and allow a subsequent Play to restart from the beginning. The Stop fix is reported complete; keep acceptance/verification evidence current and do not describe the original regression as active unless reproduced.
 - **FR-2.2 (P1): Timeline & Musical Grid:** Support sample-accurate playhead tracking, BPM tempo configuration, and musical time signatures. Implemented for 2–7/4 meters: ruler scaling, bar seek, quarter-beat snapping and metronome accents follow the persisted session meter; older sessions default to 4/4. Verified by 3/4 widget, session round-trip and Rust metronome tests in PR #33.
-- **FR-2.3 (P1): Clip Arrangement:** Support placing, moving, splitting, trimming, and looping audio clips on discrete tracks.
+- **FR-2.3 (P1): Clip Arrangement:** Support placing, moving, splitting, trimming, and looping audio clips on discrete tracks. Placement, movement, splitting and source-bounded trimming are implemented; clip looping remains open.
 
 ### 1.3 User Interface (Desktop)
 - **FR-3.1 (P0): Real-Time Metering:** Render stereo Peak and RMS volume levels at $\ge 60\text{ FPS}$ with smooth decay physics.
 - **FR-3.2 (P0): Master Volume Fader:** Adjust master gain with de-zippering/smoothing to prevent audible stepping artifacts.
 - **FR-3.3 (P1): Waveform Display:** Render visual audio waveforms for clips with multi-resolution peak caching.
-- **FR-3.4 (P1): Device Configuration Dialog:** Allow the user to select input/output devices, sample rates (44.1 kHz, 48 kHz, 96 kHz), and buffer sizes (64, 128, 256, 512, 1024 frames).
+- **FR-3.4 (P1): Device Configuration Dialog:** Allow the user to select input/output devices, sample rates (44.1 kHz, 48 kHz, 96 kHz), and buffer sizes (64, 128, 256, 512, 1024 frames). Output-device enumeration/selection is implemented; sample-rate and buffer-size controls remain open.
 
 ### 1.4 Project Persistence & Export
 - **FR-4.1 (P1): Project Serialization:** Save and load project metadata (tracks, clip locations, tempo, mixer volumes) into a versioned format (`.dawproject`).
-- **FR-4.2 (P2): Offline Master Bounce:** Render the entire arrangement to a 24-bit 48 kHz stereo WAV file faster than real-time.
+- **FR-4.2 (P2): Offline Master Bounce:** Render the entire arrangement to a 24-bit 48 kHz stereo WAV file faster than real-time. Signed stereo PCM24 export is implemented at the active engine sample rate; fixed 48 kHz export remains open.
 
 ---
 

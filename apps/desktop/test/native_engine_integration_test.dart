@@ -141,11 +141,12 @@ void main() {
       expect(String.fromCharCodes(mixedBytes.sublist(0, 4)), 'RIFF');
       expect(String.fromCharCodes(mixedBytes.sublist(8, 12)), 'WAVE');
       expect(ByteData.sublistView(mixedBytes).getUint16(22, Endian.little), 2);
-      expect(ByteData.sublistView(mixedBytes).getUint16(34, Endian.little), 16);
+      expect(ByteData.sublistView(mixedBytes).getUint16(32, Endian.little), 6);
+      expect(ByteData.sublistView(mixedBytes).getUint16(34, Endian.little), 24);
       final exportRate =
           ByteData.sublistView(mixedBytes).getUint32(24, Endian.little);
       final exportFrames =
-          ByteData.sublistView(mixedBytes).getUint32(40, Endian.little) ~/ 4;
+          ByteData.sublistView(mixedBytes).getUint32(40, Endian.little) ~/ 6;
       expect(exportFrames / exportRate, closeTo(1.0, 1 / exportRate));
       expect(mixedBytes.sublist(44).any((sample) => sample != 0), isTrue);
       expect((await engine.telemetry.first).playheadSeconds, 0);

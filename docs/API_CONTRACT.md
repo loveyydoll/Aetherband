@@ -88,7 +88,7 @@ Do not substitute a different field order or widths in Dart. The Dart `Struct` d
 | `daw_engine_remove_sequence_region(engine, region_id)` | Remove a nonzero HypnoSynth arrangement-region ID | 0 accepted; -1 invalid argument; -3 unknown region or command rejected |
 | `daw_engine_start_recording(engine, path)` | Start default Windows input capture into a new stereo PCM16 WAV; existing files are never overwritten | 0 started; -1 invalid input; -6 recording/input initialization failed |
 | `daw_engine_stop_recording(engine, out_stats)` | Stop input capture, finalize WAV, return sample rate, frames written and dropped | 0 finalized; -1 invalid argument; -6 recording/writer failure |
-| `daw_engine_export_wav(engine, path)` | Render loaded clips and performance to stereo PCM16 WAV | 0 success; -1 invalid argument; -5 export failed |
+| `daw_engine_export_wav(engine, path)` | Render loaded clips and performance to stereo signed PCM24 WAV at the active engine sample rate | 0 success; -1 invalid argument; -5 export failed |
 | `daw_engine_solo_track(engine, track_id, solo)` | Enable implicit solo for one imported track | 0 accepted; negative error |
 | `daw_engine_set_track_start_seconds(engine, track_id, seconds)` | Set imported clip start position in the arrangement | 0 accepted; negative error |
 | `daw_engine_set_track_region_seconds(engine, track_id, source_start_seconds, duration_seconds)` | Set a source interval for one imported audio region; requires stopped transport | 0 accepted; negative error |
