@@ -2633,6 +2633,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         _initializingEngine) {
       return;
     }
+    await _performanceChain;
+    if (!mounted) return;
     final source = redo ? _redoHistory : _undoHistory;
     if (source.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
