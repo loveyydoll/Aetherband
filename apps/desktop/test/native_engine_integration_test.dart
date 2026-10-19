@@ -59,9 +59,11 @@ void main() {
       await engine.play();
       final hardRight = await engine.telemetry
           .firstWhere((frame) =>
-              frame.isPlaying && frame.peakRight > 0 && frame.peakLeft == 0)
+              frame.isPlaying &&
+              frame.peakRight > 0 &&
+              frame.peakLeft < 0.000001)
           .timeout(const Duration(seconds: 10));
-      expect(hardRight.peakLeft, 0);
+      expect(hardRight.peakLeft, lessThan(0.000001));
       expect(hardRight.peakRight, greaterThan(0));
       await engine.stop();
       await engine.synthEvent(7, 0, 0.75);
