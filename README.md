@@ -66,7 +66,7 @@ From quick sketches to more involved projects, we want an interface that can bec
 </td></tr>
 </table>
 
-> **These are product goals.** HypnoSynth and basic performance controls are experimental foundations. Recording, editable MIDI, effects, automation, third-party plugins, spatial rendering and full project workflows are not complete.
+> **These are product goals.** HypnoSynth and basic performance controls are experimental foundations. Windows input recording is implemented, but the physical input path is not yet verified. Editable MIDI, effects, automation, third-party plugins, spatial rendering and full project workflows remain future work.
 
 ## Built for curious people
 
@@ -128,7 +128,7 @@ Aetherband is in an early stage. The distinction between existing code, verified
 
 ### Known gaps
 
-- Recording, editable MIDI, waveform display, effects, automation, plugin hosting, clip split/trim/resize and undo/redo remain unimplemented. Imported audio clips snap to quarter-note beats when moved while stopped at the start, and their positions persist in session files.
+- Windows input recording writes a WAV and adds it as a real audio track; its hardware path remains unverified. Editable MIDI, waveform display, effects, automation, plugin hosting, clip split/trim/resize and undo/redo remain unimplemented. Imported audio clips snap to quarter-note beats when moved while stopped at the start, and their positions persist in session files.
 - Local Rust and Flutter checks pass, including 30 Flutter tests with the native DLL, default WASAPI output selection/playback and stereo WAV export; a Windows debug build succeeds. Rust and Windows Flutter CI passed on output-selector commit `49e3111`. Physical listening/loopback capture remains unverified.
 - Synced `sources/` references and the pre-existing Desktop checkout remain untouched.
 - The current CI checks need to pass before the migration can be described as stable.
