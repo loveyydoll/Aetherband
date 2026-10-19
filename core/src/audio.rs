@@ -6,9 +6,19 @@
 //! - Zero blocking filesystem / network I/O
 
 use crate::dsp::{GainRamp, LevelMeter, SineOscillator};
-use crate::ringbuf::{AudioEndpoints, DecodedBlock, EngineCommand, TelemetryFrame};
+use crate::hypnosynth::{HypnoSynth, DEFAULT_SEQUENCE};
+use crate::ringbuf::{AudioEndpoints, DecodedBlock, EngineCommand, SequenceRegion, TelemetryFrame};
 use crate::track::{TrackPlayer, TrackSlots, MAX_TRACKS};
 use rtrb::{Consumer, Producer};
+
+const MAX_SEQUENCE_REGIONS: usize = 64;
+
+#[derive(Debug, Clone, Copy)]
+struct SequenceRegionState {
+    region: SequenceRegion,
+    last_step: i64,
+    active_note: Option<u8>,
+}
 
 /// Hard real-time audio callback processor.
 ///
@@ -18,6 +28,7 @@ pub struct AudioProcessor {
     cmd_consumer: Consumer<EngineCommand>,
     telemetry_producer: Producer<TelemetryFrame>,
     retired_tracks: Producer<Box<TrackPlayer>>,
+    retired_blocks: Producer<DecodedBlock>,
     // Fixed-capacity fallback when the control thread has not reclaimed returned players.
     pending_retired: [Option<Box<TrackPlayer>>; MAX_TRACKS],
 
@@ -25,6 +36,21 @@ pub struct AudioProcessor {
     oscillator: SineOscillator,
     master_gain: GainRamp,
     meter: LevelMeter,
+    synth: HypnoSynth,
+    synth_gain: GainRamp,
+    synth_pan: f32,
+    synth_muted: bool,
+    synth_solo: bool,
+    bpm: f32,
+    beats_per_bar: u8,
+    metronome: bool,
+    sequence: bool,
+    sequence_note: Option<u8>,
+    sequence_pattern: [Option<u8>; 16],
+    sequence_regions: [Option<SequenceRegionState>; MAX_SEQUENCE_REGIONS],
+    beat_phase: f64,
+    click_remaining: usize,
+    click_gain: f32,
 
     // State
     sample_rate: f32,
@@ -50,10 +76,26 @@ impl AudioProcessor {
             cmd_consumer: endpoints.cmd_consumer,
             telemetry_producer: endpoints.telemetry_producer,
             retired_tracks: endpoints.retired_tracks,
+            retired_blocks: endpoints.retired_blocks,
             pending_retired: std::array::from_fn(|_| None),
             oscillator: SineOscillator::new(sample_rate, 440.0),
             master_gain: GainRamp::new(0.8),
             meter: LevelMeter::new(),
+            synth: HypnoSynth::new(sample_rate),
+            synth_gain: GainRamp::new(0.8),
+            synth_pan: 0.5,
+            synth_muted: false,
+            synth_solo: false,
+            bpm: 92.0,
+            beats_per_bar: 4,
+            metronome: false,
+            sequence: false,
+            sequence_note: None,
+            sequence_pattern: DEFAULT_SEQUENCE,
+            sequence_regions: [None; MAX_SEQUENCE_REGIONS],
+            beat_phase: 0.0,
+            click_remaining: 0,
+            click_gain: 1.0,
             sample_rate,
             playhead_frame: 0,
             is_playing: false,
@@ -145,22 +187,117 @@ impl AudioProcessor {
                 break;
             };
             match cmd {
+                SynthEvent { event, key, value } => match event {
+                    0 => self.synth.note_on(key as u8, value),
+                    1 => self.synth.note_off(key as u8),
+                    2 => self.synth.preset(key as u8),
+                    3 => self.synth.parameter(key as u8, value),
+                    4 => self.synth.panic(),
+                    5 if (key as usize) < self.sequence_pattern.len() => {
+                        self.sequence_pattern[key as usize] = (value >= 0.0).then_some(value as u8);
+                    }
+                    6 if key == 0 => self.synth_gain.set_target(value, 128),
+                    7 if key == 0 => self.synth_pan = value,
+                    8 if key == 0 => self.synth_muted = value >= 0.5,
+                    9 if key == 0 => self.synth_solo = value >= 0.5,
+                    _ => (),
+                },
+                ConfigureTransport {
+                    bpm,
+                    beats_per_bar,
+                    metronome,
+                    sequence,
+                } => {
+                    self.bpm = bpm;
+                    self.beats_per_bar = beats_per_bar.clamp(2, 7);
+                    self.metronome = metronome;
+                    self.sequence = sequence;
+                    if !sequence {
+                        if let Some(note) = self.sequence_note.take() {
+                            self.synth.note_off(note);
+                        }
+                    }
+                }
+                SetSequenceRegion(region) => {
+                    let slot = self
+                        .sequence_regions
+                        .iter()
+                        .position(|entry| entry.is_some_and(|entry| entry.region.id == region.id))
+                        .or_else(|| self.sequence_regions.iter().position(Option::is_none));
+                    if let Some(slot) = slot {
+                        if let Some(note) =
+                            self.sequence_regions[slot].and_then(|entry| entry.active_note)
+                        {
+                            self.synth.note_off(note);
+                        }
+                        self.sequence_regions[slot] = Some(SequenceRegionState {
+                            region,
+                            last_step: -1,
+                            active_note: None,
+                        });
+                    }
+                }
+                RemoveSequenceRegion { region_id } => {
+                    if let Some(slot) = self
+                        .sequence_regions
+                        .iter()
+                        .position(|entry| entry.is_some_and(|entry| entry.region.id == region_id))
+                    {
+                        if let Some(note) =
+                            self.sequence_regions[slot].and_then(|entry| entry.active_note)
+                        {
+                            self.synth.note_off(note);
+                        }
+                        self.sequence_regions[slot] = None;
+                    }
+                }
                 Play => {
                     self.is_playing = true;
                 }
                 Pause => {
                     self.is_playing = false;
+                    self.synth.panic();
+                    self.sequence_note = None;
+                    for slot in &mut self.sequence_regions {
+                        if let Some(region) = slot.as_mut() {
+                            region.active_note = None;
+                            region.last_step = -1;
+                        }
+                    }
                 }
                 Stop => {
                     self.is_playing = false;
                     self.playhead_frame = 0;
                     self.oscillator.reset();
+                    self.synth.panic();
+                    self.sequence_note = None;
+                    self.beat_phase = 0.0;
+                    self.click_remaining = 0;
                     self.tracks.reset_all();
+                    for slot in &mut self.sequence_regions {
+                        if let Some(region) = slot.as_mut() {
+                            region.active_note = None;
+                            region.last_step = -1;
+                        }
+                    }
                 }
                 Seek(frame) => {
                     self.playhead_frame = frame.max(0);
-                    // Track seek is handled by the control thread restarting
-                    // the decoder from the new position
+                    self.beat_phase = self.playhead_frame as f64 / self.sample_rate as f64
+                        * self.bpm as f64
+                        / 60.0;
+                    self.click_remaining = 0;
+                    if let Some(note) = self.sequence_note.take() {
+                        self.synth.note_off(note);
+                    }
+                    for slot in &mut self.sequence_regions {
+                        if let Some(region) = slot.as_mut() {
+                            if let Some(note) = region.active_note.take() {
+                                self.synth.note_off(note);
+                            }
+                            region.last_step = -1;
+                        }
+                    }
                 }
                 SetMasterVolume {
                     target_gain,
@@ -189,9 +326,22 @@ impl AudioProcessor {
                         track.pan = pan.clamp(0.0, 1.0);
                     }
                 }
+                SetTrackStartFrame {
+                    track_id,
+                    start_frame,
+                } => {
+                    if let Some(track) = self.tracks.get_mut(track_id) {
+                        track.start_frame = start_frame.max(0);
+                    }
+                }
                 MuteTrack { track_id, muted } => {
                     if let Some(track) = self.tracks.get_mut(track_id) {
                         track.muted = muted;
+                    }
+                }
+                SoloTrack { track_id, solo } => {
+                    if let Some(track) = self.tracks.get_mut(track_id) {
+                        track.solo = solo;
                     }
                 }
                 AddTrack { player_ptr } => {
@@ -211,19 +361,18 @@ impl AudioProcessor {
                 }
                 RestartTrack {
                     track_id,
-                    consumer_ptr,
+                    player_ptr,
                 } => {
-                    // SAFETY: consumer_ptr is a Box<Consumer<DecodedBlock>> created by the
-                    // control thread and sent exactly once through the SPSC command queue.
-                    let consumer =
-                        unsafe { *Box::from_raw(consumer_ptr as *mut Consumer<DecodedBlock>) };
-                    if let Some(track) = self.tracks.get_mut(track_id) {
-                        track.replace_stream(consumer);
+                    // SAFETY: the control thread transfers this allocation exactly once.
+                    // Both rejected replacements and old players leave on the retirement queue.
+                    let player = unsafe { Box::from_raw(player_ptr as *mut TrackPlayer) };
+                    if let Some(old) = self.tracks.remove(track_id) {
+                        self.retire_track(old);
+                        if let Err(player) = self.tracks.add(player) {
+                            self.retire_track(player);
+                        }
                     } else {
-                        // Track already removed; drop the consumer on this thread
-                        // (still real-time safe — Consumer drop only frees the ring
-                        // slots it owns, which is bounded).
-                        drop(consumer);
+                        self.retire_track(player);
                     }
                 }
             }
@@ -239,15 +388,39 @@ impl AudioProcessor {
     /// # Real-Time Safety
     /// Zero heap allocations. Zero blocking operations. Zero OS locks.
     pub fn process_interleaved(&mut self, output: &mut [f32], channels: usize) {
+        self.process_samples(output, channels);
+    }
+
+    /// Render every frame in bounded scratch-sized chunks, converting to the
+    /// hardware's actual sample format without a callback allocation.
+    pub fn process_samples<T: cpal::Sample + cpal::FromSample<f32>>(
+        &mut self,
+        output: &mut [T],
+        channels: usize,
+    ) {
+        output.fill(T::EQUILIBRIUM);
+        if channels == 0 {
+            return;
+        }
+        self.handle_commands();
+        for chunk in output.chunks_mut(Self::MAX_BLOCK_FRAMES * channels) {
+            self.process_chunk(chunk, channels);
+        }
+    }
+
+    fn process_chunk<T: cpal::Sample + cpal::FromSample<f32>>(
+        &mut self,
+        output: &mut [T],
+        channels: usize,
+    ) {
         // A malformed/unsupported channel count must never cause division by
         // zero. Keep the callback allocation-free while guaranteeing silence.
         if channels == 0 {
-            output.fill(0.0);
+            output.fill(T::EQUILIBRIUM);
             return;
         }
 
         // 1. Process a bounded number of pending UI commands.
-        self.handle_commands();
 
         let frames = output.len() / channels;
         let meter_frames = frames.min(Self::MAX_BLOCK_FRAMES);
@@ -259,12 +432,21 @@ impl AudioProcessor {
         }
 
         // 3. Mix all active tracks into the scratch bus
+        let audio_solo = self.tracks.has_solo();
+        let synth_pan_angle = self.synth_pan * (std::f32::consts::PI / 2.0);
+        let synth_pan_left = synth_pan_angle.cos();
+        let synth_pan_right = synth_pan_angle.sin();
         if self.is_playing {
+            let solo_active = audio_solo || self.synth_solo;
+            let playhead_frame = self.playhead_frame;
             self.tracks.iter_mut().for_each(|track| {
                 track.mix_into(
                     &mut self.scratch_left[..meter_frames],
                     &mut self.scratch_right[..meter_frames],
                     meter_frames,
+                    &mut self.retired_blocks,
+                    solo_active,
+                    playhead_frame,
                 );
             });
         }
@@ -280,6 +462,82 @@ impl AudioProcessor {
 
         // 5. Apply master gain (with de-zippering) and write to hardware buffer
         for f in 0..frames {
+            if self.is_playing {
+                // Clock lives on the audio thread; UI refresh rate cannot change timing.
+                let previous = self.beat_phase;
+                self.beat_phase += self.bpm as f64 / (60.0 * self.sample_rate as f64);
+                if (previous == 0.0 || previous.floor() != self.beat_phase.floor())
+                    && self.metronome
+                {
+                    self.click_remaining = (self.sample_rate * 0.025) as usize;
+                    self.click_gain = if (self.beat_phase.floor() as u64)
+                        .is_multiple_of(self.beats_per_bar as u64)
+                    {
+                        1.5
+                    } else {
+                        1.0
+                    };
+                }
+                if self.sequence
+                    && (previous == 0.0
+                        || (previous * 2.0).floor() != (self.beat_phase * 2.0).floor())
+                {
+                    if let Some(note) = self.sequence_note.take() {
+                        self.synth.note_off(note);
+                    }
+                    let step = (self.beat_phase * 2.0) as usize % self.sequence_pattern.len();
+                    if let Some(note) = self.sequence_pattern[step] {
+                        self.synth.note_on(note, 0.72);
+                        self.sequence_note = Some(note);
+                    }
+                }
+            }
+            if self.is_playing {
+                let current_frame = self.playhead_frame.saturating_add(f as i64);
+                let frames_per_step = self.sample_rate as f64 * 30.0 / self.bpm as f64;
+                let region_frames = frames_per_step * 16.0;
+                for slot in &mut self.sequence_regions {
+                    let Some(region) = slot.as_mut() else {
+                        continue;
+                    };
+                    let elapsed = current_frame - region.region.start_frame;
+                    if elapsed < 0 {
+                        continue;
+                    }
+                    if elapsed as f64 >= region_frames {
+                        if let Some(note) = region.active_note.take() {
+                            self.synth.note_off(note);
+                        }
+                        region.last_step = -1;
+                        continue;
+                    }
+                    let step = (elapsed as f64 / frames_per_step).floor() as i64;
+                    if step != region.last_step {
+                        if let Some(note) = region.active_note.take() {
+                            self.synth.note_off(note);
+                        }
+                        if let Some(note) = region.region.notes[step as usize] {
+                            self.synth.note_on(note, 0.72);
+                            region.active_note = Some(note);
+                        }
+                        region.last_step = step;
+                    }
+                }
+            }
+            let synth = self.synth.next_frame();
+            let synth_gain = self.synth_gain.next_gain();
+            if !self.synth_muted && (!audio_solo || self.synth_solo) {
+                self.scratch_left[f] += synth[0] * synth_gain * synth_pan_left;
+                self.scratch_right[f] += synth[1] * synth_gain * synth_pan_right;
+            }
+            if self.is_playing && self.metronome && self.click_remaining > 0 {
+                let time = self.click_remaining as f32 / self.sample_rate;
+                let click =
+                    (time * 1500.0 * std::f32::consts::TAU).sin() * time * 3.0 * self.click_gain;
+                self.scratch_left[f] += click;
+                self.scratch_right[f] += click;
+                self.click_remaining -= 1;
+            }
             let gain = self.master_gain.next_gain();
             let l = if f < meter_frames {
                 self.scratch_left[f] * gain
@@ -293,15 +551,15 @@ impl AudioProcessor {
             };
 
             if channels >= 2 {
-                output[f * channels] = l;
-                output[f * channels + 1] = r;
+                output[f * channels] = T::from_sample(l.clamp(-1.0, 1.0));
+                output[f * channels + 1] = T::from_sample(r.clamp(-1.0, 1.0));
                 // Explicitly clear channels beyond stereo instead of leaving
                 // stale/uninitialized samples in the hardware output buffer.
                 for channel in 2..channels {
-                    output[f * channels + channel] = 0.0;
+                    output[f * channels + channel] = T::EQUILIBRIUM;
                 }
             } else {
-                output[f * channels] = (l + r) * 0.5;
+                output[f * channels] = T::from_sample(((l + r) * 0.5).clamp(-1.0, 1.0));
             }
 
             // Store final mixed signal back into scratch for metering
@@ -361,8 +619,12 @@ mod tests {
 
         let mut output = vec![1.0f32; 128 * 6];
         processor.process_interleaved(&mut output, 6);
-        assert!(output.chunks_exact(6).any(|frame| frame[0] != 0.0));
-        for frame in output.chunks_exact(6) {
+        assert!(output
+            .as_chunks::<6>()
+            .0
+            .iter()
+            .any(|frame| frame[0] != 0.0));
+        for frame in output.as_chunks::<6>().0 {
             assert_eq!(&frame[2..], &[0.0; 4]);
         }
     }
@@ -370,7 +632,7 @@ mod tests {
     /// If the backend unexpectedly supplies a larger block than the preallocated
     /// scratch capacity, the unprocessed tail must be deterministically silent.
     #[test]
-    fn oversized_callback_clears_output_tail() {
+    fn oversized_callback_renders_output_tail() {
         let (mut ui, audio) = create_engine_queues(16, 16);
         let mut processor = AudioProcessor::new(48_000.0, audio);
         ui.cmd_producer
@@ -389,7 +651,7 @@ mod tests {
             .any(|sample| *sample != 0.0));
         assert!(output[AudioProcessor::MAX_BLOCK_FRAMES * 2..]
             .iter()
-            .all(|sample| *sample == 0.0));
+            .any(|sample| *sample != 0.0));
     }
 
     #[test]
@@ -421,7 +683,7 @@ mod tests {
 
         processor.process_interleaved(&mut buffer, 4);
 
-        for frame in buffer.chunks_exact(4) {
+        for frame in buffer.as_chunks::<4>().0 {
             assert_eq!(frame[2], 0.0);
             assert_eq!(frame[3], 0.0);
         }
@@ -538,6 +800,200 @@ mod tests {
         processor.process_interleaved(&mut buffer, 2);
 
         assert!(buffer.iter().any(|&s| s != 0.0));
+    }
+
+    #[test]
+    fn hypnosynth_note_event_reaches_the_output_without_transport_play() {
+        let (mut ui, audio) = create_engine_queues(16, 16);
+        let mut processor = AudioProcessor::new(48_000.0, audio);
+        ui.cmd_producer
+            .push(EngineCommand::SynthEvent {
+                event: 0,
+                key: 60,
+                value: 0.8,
+            })
+            .unwrap();
+        let mut output = vec![0.0f32; 1024 * 2];
+        processor.process_interleaved(&mut output, 2);
+        assert!(output.iter().any(|sample| sample.abs() > 0.0001));
+    }
+
+    #[test]
+    fn hypnosynth_mixer_mute_gain_and_pan_reach_callback_output() {
+        let (mut ui, audio) = create_engine_queues(32, 32);
+        let mut processor = AudioProcessor::new(48_000.0, audio);
+        ui.cmd_producer
+            .push(EngineCommand::SynthEvent {
+                event: 0,
+                key: 60,
+                value: 0.8,
+            })
+            .unwrap();
+        ui.cmd_producer
+            .push(EngineCommand::SynthEvent {
+                event: 8,
+                key: 0,
+                value: 1.0,
+            })
+            .unwrap();
+        let mut output = vec![0.0_f32; 256 * 2];
+        processor.process_interleaved(&mut output, 2);
+        assert!(output.iter().all(|sample| *sample == 0.0));
+
+        ui.cmd_producer
+            .push(EngineCommand::SynthEvent {
+                event: 8,
+                key: 0,
+                value: 0.0,
+            })
+            .unwrap();
+        ui.cmd_producer
+            .push(EngineCommand::SynthEvent {
+                event: 6,
+                key: 0,
+                value: 0.25,
+            })
+            .unwrap();
+        ui.cmd_producer
+            .push(EngineCommand::SynthEvent {
+                event: 7,
+                key: 0,
+                value: 0.0,
+            })
+            .unwrap();
+        processor.process_interleaved(&mut output, 2);
+        assert!(output
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .any(|frame| frame[0].abs() > 0.0001));
+        assert!(output
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .all(|frame| frame[1] == 0.0));
+    }
+
+    #[test]
+    fn editable_sequence_rest_and_note_reach_realtime_output() {
+        let (mut ui, audio) = create_engine_queues(32, 32);
+        let mut processor = AudioProcessor::new(8_000.0, audio);
+        ui.cmd_producer
+            .push(EngineCommand::SynthEvent {
+                event: 5,
+                key: 0,
+                value: -1.0,
+            })
+            .unwrap();
+        ui.cmd_producer
+            .push(EngineCommand::SynthEvent {
+                event: 5,
+                key: 1,
+                value: 60.0,
+            })
+            .unwrap();
+        ui.cmd_producer
+            .push(EngineCommand::ConfigureTransport {
+                bpm: 300.0,
+                beats_per_bar: 4,
+                metronome: false,
+                sequence: true,
+            })
+            .unwrap();
+        ui.cmd_producer.push(EngineCommand::Play).unwrap();
+
+        let mut output = vec![0.0_f32; 1600 * 2];
+        processor.process_interleaved(&mut output, 2);
+        assert!(output[..800 * 2].iter().all(|sample| *sample == 0.0));
+        assert!(output[800 * 2..].iter().any(|sample| sample.abs() > 0.0001));
+    }
+
+    #[test]
+    fn timeline_sequence_region_starts_on_its_arrangement_frame() {
+        let (mut ui, audio) = create_engine_queues(32, 32);
+        let mut processor = AudioProcessor::new(8_000.0, audio);
+        ui.cmd_producer
+            .push(EngineCommand::ConfigureTransport {
+                bpm: 300.0,
+                beats_per_bar: 4,
+                metronome: false,
+                sequence: false,
+            })
+            .unwrap();
+        let mut notes = [None; 16];
+        notes[0] = Some(60);
+        ui.cmd_producer
+            .push(EngineCommand::SetSequenceRegion(SequenceRegion {
+                id: 1,
+                start_frame: 800,
+                notes,
+            }))
+            .unwrap();
+        ui.cmd_producer.push(EngineCommand::Play).unwrap();
+
+        let mut output = vec![0.0_f32; 1_600 * 2];
+        processor.process_interleaved(&mut output, 2);
+        assert!(output[..800 * 2].iter().all(|sample| *sample == 0.0));
+        assert!(output[800 * 2..].iter().any(|sample| sample.abs() > 0.0001));
+    }
+
+    #[test]
+    fn metronome_accent_follows_three_four_measure_boundaries() {
+        let (mut ui, audio) = create_engine_queues(32, 32);
+        let mut processor = AudioProcessor::new(8_000.0, audio);
+        ui.cmd_producer
+            .push(EngineCommand::ConfigureTransport {
+                bpm: 120.0,
+                beats_per_bar: 3,
+                metronome: true,
+                sequence: false,
+            })
+            .unwrap();
+        ui.cmd_producer.push(EngineCommand::Play).unwrap();
+
+        let mut output = vec![0.0_f32; 16_000 * 2];
+        processor.process_interleaved(&mut output, 2);
+        let peak = |beat: usize| {
+            let start = beat * 4_000 * 2;
+            output[start..start + 512 * 2]
+                .iter()
+                .fold(0.0_f32, |current, sample| current.max(sample.abs()))
+        };
+        let downbeat = peak(0);
+        let second_beat = peak(1);
+        let third_beat = peak(2);
+        let following_downbeat = peak(3);
+        assert!(
+            downbeat > second_beat * 1.4,
+            "expected a downbeat accent, got {downbeat} vs {second_beat}"
+        );
+        assert!((second_beat - third_beat).abs() < 0.00001);
+        assert!(following_downbeat > third_beat * 1.4);
+    }
+
+    #[test]
+    fn solo_mutes_other_tracks_in_the_mixer() {
+        let (mut ui, audio) = create_engine_queues(16, 16);
+        let mut processor = AudioProcessor::new(48_000.0, audio);
+        for id in [1, 2] {
+            let (mut producer, consumer) = create_stream_queue(2);
+            let mut block = DecodedBlock::silent(128);
+            let value = if id == 1 { 0.2 } else { 0.4 };
+            for frame in 0..128 {
+                block.samples[frame * 2] = value;
+                block.samples[frame * 2 + 1] = value;
+            }
+            producer.push(block).unwrap();
+            let mut player = TrackPlayer::new(TrackId(id), consumer, 1.0, 128);
+            player.solo = id == 1;
+            assert!(processor.tracks_mut().add(Box::new(player)).is_ok());
+        }
+
+        ui.cmd_producer.push(EngineCommand::Play).unwrap();
+        let mut output = vec![0.0f32; 256];
+        processor.process_interleaved(&mut output, 2);
+        assert!(output.iter().any(|sample| *sample != 0.0));
+        assert!(output.iter().all(|sample| *sample < 0.2));
     }
 
     /// Regression for issue #5: Stop must silence output and reset playhead.

@@ -173,7 +173,7 @@ mod tests {
         let mut osc = SineOscillator::new(48000.0, 440.0);
         for _ in 0..48000 {
             let sample = osc.next_sample();
-            assert!(sample >= -1.0 && sample <= 1.0);
+            assert!((-1.0..=1.0).contains(&sample));
         }
     }
 

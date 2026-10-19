@@ -14,6 +14,14 @@ use rtrb::{Consumer, Producer, RingBuffer};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TrackId(pub u32);
 
+/// One fixed-length HypnoSynth pattern clip scheduled on the session timeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SequenceRegion {
+    pub id: u32,
+    pub start_frame: i64,
+    pub notes: [Option<u8>; 16],
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Commands (UI/Control thread → Audio thread)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -27,6 +35,23 @@ pub struct TrackId(pub u32);
 /// We implement `Debug` manually for the pointer-carrying variants where needed.
 #[derive(Debug)]
 pub enum EngineCommand {
+    SynthEvent {
+        event: u32,
+        key: u32,
+        value: f32,
+    },
+    ConfigureTransport {
+        bpm: f32,
+        beats_per_bar: u8,
+        metronome: bool,
+        sequence: bool,
+    },
+    /// Replace or install one bounded 16-step instrument region.
+    SetSequenceRegion(SequenceRegion),
+    /// Remove an instrument region and release its currently sounding note.
+    RemoveSequenceRegion {
+        region_id: u32,
+    },
     // --- Transport ---
     /// Start audio playback.
     Play,
@@ -46,7 +71,10 @@ pub enum EngineCommand {
 
     // --- Test tone (diagnostic) ---
     /// Enable or disable the diagnostic test tone oscillator.
-    SetTestTone { enabled: bool, frequency_hz: f32 },
+    SetTestTone {
+        enabled: bool,
+        frequency_hz: f32,
+    },
 
     // --- Track mixing ---
     /// Set per-track volume with de-zippering over ramp_frames.
@@ -56,9 +84,25 @@ pub enum EngineCommand {
         ramp_frames: usize,
     },
     /// Set per-track pan position (0.0 = full left, 0.5 = centre, 1.0 = full right).
-    SetTrackPan { track_id: TrackId, pan: f32 },
+    SetTrackPan {
+        track_id: TrackId,
+        pan: f32,
+    },
+    /// Schedule a track at an absolute session frame.
+    SetTrackStartFrame {
+        track_id: TrackId,
+        start_frame: i64,
+    },
     /// Mute or unmute a track.
-    MuteTrack { track_id: TrackId, muted: bool },
+    MuteTrack {
+        track_id: TrackId,
+        muted: bool,
+    },
+    /// Solo one track; the mixer applies implicit solo to every other track.
+    SoloTrack {
+        track_id: TrackId,
+        solo: bool,
+    },
 
     // --- Track lifecycle ---
     /// Install a new `TrackPlayer` on the audio thread.
@@ -66,19 +110,23 @@ pub enum EngineCommand {
     /// `player_ptr` is a `Box<TrackPlayer>` cast to `usize` via `Box::into_raw`.
     /// The audio thread is the **sole** receiver and immediately re-boxes it with
     /// `Box::from_raw`. No aliasing occurs. This is documented in ADR-004.
-    AddTrack { player_ptr: usize },
+    AddTrack {
+        player_ptr: usize,
+    },
 
     /// Remove a track from the audio thread by ID.
-    RemoveTrack { track_id: TrackId },
+    RemoveTrack {
+        track_id: TrackId,
+    },
 
     /// Replace the stream consumer of an existing track and reset its playback
     /// cursor. Used by the control thread after restarting a StreamDecoder so
     /// that Stop → Play restarts audio from the beginning of the file.
     ///
-    /// `consumer_ptr` is a `Box<Consumer<DecodedBlock>>` cast to `usize`.
+    /// `player_ptr` owns a complete replacement player; the old player is retired off-thread.
     RestartTrack {
         track_id: TrackId,
-        consumer_ptr: usize,
+        player_ptr: usize,
     },
 }
 
@@ -150,6 +198,7 @@ pub struct UIEndpoints {
     pub telemetry_consumer: Consumer<TelemetryFrame>,
     /// Track players retired by the audio thread; drop them on the control thread.
     pub retired_tracks: Consumer<Box<TrackPlayer>>,
+    pub retired_blocks: Consumer<DecodedBlock>,
 }
 
 /// Audio-thread side of the engine communication queues.
@@ -158,6 +207,7 @@ pub struct AudioEndpoints {
     pub telemetry_producer: Producer<TelemetryFrame>,
     /// Returns retired players to the control thread without freeing memory in the callback.
     pub retired_tracks: Producer<Box<TrackPlayer>>,
+    pub retired_blocks: Producer<DecodedBlock>,
 }
 
 /// Creates the lock-free ring buffer communication endpoints.
@@ -165,6 +215,7 @@ pub fn create_engine_queues(
     cmd_capacity: usize,
     telemetry_capacity: usize,
 ) -> (UIEndpoints, AudioEndpoints) {
+    let (retired_blocks_tx, retired_blocks_rx) = RingBuffer::new(2048);
     let (cmd_producer, cmd_consumer) = RingBuffer::new(cmd_capacity);
     let (telemetry_producer, telemetry_consumer) = RingBuffer::new(telemetry_capacity);
     // Capacity exceeds the command queue and active-track limit. If it ever fills,
@@ -177,11 +228,13 @@ pub fn create_engine_queues(
             cmd_producer,
             telemetry_consumer,
             retired_tracks: retired_consumer,
+            retired_blocks: retired_blocks_rx,
         },
         AudioEndpoints {
             cmd_consumer,
             telemetry_producer,
             retired_tracks: retired_producer,
+            retired_blocks: retired_blocks_tx,
         },
     )
 }

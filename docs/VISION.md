@@ -9,7 +9,7 @@ Aetherband is a free, open-source desktop DAW designed to combine an expressive,
 - **Desktop UI:** Flutter + Dart.
 - **Audio engine and DSP:** Rust.
 - **Native boundary:** versioned C ABI consumed through Dart FFI.
-- **Initial platforms:** Windows and macOS.
+- **Current target:** Windows only by owner direction; other platforms are deferred.
 
 Flutter is the selected frontend because the project needs fine-grained control over timeline, waveform, mixer and instrument UI; rapid visual iteration; consistent rendering across supported desktops; and room to profile and optimize custom DAW interactions. This does not imply automatic performance wins: rendering and large-session behavior must be measured.
 

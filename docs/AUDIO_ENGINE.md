@@ -1,8 +1,10 @@
 # Aetherband Audio Engine Specification: Aetherband
 
+**Current target:** Windows output via CPAL/WASAPI. Input capture, ASIO, exclusive-mode selection and other operating systems are not implemented or validated. This document includes design guidance; it does not imply those features are present.
+
 ## 1. Real-Time Audio Constraints (The Real-Time Thread Contract)
 
-The audio callback executes on a high-priority, real-time operating system thread scheduled directly by the audio subsystem (WASAPI on Windows, CoreAudio on macOS). To guarantee audio continuity without audible dropouts (xruns), the audio callback must adhere to the **Real-Time Thread Contract**.
+The audio callback executes on a high-priority thread scheduled by the Windows audio subsystem. To reduce dropouts (xruns), the callback must adhere to the **Real-Time Thread Contract**.
 
 ### 1.1 Prohibited Operations on the Audio Thread
 1. **NO Memory Allocation or Deallocation:**
@@ -16,7 +18,7 @@ The audio callback executes on a high-priority, real-time operating system threa
 4. **NO Operating System or Network Calls:**
    - Logging (`println!`, logging frameworks that write to files or console), socket operations, and time-query syscalls are prohibited.
 5. **NO FFI Calls into Managed Runtimes:**
-   - Calling back into C# or Swift from the audio thread is forbidden, as managed runtimes may trigger garbage collector safepoints or ARC reference deallocations.
+   - Calling back into Dart or other UI runtimes from the audio thread is forbidden; runtime callbacks and ownership cleanup do not belong on the time-critical path.
 
 ### 1.2 Real-Time Verification
 In continuous integration and debug test suites, the real-time audio callback is wrapped using the `assert_no_alloc` crate. Any accidental allocation inside the audio loop triggers an immediate assertion panic during automated testing.
@@ -29,22 +31,22 @@ Audio latency is often misunderstood. A block size of 128 frames does **not** re
 
 $$T_{\text{total}} = T_{\text{input\_hw}} + T_{\text{input\_buffer}} + T_{\text{dsp\_processing}} + T_{\text{output\_buffer}} + T_{\text{output\_hw}} + T_{\text{dac\_conversion}}$$
 
-### Practical Latency Table at 48,000 Hz
+### Buffer Duration at 48,000 Hz
 
-| Buffer Size (Frames) | Block Duration ($T_{\text{block}}$) | Typical Windows WASAPI Shared Round-Trip | Typical Windows WASAPI Exclusive Round-Trip | Typical macOS CoreAudio Round-Trip |
-| :--- | :--- | :--- | :--- | :--- |
-| **64 frames** | **1.33 ms** | $\approx 25\text{–}35\text{ ms}$ (Resampled by OS) | $\approx 4\text{–}6\text{ ms}$ | $\approx 3.5\text{–}5\text{ ms}$ |
-| **128 frames** | **2.67 ms** | $\approx 28\text{–}38\text{ ms}$ | $\approx 6\text{–}9\text{ ms}$ | $\approx 5.5\text{–}7.5\text{ ms}$ |
-| **256 frames** | **5.33 ms** | $\approx 33\text{–}43\text{ ms}$ | $\approx 11\text{–}15\text{ ms}$ | $\approx 10\text{–}13\text{ ms}$ |
-| **512 frames** | **10.67 ms** | $\approx 44\text{–}55\text{ ms}$ | $\approx 22\text{–}26\text{ ms}$ | $\approx 21\text{–}24\text{ ms}$ |
+| Buffer Size (Frames) | Block Duration ($T_{\text{block}}$) |
+| :--- | :--- |
+| **64 frames** | **1.33 ms** |
+| **128 frames** | **2.67 ms** |
+| **256 frames** | **5.33 ms** |
+| **512 frames** | **10.67 ms** |
 
-- **MVP Target:** 256 or 512 frames default for rock-solid stability during initial testing; selectable down to 128 or 64 frames for low-latency live monitoring.
+These are block-duration calculations, not Aetherband round-trip measurements. The engine currently opens the Windows default output using its reported configuration; user-selectable buffer sizes and round-trip latency measurements are not available.
 
 ---
 
 ## 3. Audio I/O Driver Architecture
 
-`cpal` is used as an OS-level audio stream binding, but it is encapsulated behind our custom `AudioBackend` trait:
+The following backend shape is a design direction. Current code opens a Windows output stream through CPAL; input capture and the full `AudioBackend` abstraction are future work:
 
 ```mermaid
 classDiagram
@@ -69,13 +71,9 @@ classDiagram
 ```
 
 ### 3.1 Device Management & Disconnection Handling
-- When the user selects a new device in Avalonia, the UI sends a command to the control thread.
-- The control thread gracefully stops the existing stream, cleans up resources, and opens the new stream.
-- If an active device is disconnected by the OS (e.g., USB cable pulled):
-  1. `cpal` invokes an error callback (`StreamErrorCallback`).
-  2. The error callback catches the device fault, marks the engine as `DeviceLost`, and pushes a notification to the UI via the telemetry ring buffer.
-  3. The engine transitions safely to an idle state without crashing.
-  4. The UI displays an alert: *"Audio output device disconnected. Select a new device in Preferences."*
+- Flutter does not yet expose a device chooser. The engine currently opens the Windows default output; device enumeration and selection are exposed natively but not integrated into the UI.
+- CPAL stream errors are surfaced through telemetry. Full device-disconnect recovery and replacement-stream behavior still need end-to-end Windows testing.
+- ASIO and input capture remain future work.
 
 ---
 

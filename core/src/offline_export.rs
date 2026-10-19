@@ -1,0 +1,806 @@
+//! Offline stereo PCM export. All decoding and file I/O runs on the engine
+//! control worker; this module is never called by the device callback.
+use crate::decoder::StreamDecoder;
+use crate::hypnosynth::HypnoSynth;
+use crate::ringbuf::DecodedBlock;
+use rtrb::Consumer;
+use std::fs::{self, File};
+use std::io::{Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use thiserror::Error;
+
+const OUTPUT_BLOCK_FRAMES: usize = 1024;
+pub const EXPORT_SAMPLE_RATE: u32 = 48_000;
+pub const MAX_SEQUENCE_REGIONS: usize = 64;
+const MAX_WAV_DATA_BYTES: u64 = u32::MAX as u64 - 36;
+const DECODER_WAIT_LIMIT: Duration = Duration::from_secs(30);
+
+#[derive(Debug, Error)]
+pub enum ExportError {
+    #[error("Cannot export an empty audio session")]
+    EmptySession,
+    #[error("The session is too long for a standard stereo WAV file")]
+    TooLong,
+    #[error("Invalid export settings")]
+    InvalidSettings,
+    #[error("Mixdown export needs clips with known duration or the generated phrase enabled")]
+    UnknownDuration,
+    #[error("Choose an export destination that is different from every source recording")]
+    OutputMatchesInput,
+    #[error("The export destination must be a file path")]
+    InvalidDestination,
+    #[error("Audio decode failed: {0}")]
+    Decode(String),
+    #[error("Audio decoder did not provide data in time")]
+    DecoderTimeout,
+    #[error("Could not write the mixdown: {0}")]
+    Io(#[from] std::io::Error),
+}
+
+#[derive(Debug, Clone)]
+pub struct ExportTrack {
+    pub path: PathBuf,
+    pub start_frame: u64,
+    pub source_start_frame: u64,
+    pub total_frames: u64,
+    pub gain: f32,
+    pub pan: f32,
+    pub muted: bool,
+    pub solo: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ExportSequenceRegion {
+    pub id: u32,
+    pub start_frame: u64,
+    pub notes: [Option<u8>; 16],
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ExportSettings {
+    pub sample_rate: u32,
+    pub master: f32,
+    pub bpm: f32,
+    pub beats_per_bar: u8,
+    pub metronome: bool,
+    pub sequence: bool,
+    pub sequence_pattern: [Option<u8>; 16],
+    pub sequence_regions: [Option<ExportSequenceRegion>; MAX_SEQUENCE_REGIONS],
+    pub synth_gain: f32,
+    pub synth_pan: f32,
+    pub synth_muted: bool,
+    pub synth_solo: bool,
+    pub preset: u8,
+    pub macros: [f32; 5],
+}
+
+struct TrackReader {
+    consumer: Consumer<DecodedBlock>,
+    block: Option<DecodedBlock>,
+    cursor: usize,
+    expected_frames: Option<u64>,
+    frames_read: u64,
+    finished: bool,
+}
+
+impl TrackReader {
+    fn new(decoder: &mut StreamDecoder, expected_frames: u64) -> Self {
+        Self {
+            consumer: decoder.take_consumer(),
+            block: None,
+            cursor: 0,
+            expected_frames: (expected_frames > 0).then_some(expected_frames),
+            frames_read: 0,
+            finished: false,
+        }
+    }
+
+    fn next_frame(&mut self) -> Result<Option<[f32; 2]>, ExportError> {
+        if self.finished {
+            return Ok(None);
+        }
+        if self
+            .expected_frames
+            .is_some_and(|limit| self.frames_read >= limit)
+        {
+            self.finished = true;
+            return Ok(None);
+        }
+
+        let wait_started = Instant::now();
+        loop {
+            if let Some(block) = self.block.as_ref() {
+                let valid = block.valid_frames.min(block.samples.len() / 2);
+                if self.cursor < valid {
+                    let index = self.cursor * 2;
+                    self.cursor += 1;
+                    self.frames_read += 1;
+                    let frame = [block.samples[index], block.samples[index + 1]];
+                    if block.is_last && self.cursor >= valid {
+                        self.finished = true;
+                    }
+                    return Ok(Some(frame));
+                }
+                if block.is_last {
+                    self.finished = true;
+                    return Ok(None);
+                }
+                self.block = None;
+                self.cursor = 0;
+            }
+
+            match self.consumer.pop() {
+                Ok(block) => self.block = Some(block),
+                Err(_) if wait_started.elapsed() < DECODER_WAIT_LIMIT => {
+                    thread::sleep(Duration::from_millis(1));
+                }
+                Err(_) => return Err(ExportError::DecoderTimeout),
+            }
+        }
+    }
+}
+
+/// Render the session to interleaved signed 24-bit PCM WAV at 48 kHz, using fresh
+/// decoders so export does not seek, pause, or otherwise change live playback.
+pub fn render_stereo_wav(
+    path: &Path,
+    tracks: &[ExportTrack],
+    settings: ExportSettings,
+) -> Result<(), ExportError> {
+    let has_regions = settings.sequence_regions.iter().any(Option::is_some);
+    let mut region_ids = [0_u32; MAX_SEQUENCE_REGIONS];
+    for (region_count, region) in settings.sequence_regions.iter().flatten().enumerate() {
+        if region.id == 0 || region_ids[..region_count].contains(&region.id) {
+            return Err(ExportError::InvalidSettings);
+        }
+        region_ids[region_count] = region.id;
+    }
+    if tracks.is_empty() && !settings.sequence && !has_regions {
+        return Err(ExportError::EmptySession);
+    }
+    if !(8_000..=192_000).contains(&settings.sample_rate)
+        || !settings.master.is_finite()
+        || !(0.0..=2.0).contains(&settings.master)
+        || !settings.bpm.is_finite()
+        || !(30.0..=300.0).contains(&settings.bpm)
+        || !(2..=7).contains(&settings.beats_per_bar)
+        || settings.preset > 2
+        || !settings.synth_gain.is_finite()
+        || !(0.0..=1.0).contains(&settings.synth_gain)
+        || !settings.synth_pan.is_finite()
+        || !(0.0..=1.0).contains(&settings.synth_pan)
+        || settings
+            .macros
+            .iter()
+            .any(|v| !v.is_finite() || !(0.0..=1.0).contains(v))
+        || tracks.iter().any(|track| {
+            !track.gain.is_finite()
+                || !(0.0..=2.0).contains(&track.gain)
+                || !track.pan.is_finite()
+                || !(0.0..=1.0).contains(&track.pan)
+        })
+    {
+        return Err(ExportError::InvalidSettings);
+    }
+    if tracks.iter().any(|track| track.total_frames == 0) {
+        return Err(ExportError::UnknownDuration);
+    }
+    if path.exists() && !path.is_file() {
+        return Err(ExportError::InvalidDestination);
+    }
+    let destination = if path.exists() {
+        Some(path.canonicalize()?)
+    } else {
+        None
+    };
+    if tracks.iter().any(|track| {
+        destination.as_ref().is_some_and(|destination| {
+            track
+                .path
+                .canonicalize()
+                .is_ok_and(|source| source == *destination)
+        })
+    }) {
+        return Err(ExportError::OutputMatchesInput);
+    }
+
+    let mut readers = Vec::with_capacity(tracks.len());
+    let mut decoders = Vec::with_capacity(tracks.len());
+    for track in tracks {
+        let mut decoder = StreamDecoder::spawn_region(
+            &track.path,
+            settings.sample_rate,
+            track.source_start_frame.min(i64::MAX as u64) as i64,
+            Some(track.total_frames),
+        )
+        .map_err(|error| ExportError::Decode(error.to_string()))?;
+        readers.push(TrackReader::new(&mut decoder, track.total_frames));
+        decoders.push(decoder);
+    }
+
+    let audio_end_frame = tracks
+        .iter()
+        .filter(|track| track.total_frames > 0)
+        .map(|track| track.start_frame.saturating_add(track.total_frames))
+        .max()
+        .unwrap_or(0);
+    // A sequence-only mix renders eight bars, then includes a short release tail.
+    let sequence_frames = if settings.sequence && audio_end_frame == 0 {
+        (settings.sample_rate as f64 * 60.0 / settings.bpm as f64
+            * settings.beats_per_bar as f64
+            * 8.0) as u64
+    } else {
+        0
+    };
+    let region_end_frame = settings
+        .sequence_regions
+        .iter()
+        .flatten()
+        .map(|region| {
+            region.start_frame.saturating_add(
+                (settings.sample_rate as f64 * 60.0 / settings.bpm as f64 * 8.0) as u64,
+            )
+        })
+        .max()
+        .unwrap_or(0);
+    let end_frame = audio_end_frame.max(sequence_frames).max(region_end_frame);
+    if end_frame == 0 {
+        return Err(ExportError::InvalidSettings);
+    }
+    let tail_frames = if settings.sequence || has_regions {
+        settings.sample_rate as u64 * 2
+    } else {
+        0
+    };
+    if end_frame.saturating_add(tail_frames) > MAX_WAV_DATA_BYTES / 6 {
+        return Err(ExportError::TooLong);
+    }
+
+    let temporary = temporary_path(path);
+    let result = render_to_temporary(
+        &temporary,
+        tracks,
+        &mut readers,
+        settings,
+        end_frame,
+        end_frame.saturating_add(tail_frames),
+    );
+    // Ensure decoder workers are cancelled and joined before returning.
+    drop(readers);
+    drop(decoders);
+    if let Err(error) = result {
+        let _ = fs::remove_file(&temporary);
+        return Err(error);
+    }
+    if let Err(error) = replace_destination(&temporary, path) {
+        let _ = fs::remove_file(&temporary);
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn render_to_temporary(
+    path: &Path,
+    tracks: &[ExportTrack],
+    readers: &mut [TrackReader],
+    settings: ExportSettings,
+    musical_end_frame: u64,
+    known_end_frame: u64,
+) -> Result<(), ExportError> {
+    let mut file = File::create(path)?;
+    file.write_all(&[0; 44])?;
+    let mut synth = HypnoSynth::new(settings.sample_rate as f32);
+    synth.preset(settings.preset);
+    for (index, value) in settings.macros.iter().enumerate() {
+        synth.parameter(index as u8, *value);
+    }
+    let audio_solo = tracks.iter().any(|track| track.solo);
+    let solo_active = audio_solo || settings.synth_solo;
+    let synth_pan_angle = settings.synth_pan * std::f32::consts::FRAC_PI_2;
+    let synth_pan_left = synth_pan_angle.cos() * settings.synth_gain;
+    let synth_pan_right = synth_pan_angle.sin() * settings.synth_gain;
+    let mut beat_phase = 0.0_f64;
+    let mut sequence_note = None;
+    let mut region_steps = [-1_i64; MAX_SEQUENCE_REGIONS];
+    let mut region_notes = [None; MAX_SEQUENCE_REGIONS];
+    let mut click_remaining = 0_u32;
+    let mut click_gain = 1.0_f32;
+    let mut written_frames = 0_u64;
+    let mut bytes = Vec::with_capacity(OUTPUT_BLOCK_FRAMES * 6);
+    let mut left = [0.0_f32; OUTPUT_BLOCK_FRAMES];
+    let mut right = [0.0_f32; OUTPUT_BLOCK_FRAMES];
+    let mut block_start = 0_u64;
+
+    while block_start < known_end_frame {
+        let frames = OUTPUT_BLOCK_FRAMES.min((known_end_frame - block_start) as usize);
+        left[..frames].fill(0.0);
+        right[..frames].fill(0.0);
+        for (track_index, track) in tracks.iter().enumerate() {
+            if track.muted || (solo_active && !track.solo) {
+                // Muted tracks do not need to advance here; the independent
+                // decoder is cancelled when the render completes.
+                continue;
+            }
+            let pan_angle = track.pan * std::f32::consts::FRAC_PI_2;
+            let pan_left = pan_angle.cos() * track.gain;
+            let pan_right = pan_angle.sin() * track.gain;
+            for frame in 0..frames {
+                let timeline_frame = block_start + frame as u64;
+                if timeline_frame < track.start_frame {
+                    continue;
+                }
+                match readers[track_index].next_frame()? {
+                    Some(sample) => {
+                        left[frame] += sample[0] * pan_left;
+                        right[frame] += sample[1] * pan_right;
+                    }
+                    None => break,
+                }
+            }
+        }
+
+        for frame in 0..frames {
+            let timeline_frame = block_start + frame as u64;
+            let previous_beat = beat_phase;
+            beat_phase += settings.bpm as f64 / (60.0 * settings.sample_rate as f64);
+            if settings.sequence
+                && timeline_frame < musical_end_frame
+                && (previous_beat == 0.0
+                    || (previous_beat * 2.0).floor() != (beat_phase * 2.0).floor())
+            {
+                if let Some(note) = sequence_note.take() {
+                    synth.note_off(note);
+                }
+                let step = (beat_phase * 2.0) as usize % settings.sequence_pattern.len();
+                if let Some(note) = settings.sequence_pattern[step] {
+                    synth.note_on(note, 0.72);
+                    sequence_note = Some(note);
+                }
+            }
+            let frames_per_step = settings.sample_rate as f64 * 30.0 / settings.bpm as f64;
+            let region_frames = frames_per_step * 16.0;
+            for (region_index, region) in settings.sequence_regions.iter().enumerate() {
+                let Some(region) = region else {
+                    continue;
+                };
+                let elapsed = timeline_frame as i128 - region.start_frame as i128;
+                if elapsed < 0 {
+                    continue;
+                }
+                if elapsed as f64 >= region_frames {
+                    if let Some(note) = region_notes[region_index].take() {
+                        synth.note_off(note);
+                    }
+                    region_steps[region_index] = -1;
+                    continue;
+                }
+                let step = (elapsed as f64 / frames_per_step).floor() as i64;
+                if step != region_steps[region_index] {
+                    if let Some(note) = region_notes[region_index].take() {
+                        synth.note_off(note);
+                    }
+                    if let Some(note) = region.notes[step as usize] {
+                        synth.note_on(note, 0.72);
+                        region_notes[region_index] = Some(note);
+                    }
+                    region_steps[region_index] = step;
+                }
+            }
+            if settings.metronome && timeline_frame < musical_end_frame {
+                if previous_beat == 0.0 || previous_beat.floor() != beat_phase.floor() {
+                    click_remaining = (settings.sample_rate as f32 * 0.025) as u32;
+                    click_gain = if (beat_phase.floor() as u64)
+                        .is_multiple_of(settings.beats_per_bar as u64)
+                    {
+                        1.5
+                    } else {
+                        1.0
+                    };
+                }
+                if click_remaining > 0 {
+                    let time = click_remaining as f32 / settings.sample_rate as f32;
+                    let click =
+                        (time * 1500.0 * std::f32::consts::TAU).sin() * time * 3.0 * click_gain;
+                    left[frame] += click;
+                    right[frame] += click;
+                    click_remaining -= 1;
+                }
+            }
+            let synth_frame = synth.next_frame();
+            if !settings.synth_muted && (!audio_solo || settings.synth_solo) {
+                left[frame] += synth_frame[0] * synth_pan_left;
+                right[frame] += synth_frame[1] * synth_pan_right;
+            }
+            left[frame] *= settings.master;
+            right[frame] *= settings.master;
+            const PCM24_MAX: f32 = 8_388_607.0;
+            let l = (left[frame].clamp(-1.0, 1.0) * PCM24_MAX).round() as i32;
+            let r = (right[frame].clamp(-1.0, 1.0) * PCM24_MAX).round() as i32;
+            bytes.extend_from_slice(&l.to_le_bytes()[..3]);
+            bytes.extend_from_slice(&r.to_le_bytes()[..3]);
+        }
+        if bytes.len() as u64 > MAX_WAV_DATA_BYTES {
+            return Err(ExportError::TooLong);
+        }
+        file.write_all(&bytes)?;
+        written_frames += frames as u64;
+        bytes.clear();
+        block_start += frames as u64;
+    }
+
+    let data_bytes = written_frames.saturating_mul(6);
+    file.seek(SeekFrom::Start(0))?;
+    write_wav_header(&mut file, settings.sample_rate, data_bytes as u32, 24)?;
+    file.sync_all()?;
+    Ok(())
+}
+
+fn write_wav_header(
+    file: &mut File,
+    sample_rate: u32,
+    data_bytes: u32,
+    bits_per_sample: u16,
+) -> Result<(), std::io::Error> {
+    let bytes_per_sample = u32::from(bits_per_sample / 8);
+    let block_align = (2 * bytes_per_sample) as u16;
+    file.write_all(b"RIFF")?;
+    file.write_all(&(36_u32.saturating_add(data_bytes)).to_le_bytes())?;
+    file.write_all(b"WAVEfmt ")?;
+    file.write_all(&16_u32.to_le_bytes())?;
+    file.write_all(&1_u16.to_le_bytes())?;
+    file.write_all(&2_u16.to_le_bytes())?;
+    file.write_all(&sample_rate.to_le_bytes())?;
+    file.write_all(
+        &sample_rate
+            .saturating_mul(u32::from(block_align))
+            .to_le_bytes(),
+    )?;
+    file.write_all(&block_align.to_le_bytes())?;
+    file.write_all(&bits_per_sample.to_le_bytes())?;
+    file.write_all(b"data")?;
+    file.write_all(&data_bytes.to_le_bytes())?;
+    Ok(())
+}
+
+fn temporary_path(path: &Path) -> PathBuf {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos());
+    let mut name = path.as_os_str().to_os_string();
+    name.push(format!(".tmp.{stamp}"));
+    PathBuf::from(name)
+}
+
+fn replace_destination(temporary: &Path, destination: &Path) -> Result<(), ExportError> {
+    if !destination.exists() {
+        fs::rename(temporary, destination)?;
+        return Ok(());
+    }
+    let backup = temporary_path(destination);
+    fs::rename(destination, &backup)?;
+    match fs::rename(temporary, destination) {
+        Ok(()) => {
+            let _ = fs::remove_file(backup);
+            Ok(())
+        }
+        Err(error) => {
+            let _ = fs::rename(backup, destination);
+            Err(ExportError::Io(error))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hypnosynth::DEFAULT_SEQUENCE;
+    use std::io::Read;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_path(label: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_nanos());
+        let directory = std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join("aetherband-test-files");
+        fs::create_dir_all(&directory).unwrap();
+        directory.join(format!("aetherband-export-{label}-{stamp}.wav"))
+    }
+
+    fn write_source(path: &Path) {
+        let frames = 2048_u32;
+        let mut file = File::create(path).unwrap();
+        write_wav_header(&mut file, 48_000, frames * 4, 16).unwrap();
+        for index in 0..frames {
+            let sample =
+                ((index as f32 * 440.0 * std::f32::consts::TAU / 48_000.0).sin() * 12_000.0) as i16;
+            file.write_all(&sample.to_le_bytes()).unwrap();
+            file.write_all(&sample.to_le_bytes()).unwrap();
+        }
+    }
+
+    #[test]
+    fn exports_stereo_pcm_with_mixed_audio_and_valid_lengths() {
+        let input = temp_path("input");
+        let output = temp_path("output");
+        write_source(&input);
+        let settings = ExportSettings {
+            sample_rate: 48_000,
+            master: 0.8,
+            bpm: 92.0,
+            beats_per_bar: 4,
+            metronome: false,
+            sequence: false,
+            sequence_pattern: DEFAULT_SEQUENCE,
+            sequence_regions: [None; MAX_SEQUENCE_REGIONS],
+            synth_gain: 0.8,
+            synth_pan: 0.5,
+            synth_muted: false,
+            synth_solo: false,
+            preset: 0,
+            macros: [0.42, 0.38, 0.55, 0.36, 0.7],
+        };
+        render_stereo_wav(
+            &output,
+            &[ExportTrack {
+                path: input.clone(),
+                start_frame: 0,
+                source_start_frame: 0,
+                total_frames: 2048,
+                gain: 0.8,
+                pan: 0.5,
+                muted: false,
+                solo: false,
+            }],
+            settings,
+        )
+        .unwrap_or_else(|error| panic!("render failed for {}: {error:?}", output.display()));
+
+        let mut file = File::open(&output).unwrap();
+        let mut header = [0_u8; 44];
+        file.read_exact(&mut header).unwrap();
+        assert_eq!(&header[0..4], b"RIFF");
+        assert_eq!(&header[8..16], b"WAVEfmt ");
+        assert_eq!(u16::from_le_bytes([header[22], header[23]]), 2);
+        assert_eq!(
+            u32::from_le_bytes(header[24..28].try_into().unwrap()),
+            48_000
+        );
+        assert_eq!(
+            u32::from_le_bytes(header[28..32].try_into().unwrap()),
+            288_000
+        );
+        assert_eq!(u16::from_le_bytes([header[32], header[33]]), 6);
+        assert_eq!(u16::from_le_bytes([header[34], header[35]]), 24);
+        assert_eq!(
+            u32::from_le_bytes(header[40..44].try_into().unwrap()),
+            12_288
+        );
+        let mut data = Vec::new();
+        file.read_to_end(&mut data).unwrap();
+        assert_eq!(data.len(), 12_288);
+        assert!(data.iter().any(|sample| *sample != 0));
+        let _ = fs::remove_file(input);
+        let _ = fs::remove_file(output);
+    }
+
+    #[test]
+    fn sequence_only_session_exports_audible_stereo_phrase() {
+        let output = temp_path("sequence-only");
+        let settings = ExportSettings {
+            sample_rate: 8_000,
+            master: 0.8,
+            bpm: 120.0,
+            beats_per_bar: 3,
+            metronome: true,
+            sequence: true,
+            sequence_pattern: DEFAULT_SEQUENCE,
+            sequence_regions: [None; MAX_SEQUENCE_REGIONS],
+            synth_gain: 0.8,
+            synth_pan: 0.5,
+            synth_muted: false,
+            synth_solo: false,
+            preset: 0,
+            macros: [0.42, 0.38, 0.55, 0.36, 0.7],
+        };
+        render_stereo_wav(&output, &[], settings).unwrap();
+        let data = fs::read(&output).unwrap();
+        assert_eq!(u16::from_le_bytes([data[22], data[23]]), 2);
+        assert_eq!(u32::from_le_bytes(data[24..28].try_into().unwrap()), 8_000);
+        assert_eq!(u16::from_le_bytes([data[34], data[35]]), 24);
+        assert_eq!(data.len(), 44 + 14 * 8_000 * 6);
+        assert!(data[44..].iter().any(|sample| *sample != 0));
+        let _ = fs::remove_file(output);
+    }
+
+    #[test]
+    fn arrangement_pattern_exports_from_its_timeline_position() {
+        let output = temp_path("sequence-region");
+        let mut notes = [None; 16];
+        notes[0] = Some(60);
+        let mut regions = [None; MAX_SEQUENCE_REGIONS];
+        regions[0] = Some(ExportSequenceRegion {
+            id: 1,
+            start_frame: 8_000,
+            notes,
+        });
+        let settings = ExportSettings {
+            sample_rate: 8_000,
+            master: 0.8,
+            bpm: 120.0,
+            beats_per_bar: 4,
+            metronome: false,
+            sequence: false,
+            sequence_pattern: [None; 16],
+            sequence_regions: regions,
+            synth_gain: 0.8,
+            synth_pan: 0.5,
+            synth_muted: false,
+            synth_solo: false,
+            preset: 0,
+            macros: [0.42, 0.38, 0.55, 0.36, 0.7],
+        };
+        render_stereo_wav(&output, &[], settings).unwrap();
+        let data = fs::read(&output).unwrap();
+        assert!(data[44..44 + 8_000 * 6].iter().all(|sample| *sample == 0));
+        assert!(data[44 + 8_000 * 6..].iter().any(|sample| *sample != 0));
+        let _ = fs::remove_file(output);
+    }
+
+    #[test]
+    fn editable_sequence_honors_initial_rest_and_note_on_export() {
+        let output = temp_path("editable-sequence");
+        let mut pattern = DEFAULT_SEQUENCE;
+        pattern[0] = None;
+        pattern[1] = Some(60);
+        let settings = ExportSettings {
+            sample_rate: 8_000,
+            master: 0.8,
+            bpm: 300.0,
+            beats_per_bar: 4,
+            metronome: false,
+            sequence: true,
+            sequence_pattern: pattern,
+            sequence_regions: [None; MAX_SEQUENCE_REGIONS],
+            synth_gain: 0.8,
+            synth_pan: 0.5,
+            synth_muted: false,
+            synth_solo: false,
+            preset: 0,
+            macros: [0.42, 0.38, 0.55, 0.36, 0.7],
+        };
+        render_stereo_wav(&output, &[], settings).unwrap();
+        let data = fs::read(&output).unwrap();
+        assert!(data[44..44 + 800 * 6].iter().all(|sample| *sample == 0));
+        assert!(data[44 + 800 * 6..].iter().any(|sample| *sample != 0));
+        let _ = fs::remove_file(output);
+    }
+
+    #[test]
+    fn instrument_mixer_pan_and_mute_are_applied_to_offline_sequence() {
+        let left_output = temp_path("synth-hard-left");
+        let muted_output = temp_path("synth-muted");
+        let settings = ExportSettings {
+            sample_rate: 8_000,
+            master: 0.8,
+            bpm: 120.0,
+            beats_per_bar: 4,
+            metronome: false,
+            sequence: true,
+            sequence_pattern: DEFAULT_SEQUENCE,
+            sequence_regions: [None; MAX_SEQUENCE_REGIONS],
+            synth_gain: 0.8,
+            synth_pan: 0.0,
+            synth_muted: false,
+            synth_solo: false,
+            preset: 0,
+            macros: [0.42, 0.38, 0.55, 0.36, 0.7],
+        };
+        render_stereo_wav(&left_output, &[], settings).unwrap();
+        let data = fs::read(&left_output).unwrap();
+        let frames = data[44..]
+            .as_chunks::<6>()
+            .0
+            .iter()
+            .map(|frame| (decode_pcm24(&frame[0..3]), decode_pcm24(&frame[3..6])))
+            .collect::<Vec<_>>();
+        assert!(frames.iter().any(|frame| frame.0 != 0));
+        assert!(frames.iter().all(|frame| frame.1 == 0));
+
+        render_stereo_wav(
+            &muted_output,
+            &[],
+            ExportSettings {
+                synth_muted: true,
+                ..settings
+            },
+        )
+        .unwrap();
+        let muted = fs::read(&muted_output).unwrap();
+        assert!(muted[44..].iter().all(|sample| *sample == 0));
+        let _ = fs::remove_file(left_output);
+        let _ = fs::remove_file(muted_output);
+    }
+
+    fn decode_pcm24(bytes: &[u8]) -> i32 {
+        let sign = if bytes[2] & 0x80 == 0 { 0 } else { 0xff };
+        i32::from_le_bytes([bytes[0], bytes[1], bytes[2], sign])
+    }
+
+    #[test]
+    fn rejects_tracks_without_a_known_duration() {
+        let output = temp_path("unknown-duration");
+        let result = render_stereo_wav(
+            &output,
+            &[ExportTrack {
+                path: PathBuf::new(),
+                start_frame: 0,
+                source_start_frame: 0,
+                total_frames: 0,
+                gain: 0.8,
+                pan: 0.5,
+                muted: false,
+                solo: false,
+            }],
+            ExportSettings {
+                sample_rate: 48_000,
+                master: 0.8,
+                bpm: 92.0,
+                beats_per_bar: 4,
+                metronome: false,
+                sequence: false,
+                sequence_pattern: DEFAULT_SEQUENCE,
+                sequence_regions: [None; MAX_SEQUENCE_REGIONS],
+                synth_gain: 0.8,
+                synth_pan: 0.5,
+                synth_muted: false,
+                synth_solo: false,
+                preset: 0,
+                macros: [0.42, 0.38, 0.55, 0.36, 0.7],
+            },
+        );
+        assert!(matches!(result, Err(ExportError::UnknownDuration)));
+    }
+
+    #[test]
+    fn refuses_to_replace_a_source_recording() {
+        let source = temp_path("same-file");
+        write_source(&source);
+        let result = render_stereo_wav(
+            &source,
+            &[ExportTrack {
+                path: source.clone(),
+                start_frame: 0,
+                source_start_frame: 0,
+                total_frames: 2048,
+                gain: 0.8,
+                pan: 0.5,
+                muted: false,
+                solo: false,
+            }],
+            ExportSettings {
+                sample_rate: 48_000,
+                master: 0.8,
+                bpm: 92.0,
+                beats_per_bar: 4,
+                metronome: false,
+                sequence: false,
+                sequence_pattern: DEFAULT_SEQUENCE,
+                sequence_regions: [None; MAX_SEQUENCE_REGIONS],
+                synth_gain: 0.8,
+                synth_pan: 0.5,
+                synth_muted: false,
+                synth_solo: false,
+                preset: 0,
+                macros: [0.42, 0.38, 0.55, 0.36, 0.7],
+            },
+        );
+        assert!(matches!(result, Err(ExportError::OutputMatchesInput)));
+        assert_eq!(fs::metadata(&source).unwrap().len(), 44 + 2048 * 4);
+        let _ = fs::remove_file(source);
+    }
+}

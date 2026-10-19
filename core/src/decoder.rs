@@ -12,10 +12,11 @@ use std::sync::Arc;
 use rubato::{FftFixedIn, Resampler};
 use symphonia::core::audio::{AudioBufferRef, Signal};
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
-use symphonia::core::formats::FormatOptions;
+use symphonia::core::formats::{FormatOptions, SeekMode, SeekTo};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
+use symphonia::core::units::Time;
 use thiserror::Error;
 
 use crate::ringbuf::{create_stream_queue, DecodedBlock};
@@ -116,10 +117,32 @@ pub struct StreamDecoder {
 impl StreamDecoder {
     /// Spawn a background decode worker for `path`, targeting `output_sample_rate`.
     ///
-    /// The worker pre-decodes the entire file into the ring buffer,
-    /// converting sample rate if necessary.
+    /// The worker decodes the file in bounded blocks and keeps the ring buffer
+    /// fed as the audio thread consumes it, converting rate when necessary.
     pub fn spawn(path: &Path, output_sample_rate: u32) -> Result<Self, DecoderError> {
+        Self::spawn_region(path, output_sample_rate, 0, None)
+    }
+
+    /// Spawn a decoder that begins at an output-rate frame offset in the source.
+    /// Demux seeking and sample trimming happen on the worker thread.
+    pub fn spawn_from_output_frame(
+        path: &Path,
+        output_sample_rate: u32,
+        output_frame: i64,
+    ) -> Result<Self, DecoderError> {
+        Self::spawn_region(path, output_sample_rate, output_frame, None)
+    }
+
+    /// Spawn a worker for one source region. `source_start_frame` and the
+    /// optional duration use the output rate so arrangement math stays stable.
+    pub fn spawn_region(
+        path: &Path,
+        output_sample_rate: u32,
+        source_start_frame: i64,
+        max_output_frames: Option<u64>,
+    ) -> Result<Self, DecoderError> {
         let path = path.to_path_buf();
+        let output_frame = source_start_frame.max(0);
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_clone = Arc::clone(&stop_flag);
 
@@ -131,8 +154,15 @@ impl StreamDecoder {
         let worker = std::thread::Builder::new()
             .name(format!("stream-decoder({})", path.display()))
             .spawn(move || {
-                if let Err(e) = decode_worker(path, info, output_sample_rate, producer, stop_clone)
-                {
+                if let Err(e) = decode_worker(
+                    path,
+                    info,
+                    output_sample_rate,
+                    output_frame,
+                    max_output_frames,
+                    producer,
+                    stop_clone,
+                ) {
                     log::error!("Stream decoder error: {}", e);
                 }
             })
@@ -163,10 +193,8 @@ impl StreamDecoder {
     pub fn stop(&mut self) {
         self.stop_flag.store(true, Ordering::Release);
         if let Some(worker) = self.worker.take() {
-            if worker.thread().id() != std::thread::current().id() {
-                if worker.join().is_err() {
-                    log::error!("Stream decoder worker panicked while shutting down");
-                }
+            if worker.thread().id() != std::thread::current().id() && worker.join().is_err() {
+                log::error!("Stream decoder worker panicked while shutting down");
             }
         }
     }
@@ -183,6 +211,8 @@ fn decode_worker(
     path: std::path::PathBuf,
     info: AudioFileInfo,
     output_sample_rate: u32,
+    output_frame: i64,
+    max_output_frames: Option<u64>,
     mut producer: Producer<DecodedBlock>,
     stop_flag: Arc<AtomicBool>,
 ) -> Result<(), DecoderError> {
@@ -214,11 +244,38 @@ fn decode_worker(
         .clone();
 
     let track_id = track.id;
+    let source_rate = info.sample_rate;
+    let requested_source_frame = ((output_frame as f64 / output_sample_rate.max(1) as f64)
+        * source_rate as f64)
+        .round() as u64;
+    let mut source_frames_to_skip = 0usize;
+    if requested_source_frame > 0 {
+        let seconds = requested_source_frame as f64 / source_rate.max(1) as f64;
+        let time = Time::new(seconds as u64, seconds.fract());
+        let seek = format
+            .seek(
+                SeekMode::Accurate,
+                SeekTo::Time {
+                    time,
+                    track_id: Some(track_id),
+                },
+            )
+            .map_err(|error| DecoderError::DecodeError(format!("seek failed: {error}")))?;
+        let time_base = track
+            .codec_params
+            .time_base
+            .unwrap_or_else(|| symphonia::core::units::TimeBase::new(1, source_rate.max(1)));
+        let actual = time_base.calc_time(seek.actual_ts);
+        let actual_source_frame =
+            ((actual.seconds as f64 + actual.frac) * source_rate as f64).round() as u64;
+        source_frames_to_skip = requested_source_frame
+            .saturating_sub(actual_source_frame)
+            .min(usize::MAX as u64) as usize;
+    }
     let mut decoder = symphonia::default::get_codecs()
         .make(&track.codec_params, &DecoderOptions::default())
         .map_err(|e| DecoderError::DecodeError(e.to_string()))?;
 
-    let source_rate = info.sample_rate;
     let source_channels = info.channels as usize;
     let needs_resample = source_rate != output_sample_rate;
 
@@ -239,11 +296,14 @@ fn decode_worker(
     };
 
     // ── Decode loop ──────────────────────────────────────────────────────────
-    let mut playhead: i64 = 0;
+    let mut playhead: i64 = output_frame;
     let mut pending_l: Vec<f32> = Vec::with_capacity(DECODE_BLOCK_FRAMES);
     let mut pending_r: Vec<f32> = Vec::with_capacity(DECODE_BLOCK_FRAMES);
 
     loop {
+        if max_output_frames.is_some_and(|limit| (playhead - output_frame).max(0) as u64 >= limit) {
+            break;
+        }
         if stop_flag.load(Ordering::Relaxed) {
             break;
         }
@@ -269,7 +329,8 @@ fn decode_worker(
         };
 
         // Convert the Symphonia AudioBuffer to interleaved f32 vectors
-        let _frames = decoded.frames();
+        let discarded = source_frames_to_skip.min(decoded.frames());
+        source_frames_to_skip -= discarded;
 
         match decoded {
             AudioBufferRef::F32(ref buf) => {
@@ -279,12 +340,12 @@ fn decode_worker(
                 } else {
                     buf.chan(0)
                 };
-                pending_l.extend_from_slice(ch_l);
-                pending_r.extend_from_slice(ch_r);
+                pending_l.extend_from_slice(&ch_l[discarded..]);
+                pending_r.extend_from_slice(&ch_r[discarded..]);
             }
             AudioBufferRef::S32(ref buf) => {
                 let scale = 1.0 / i32::MAX as f32;
-                for &s in buf.chan(0) {
+                for &s in &buf.chan(0)[discarded..] {
                     pending_l.push(s as f32 * scale);
                 }
                 let src_r = if source_channels > 1 {
@@ -292,13 +353,13 @@ fn decode_worker(
                 } else {
                     buf.chan(0)
                 };
-                for &s in src_r {
+                for &s in &src_r[discarded..] {
                     pending_r.push(s as f32 * scale);
                 }
             }
             AudioBufferRef::S16(ref buf) => {
                 let scale = 1.0 / i16::MAX as f32;
-                for &s in buf.chan(0) {
+                for &s in &buf.chan(0)[discarded..] {
                     pending_l.push(s as f32 * scale);
                 }
                 let src_r = if source_channels > 1 {
@@ -306,7 +367,7 @@ fn decode_worker(
                 } else {
                     buf.chan(0)
                 };
-                for &s in src_r {
+                for &s in &src_r[discarded..] {
                     pending_r.push(s as f32 * scale);
                 }
             }
@@ -314,13 +375,13 @@ fn decode_worker(
                 // Convert any remaining format generically via Symphonia's built-in converter
                 let mut conv_buf = decoded.make_equivalent::<f32>();
                 decoded.convert(&mut conv_buf);
-                pending_l.extend_from_slice(conv_buf.chan(0));
+                pending_l.extend_from_slice(&conv_buf.chan(0)[discarded..]);
                 let src_r = if source_channels > 1 {
                     conv_buf.chan(1)
                 } else {
                     conv_buf.chan(0)
                 };
-                pending_r.extend_from_slice(src_r);
+                pending_r.extend_from_slice(&src_r[discarded..]);
             }
         }
 
@@ -338,10 +399,24 @@ fn decode_worker(
                 (l_chunk, r_chunk)
             };
 
-            let n = out_l.len();
+            let already_written = (playhead - output_frame).max(0) as u64;
+            let allowed = max_output_frames
+                .map(|limit| {
+                    limit
+                        .saturating_sub(already_written)
+                        .min(out_l.len() as u64)
+                })
+                .unwrap_or(out_l.len() as u64) as usize;
+            if allowed == 0 {
+                return Ok(());
+            }
+            let n = allowed;
             let mut block = DecodedBlock::silent(n);
             block.start_frame = playhead;
             block.valid_frames = n;
+            let region_finished =
+                max_output_frames.is_some_and(|limit| already_written + n as u64 >= limit);
+            block.is_last = region_finished;
             for i in 0..n {
                 block.samples[i * 2] = out_l[i];
                 block.samples[i * 2 + 1] = out_r[i];
@@ -353,10 +428,16 @@ fn decode_worker(
                 if stop_flag.load(Ordering::Relaxed) {
                     return Ok(());
                 }
-                match producer.push(block.clone()) {
+                match producer.push(block) {
                     Ok(_) => break,
-                    Err(_) => std::thread::sleep(std::time::Duration::from_millis(1)),
+                    Err(rtrb::PushError::Full(returned)) => {
+                        block = returned;
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                    }
                 }
+            }
+            if region_finished {
+                return Ok(());
             }
         }
     }
@@ -386,7 +467,14 @@ fn decode_worker(
             (pending_l, pending_r)
         };
 
-        let n = out_l.len();
+        let already_written = (playhead - output_frame).max(0) as u64;
+        let n = max_output_frames
+            .map(|limit| {
+                limit
+                    .saturating_sub(already_written)
+                    .min(out_l.len() as u64)
+            })
+            .unwrap_or(out_l.len() as u64) as usize;
         let mut block = DecodedBlock::silent(n);
         block.start_frame = playhead;
         block.valid_frames = n;
@@ -400,9 +488,12 @@ fn decode_worker(
             if stop_flag.load(Ordering::Relaxed) {
                 return Ok(());
             }
-            match producer.push(block.clone()) {
+            match producer.push(block) {
                 Ok(_) => break,
-                Err(_) => std::thread::sleep(std::time::Duration::from_millis(1)),
+                Err(rtrb::PushError::Full(returned)) => {
+                    block = returned;
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
             }
         }
     } else {
@@ -414,9 +505,12 @@ fn decode_worker(
             if stop_flag.load(Ordering::Relaxed) {
                 return Ok(());
             }
-            match producer.push(terminal.clone()) {
+            match producer.push(terminal) {
                 Ok(_) => break,
-                Err(_) => std::thread::sleep(std::time::Duration::from_millis(1)),
+                Err(rtrb::PushError::Full(returned)) => {
+                    terminal = returned;
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
             }
         }
     }
@@ -435,5 +529,184 @@ mod tests {
         assert_eq!(block.samples.len(), 1024);
         assert_eq!(block.valid_frames, 512);
         assert!(block.samples.iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn streaming_wav_decoder_emits_audible_samples() {
+        use std::io::Write;
+        use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("aetherband-signal-{stamp}.wav"));
+        let frames = 2048u32;
+        let data_bytes = frames * 4;
+        let mut wav = Vec::with_capacity(44 + data_bytes as usize);
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data_bytes).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        wav.extend_from_slice(&2u16.to_le_bytes()); // stereo
+        wav.extend_from_slice(&48_000u32.to_le_bytes());
+        wav.extend_from_slice(&192_000u32.to_le_bytes());
+        wav.extend_from_slice(&4u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data_bytes.to_le_bytes());
+        for frame in 0..frames {
+            let phase = frame as f32 * 0.12;
+            let sample = (phase.sin() * 12_000.0) as i16;
+            wav.extend_from_slice(&sample.to_le_bytes());
+            wav.extend_from_slice(&sample.to_le_bytes());
+        }
+        std::fs::File::create(&path)
+            .unwrap()
+            .write_all(&wav)
+            .unwrap();
+
+        let mut decoder = StreamDecoder::spawn(&path, 48_000).unwrap();
+        let mut consumer = decoder.take_consumer();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut audible = false;
+        while Instant::now() < deadline {
+            match consumer.pop() {
+                Ok(block) => {
+                    audible |= block.samples[..block.valid_frames * 2]
+                        .iter()
+                        .any(|sample| sample.abs() > 0.05);
+                    if block.is_last {
+                        break;
+                    }
+                }
+                Err(_) => std::thread::sleep(Duration::from_millis(2)),
+            }
+        }
+        decoder.stop();
+        std::fs::remove_file(path).unwrap();
+        assert!(audible, "the decoded PCM stream must contain a real signal");
+    }
+
+    #[test]
+    fn wav_decoder_seeks_to_the_requested_source_position() {
+        use std::io::Write;
+        use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("aetherband-seek-{stamp}.wav"));
+        let frames = 96_000u32;
+        let data_bytes = frames * 4;
+        let mut wav = Vec::with_capacity(44 + data_bytes as usize);
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data_bytes).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&48_000u32.to_le_bytes());
+        wav.extend_from_slice(&192_000u32.to_le_bytes());
+        wav.extend_from_slice(&4u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data_bytes.to_le_bytes());
+        for frame in 0..frames {
+            let sample = if frame < 48_000 { 8192i16 } else { 16_384i16 };
+            wav.extend_from_slice(&sample.to_le_bytes());
+            wav.extend_from_slice(&sample.to_le_bytes());
+        }
+        std::fs::File::create(&path)
+            .unwrap()
+            .write_all(&wav)
+            .unwrap();
+
+        let mut decoder = StreamDecoder::spawn_from_output_frame(&path, 48_000, 48_000).unwrap();
+        let mut consumer = decoder.take_consumer();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let first_block = loop {
+            if let Ok(block) = consumer.pop() {
+                break block;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "decoder did not produce the seeked audio"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        };
+        decoder.stop();
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(first_block.start_frame, 48_000);
+        assert!(
+            first_block.samples[0] > 0.45,
+            "seek must skip earlier samples"
+        );
+    }
+
+    #[test]
+    fn wav_decoder_reads_only_the_requested_source_region() {
+        use std::io::Write;
+        use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("aetherband-region-{stamp}.wav"));
+        let frames = 96_000u32;
+        let data_bytes = frames * 4;
+        let mut wav = Vec::with_capacity(44 + data_bytes as usize);
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data_bytes).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&48_000u32.to_le_bytes());
+        wav.extend_from_slice(&192_000u32.to_le_bytes());
+        wav.extend_from_slice(&4u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data_bytes.to_le_bytes());
+        for frame in 0..frames {
+            let sample = if frame < 24_000 { 8192i16 } else { 16_384i16 };
+            wav.extend_from_slice(&sample.to_le_bytes());
+            wav.extend_from_slice(&sample.to_le_bytes());
+        }
+        std::fs::File::create(&path)
+            .unwrap()
+            .write_all(&wav)
+            .unwrap();
+
+        let mut decoder = StreamDecoder::spawn_region(&path, 48_000, 24_000, Some(12_000)).unwrap();
+        let mut consumer = decoder.take_consumer();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut first = true;
+        let mut frames_read = 0;
+        loop {
+            match consumer.pop() {
+                Ok(block) => {
+                    if first {
+                        assert_eq!(block.start_frame, 24_000);
+                        assert!(block.samples[0] > 0.45);
+                        first = false;
+                    }
+                    frames_read += block.valid_frames;
+                    if block.is_last {
+                        break;
+                    }
+                }
+                Err(_) => {
+                    assert!(Instant::now() < deadline, "decoder did not finish region");
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+            }
+        }
+        decoder.stop();
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(frames_read, 12_000);
     }
 }

@@ -10,17 +10,27 @@ import 'package:aetherband_desktop/src/engine_controller.dart';
 import 'package:aetherband_desktop/src/models.dart';
 import 'package:aetherband_desktop/src/widgets/clip_tile.dart';
 import 'package:aetherband_desktop/src/widgets/workspace_panels.dart';
+import 'package:aetherband_desktop/src/widgets/timeline_view.dart';
 import 'package:aetherband_desktop/src/session_store.dart';
 
-class FakeEngine implements EngineController {
+class FakeEngine
+    implements
+        EngineController,
+        PerformanceEngine,
+        ExportEngine,
+        TransportSeekEngine,
+        AudioRegionEngine,
+        SequenceRegionEngine {
   final frames = StreamController<EngineTelemetry>.broadcast();
   final calls = <String>[];
   Completer<LoadedAudioTrack>? importResult;
   Completer<void>? removalResult;
   Object? importError;
   Object? mixerError;
+  Object? exportError;
   int disposeCount = 0;
   int count = 0;
+  int nextTrackId = 0;
 
   @override
   Stream<EngineTelemetry> get telemetry => frames.stream;
@@ -40,17 +50,40 @@ class FakeEngine implements EngineController {
   }
 
   @override
+  Future<void> seekSeconds(double seconds) async {
+    calls.add('seek:$seconds');
+  }
+
+  @override
+  Future<void> setTrackRegionSeconds(
+      int trackId, double sourceStartSeconds, double durationSeconds) async {
+    calls.add('region:$trackId:$sourceStartSeconds:$durationSeconds');
+  }
+
+  @override
+  Future<void> setSequenceRegion(
+      int regionId, double startSeconds, List<int?> notes) async {
+    calls.add('pattern:$regionId:$startSeconds:${notes.join(',')}');
+  }
+
+  @override
+  Future<void> removeSequenceRegion(int regionId) async {
+    calls.add('removePattern:$regionId');
+  }
+
+  @override
   Future<LoadedAudioTrack> loadTrack(String path) async {
     calls.add('load:$path');
     if (importError != null) throw importError!;
     final loaded = await (importResult?.future ??
         Future.value(
           LoadedAudioTrack(
-              id: ++count,
+              id: ++nextTrackId,
               totalFrames: 44100 * 120,
               sampleRateHz: 44100,
               channels: 2),
         ));
+    count++;
     return loaded;
   }
 
@@ -58,6 +91,7 @@ class FakeEngine implements EngineController {
   Future<void> removeTrack(int trackId) async {
     calls.add('remove:$trackId');
     await removalResult?.future;
+    count--;
   }
 
   @override
@@ -72,8 +106,40 @@ class FakeEngine implements EngineController {
   }
 
   @override
+  Future<void> setTrackStartSeconds(int trackId, double seconds) async {
+    calls.add('start:$trackId:$seconds');
+  }
+
+  @override
   Future<void> muteTrack(int trackId, bool muted) async {
     calls.add('mute:$trackId:$muted');
+  }
+
+  @override
+  Future<void> soloTrack(int trackId, bool solo) async {
+    calls.add('solo:$trackId:$solo');
+  }
+
+  @override
+  Future<void> synthEvent(int event, int key, double value) async {
+    calls.add('synth:$event:$key:$value');
+  }
+
+  @override
+  Future<void> configureTransport(
+      double bpm, int beatsPerBar, bool metronome, bool sequence) async {
+    calls.add('transport:$bpm:$beatsPerBar:$metronome:$sequence');
+  }
+
+  @override
+  Future<void> setMasterVolume(double gain) async {
+    calls.add('master:$gain');
+  }
+
+  @override
+  Future<void> exportWav(String path) async {
+    calls.add('export:$path');
+    if (exportError != null) throw exportError!;
   }
 
   @override
@@ -82,6 +148,49 @@ class FakeEngine implements EngineController {
   Future<void> dispose() async {
     disposeCount++;
     await frames.close();
+  }
+}
+
+class FakeAudioEngine extends FakeEngine implements AudioOutputEngine {
+  final devices = const [
+    AudioOutputDevice(
+        index: 0,
+        name: 'Windows Speakers',
+        sampleRateHz: 48000,
+        channels: 2,
+        isDefault: true),
+    AudioOutputDevice(
+        index: 1,
+        name: 'USB Interface',
+        sampleRateHz: 96000,
+        channels: 2,
+        isDefault: false),
+  ];
+
+  @override
+  Future<List<AudioOutputDevice>> getOutputDevices() async => devices;
+
+  @override
+  Future<void> selectOutputDevice(int index) async {
+    calls.add('output:$index');
+  }
+}
+
+class FakeRecordingEngine extends FakeAudioEngine
+    implements AudioRecordingEngine {
+  @override
+  Future<void> startRecording(String path) async {
+    calls.add('recordStart:$path');
+  }
+
+  @override
+  Future<AudioRecordingStats> stopRecording() async {
+    calls.add('recordStop');
+    return const AudioRecordingStats(
+      sampleRateHz: 48000,
+      framesWritten: 48000,
+      framesDropped: 0,
+    );
   }
 }
 
@@ -95,6 +204,8 @@ Future<void> mountWorkspace(
   Future<EngineController> Function()? factory,
   Future<XFile?> Function()? sessionPicker,
   Future<String?> Function()? sessionSavePicker,
+  Future<String?> Function()? exportSavePicker,
+  Future<String?> Function()? recordingSavePicker,
   double width = 1440,
   double height = 1000,
 }) async {
@@ -107,6 +218,8 @@ Future<void> mountWorkspace(
     pickAudioFile: picker ?? () async => XFile('C:/audio/take.wav'),
     pickSessionFile: sessionPicker,
     pickSessionSavePath: sessionSavePicker,
+    pickExportSavePath: exportSavePicker,
+    pickRecordingSavePath: recordingSavePicker,
   ));
   await tester.pumpAndSettle();
 }
@@ -128,6 +241,489 @@ Future<void> deleteSelected(WidgetTester tester, {bool settle = true}) async {
 }
 
 void main() {
+  testWidgets('arrangement track order can be changed from track actions',
+      (tester) async {
+    final engine = FakeEngine();
+    var pickIndex = 0;
+    await mountWorkspace(
+      tester,
+      engine,
+      picker: () async => XFile(pickIndex++ == 0
+          ? 'C:/audio/first.wav'
+          : 'C:/audio/second.wav'),
+    );
+
+    await importAudio(tester);
+    await importAudio(tester);
+
+    var timeline = tester.widget<TimelineView>(find.byType(TimelineView));
+    expect(timeline.tracks.map((track) => track.name).toList(),
+        containsAllInOrder(<String>['first.wav', 'second.wav']));
+
+    await tester.tap(find.byTooltip('Track actions').at(1));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Move track up'));
+    await tester.pumpAndSettle();
+
+    timeline = tester.widget<TimelineView>(find.byType(TimelineView));
+    expect(timeline.tracks.map((track) => track.name).toList(),
+        containsAllInOrder(<String>['second.wav', 'first.wav']));
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    timeline = tester.widget<TimelineView>(find.byType(TimelineView));
+    expect(timeline.tracks.map((track) => track.name).toList(),
+        containsAllInOrder(<String>['first.wav', 'second.wav']));
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyY);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    timeline = tester.widget<TimelineView>(find.byType(TimelineView));
+    expect(timeline.tracks.map((track) => track.name).toList(),
+        containsAllInOrder(<String>['second.wav', 'first.wav']));
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    timeline = tester.widget<TimelineView>(find.byType(TimelineView));
+    expect(timeline.tracks.map((track) => track.name).toList(),
+        containsAllInOrder(<String>['first.wav', 'second.wav']));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('HypnoSynth pattern inserts a playable arrangement clip',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await tester.ensureVisible(find.text('Add pattern to arrangement'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add pattern to arrangement'));
+    await tester.pumpAndSettle();
+    expect(
+        engine.calls.any((call) => call.startsWith('pattern:1:0.0:')), isTrue);
+    expect(find.text('HypnoSynth pattern'), findsOneWidget);
+    expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
+        findsOneWidget);
+  });
+
+  testWidgets('HypnoSynth patterns support copy, paste, duplicate and cut',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await tester.ensureVisible(find.text('Add pattern to arrangement'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add pattern to arrangement'));
+    await tester.pumpAndSettle();
+    final pattern =
+        find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern');
+    expect(pattern, findsOneWidget);
+
+    Future<void> shortcut(LogicalKeyboardKey key) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(key);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+    }
+
+    await tester.tap(find.byTooltip('Hide mixer'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byTooltip('Rest on step 1'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Rest on step 1'));
+    await tester.pumpAndSettle();
+    expect(engine.calls.last, contains(':null,'));
+    await shortcut(LogicalKeyboardKey.keyZ);
+    expect(engine.calls.lastWhere((call) => call.startsWith('pattern:1:0.0:')),
+        startsWith('pattern:1:0.0:50,57,60'));
+    await shortcut(LogicalKeyboardKey.keyY);
+    expect(engine.calls.last, 'synth:5:0:-1.0');
+    await shortcut(LogicalKeyboardKey.keyZ);
+
+    await shortcut(LogicalKeyboardKey.keyC);
+    await shortcut(LogicalKeyboardKey.keyV);
+    expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
+        findsNWidgets(2));
+    expect(
+        engine.calls.any((call) => call.startsWith('pattern:2:0.0:')), isTrue);
+
+    await shortcut(LogicalKeyboardKey.keyD);
+    expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
+        findsNWidgets(3));
+    expect(engine.calls.any((call) => call.startsWith('pattern:3:')), isTrue);
+
+    await shortcut(LogicalKeyboardKey.keyX);
+    expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
+        findsNWidgets(2));
+    expect(engine.calls.where((call) => call.startsWith('removePattern:')),
+        hasLength(1));
+
+    await shortcut(LogicalKeyboardKey.keyZ);
+    expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
+        findsNWidgets(3));
+    await shortcut(LogicalKeyboardKey.keyZ);
+    expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
+        findsNWidgets(2));
+    await shortcut(LogicalKeyboardKey.keyZ);
+    expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
+        findsOneWidget);
+    await shortcut(LogicalKeyboardKey.keyY);
+    expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
+        findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('Add Instrument Track creates one session HypnoSynth track',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await tester.tap(find.byTooltip('Track menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add Instrument Track'));
+    await tester.pumpAndSettle();
+
+    var tracks =
+        tester.widget<InstrumentDock>(find.byType(InstrumentDock)).tracks;
+    expect(tracks.where((track) => track.kind == 'INSTRUMENT'), hasLength(1));
+    expect(tracks.singleWhere((track) => track.kind == 'INSTRUMENT').name,
+        'HypnoSynth');
+    await tester.tap(find.byTooltip('Mute HypnoSynth'));
+    await tester.pumpAndSettle();
+    expect(engine.calls, contains('synth:8:0:1.0'));
+    expect(
+        tester
+            .widget<InstrumentDock>(find.byType(InstrumentDock))
+            .tracks
+            .singleWhere((track) => track.kind == 'INSTRUMENT')
+            .muted,
+        isTrue);
+
+    await tester.tap(find.byTooltip('Track menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add Instrument Track'));
+    await tester.pumpAndSettle();
+    tracks = tester.widget<InstrumentDock>(find.byType(InstrumentDock)).tracks;
+    expect(tracks.where((track) => track.kind == 'INSTRUMENT'), hasLength(1));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('splits a selected audio clip into two native regions',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    engine.frames.add(const EngineTelemetry(
+      playheadSeconds: 2,
+      sampleRateHz: 44100,
+      peakLeft: 0,
+      peakRight: 0,
+      isPlaying: false,
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Region'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Split at Playhead'));
+    await tester.pumpAndSettle();
+
+    expect(importedClip, findsNWidgets(2));
+    expect(
+        engine.calls.where((call) => call.startsWith('region:')), hasLength(2));
+    expect(engine.calls, contains('start:2:2.0'));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('split and join native regions participate in undo history',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    engine.frames.add(const EngineTelemetry(
+      playheadSeconds: 2,
+      sampleRateHz: 44100,
+      peakLeft: 0,
+      peakRight: 0,
+      isPlaying: false,
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Region'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Split at Playhead'));
+    await tester.pumpAndSettle();
+    expect(importedClip, findsNWidgets(2));
+    expect(await engine.getTrackCount(), 2);
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(importedClip, findsOneWidget);
+    expect(await engine.getTrackCount(), 1);
+    expect(engine.calls, contains('region:1:0.0:120.0'));
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Redo'));
+    await tester.pumpAndSettle();
+    expect(importedClip, findsNWidgets(2));
+    expect(await engine.getTrackCount(), 2);
+    expect(
+        engine.calls.where((call) => call.startsWith('region:')), hasLength(5));
+
+    await tester.tap(find.text('Region'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Join Selected Regions'));
+    await tester.pumpAndSettle();
+    expect(importedClip, findsOneWidget);
+    expect(await engine.getTrackCount(), 1);
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(importedClip, findsNWidgets(2));
+    expect(await engine.getTrackCount(), 2);
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Redo'));
+    await tester.pumpAndSettle();
+    expect(importedClip, findsOneWidget);
+    expect(await engine.getTrackCount(), 1);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+      'trim start and end update native regions and undo chronologically',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    engine.frames.add(const EngineTelemetry(
+      playheadSeconds: 2,
+      sampleRateHz: 44100,
+      peakLeft: 0,
+      peakRight: 0,
+      isPlaying: false,
+    ));
+    await tester.pumpAndSettle();
+    final clip = tester.widget<ClipTile>(importedClip).clip;
+
+    await tester.tap(find.text('Region'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Trim Start to Playhead'));
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, 2);
+    expect(clip.sourceStartSeconds, 2);
+    expect(clip.durationSeconds, 118);
+
+    engine.frames.add(const EngineTelemetry(
+      playheadSeconds: 5,
+      sampleRateHz: 44100,
+      peakLeft: 0,
+      peakRight: 0,
+      isPlaying: false,
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Region'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Trim End to Playhead'));
+    await tester.pumpAndSettle();
+    expect(clip.sourceStartSeconds, 2);
+    expect(clip.durationSeconds, 3);
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(clip.durationSeconds, 118);
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, 0);
+    expect(clip.sourceStartSeconds, 0);
+    expect(clip.durationSeconds, 120);
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Redo'));
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, 2);
+    expect(clip.sourceStartSeconds, 2);
+    expect(clip.durationSeconds, 118);
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Redo'));
+    await tester.pumpAndSettle();
+    expect(clip.sourceStartSeconds, 2);
+    expect(clip.durationSeconds, 3);
+
+    expect(engine.calls, contains('region:1:2.0:118.0'));
+    expect(engine.calls, contains('region:1:2.0:3.0'));
+    expect(engine.calls, contains('region:1:0.0:120.0'));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('audio region edge handles trim source and timeline bounds',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    final clip = tester.widget<ClipTile>(importedClip).clip;
+
+    final startHandle = find.byKey(ValueKey('clip-resize-start-${clip.id}'));
+    await tester.ensureVisible(startHandle);
+    await tester.drag(startHandle, const Offset(80, 0));
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, greaterThan(0));
+    expect(clip.sourceStartSeconds, clip.startSeconds);
+    expect(clip.durationSeconds, lessThan(120));
+
+    final endHandle = find.byKey(ValueKey('clip-resize-end-${clip.id}'));
+    await tester.ensureVisible(endHandle);
+    final durationBeforeEndTrim = clip.durationSeconds!;
+    await tester.drag(endHandle, const Offset(-80, 0));
+    await tester.pumpAndSettle();
+    expect(clip.durationSeconds, lessThan(durationBeforeEndTrim));
+    final trimmedStart = clip.startSeconds;
+    final trimmedSourceStart = clip.sourceStartSeconds;
+    final trimmedDuration = clip.durationSeconds;
+    expect(engine.calls.any((call) => call.startsWith('region:1:')), isTrue);
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, greaterThan(0));
+    expect(clip.durationSeconds, durationBeforeEndTrim);
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, 0);
+    expect(clip.sourceStartSeconds, 0);
+    expect(clip.durationSeconds, 120);
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Redo'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Redo'));
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, trimmedStart);
+    expect(clip.sourceStartSeconds, trimmedSourceStart);
+    expect(clip.durationSeconds, trimmedDuration);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('duplicates a split audio track with both native regions',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    engine.frames.add(const EngineTelemetry(
+      playheadSeconds: 2,
+      sampleRateHz: 44100,
+      peakLeft: 0,
+      peakRight: 0,
+      isPlaying: false,
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Region'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Split at Playhead'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Track'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Duplicate Selected Track'));
+    await tester.pumpAndSettle();
+
+    expect(importedClip, findsNWidgets(4));
+    expect(engine.calls.where((call) => call == 'load:C:/audio/take.wav'),
+        hasLength(4));
+    expect(
+        engine.calls.where((call) => call.startsWith('region:')), hasLength(4));
+    expect(engine.calls, contains('start:4:2.0'));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('File menu exports a stereo WAV through the engine',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(
+      tester,
+      engine,
+      exportSavePicker: () async => 'C:/exports/Untitled Session',
+    );
+    await tester.tap(find.byTooltip('File menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Export Mixdown…'));
+    await tester.pumpAndSettle();
+
+    expect(engine.calls, contains('export:C:/exports/Untitled Session.wav'));
+    expect(find.textContaining('Stereo WAV exported to'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('Ctrl+Alt+E exports a stereo WAV', (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(
+      tester,
+      engine,
+      exportSavePicker: () async => 'C:/exports/Keyboard Mix',
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyE);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+
+    expect(engine.calls, contains('export:C:/exports/Keyboard Mix.wav'));
+    expect(find.textContaining('Stereo WAV exported to'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('Ctrl+Right seeks to the next musical bar', (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+
+    await tester.tap(find.byKey(const ValueKey('time-signature-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('3/4').last);
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+
+    expect(find.text('3/4'), findsOneWidget);
+    expect(engine.calls, contains('seek:${180 / 92}'));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   test('source rate determines duration; absent frame counts stay unknown', () {
     expect(
         const LoadedAudioTrack(
@@ -171,13 +767,325 @@ void main() {
     await tester.dragFrom(
         tester.getTopLeft(importedClip) + const Offset(20, 20),
         const Offset(150, 0));
-    await tester.pump();
-    expect(clip.start, 0,
-        reason: 'A visual drag must not claim to move native audio.');
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(clip.startSeconds, greaterThan(0));
+    final beatSeconds = 60 / 92;
+    expect(
+      clip.startSeconds,
+      closeTo((clip.startSeconds / beatSeconds).round() * beatSeconds, 1e-9),
+    );
+    expect(engine.calls.last, startsWith('start:1:'));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
     expect(engine.disposeCount, 1);
+  });
+
+  testWidgets('undo and redo restore a moved audio clip in the engine',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    final clip = tester.widget<ClipTile>(importedClip).clip;
+    await tester.ensureVisible(importedClip);
+    await tester.dragFrom(
+      tester.getTopLeft(importedClip) + const Offset(20, 20),
+      const Offset(150, 0),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+    final movedSeconds = clip.startSeconds;
+    expect(movedSeconds, greaterThan(0));
+    expect(engine.calls.last, startsWith('start:1:'));
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, 0);
+    expect(engine.calls.last, 'start:1:0.0');
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, movedSeconds);
+    expect(engine.calls.last, 'start:1:$movedSeconds');
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, 0);
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Redo'));
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, movedSeconds);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('undo and redo restore a moved HypnoSynth pattern region',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await tester.ensureVisible(find.text('Add pattern to arrangement'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add pattern to arrangement'));
+    await tester.pumpAndSettle();
+    final patternFinder = find.byWidgetPredicate(
+        (widget) => widget is ClipTile && widget.clip.isSequenceRegion);
+    final clip = tester.widget<ClipTile>(patternFinder).clip;
+    await tester.ensureVisible(patternFinder);
+    await tester.dragFrom(
+      tester.getTopLeft(patternFinder) + const Offset(20, 20),
+      const Offset(150, 0),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+    final movedSeconds = clip.startSeconds;
+    expect(movedSeconds, greaterThan(0));
+    expect(engine.calls.last, startsWith('pattern:1:$movedSeconds:'));
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, 0);
+    expect(engine.calls.last, startsWith('pattern:1:0.0:'));
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, movedSeconds);
+    expect(engine.calls.last, startsWith('pattern:1:$movedSeconds:'));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('beat snapping can be disabled for free clip placement',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    await tester.tap(find.byTooltip('Snap to beats (on)'));
+    await tester.pumpAndSettle();
+    final clip = tester.widget<ClipTile>(importedClip).clip;
+    await tester.ensureVisible(importedClip);
+    await tester.dragFrom(
+      tester.getTopLeft(importedClip) + const Offset(20, 20),
+      const Offset(150, 0),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    final beatSeconds = 60 / 92;
+    expect(
+      (clip.startSeconds / beatSeconds).round() * beatSeconds,
+      isNot(closeTo(clip.startSeconds, 1e-6)),
+    );
+    expect(engine.calls.last, startsWith('start:1:'));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('duplicate selected audio track preserves engine state',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    await tester.tap(find.byTooltip('Track menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Duplicate Selected Track'));
+    await tester.pumpAndSettle();
+
+    expect(engine.calls, contains('load:C:/audio/take.wav'));
+    expect(engine.calls, contains('volume:2:0.8'));
+    expect(engine.calls, contains('pan:2:0.5'));
+    expect(engine.calls, contains('mute:2:false'));
+    expect(engine.calls, contains('solo:2:false'));
+    expect(engine.calls, contains('start:2:0.0'));
+    expect(await engine.getTrackCount(), 2);
+    expect(find.textContaining('take.wav copy'), findsWidgets);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('failed duplicate rolls back the native audio track',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    engine.mixerError = StateError('mixer rejected duplicate state');
+    await tester.tap(find.byTooltip('Track menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Duplicate Selected Track'));
+    await tester.pumpAndSettle();
+
+    expect(engine.calls, contains('remove:2'));
+    expect(await engine.getTrackCount(), 1);
+    expect(find.textContaining('Track duplication failed'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('renamed audio track is written to the session', (tester) async {
+    final directory = Directory.systemTemp.createTempSync('aetherband-name-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final sessionPath = '${directory.path}/renamed.aetherband.json';
+    final audioPath = '${directory.path}/take.wav';
+    File(audioPath).writeAsBytesSync([82, 73, 70, 70]);
+    final engine = FakeEngine();
+    await mountWorkspace(
+      tester,
+      engine,
+      picker: () async => XFile(audioPath),
+      sessionSavePicker: () async => sessionPath,
+    );
+    await importAudio(tester);
+    await tester.tap(find.byTooltip('Track menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rename Selected Track'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('rename-track-name')), 'Room microphone');
+    await tester.tap(find.text('Rename'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Room microphone'), findsWidgets);
+
+    await tester.tap(find.byTooltip('File menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save Session'));
+    await tester.pump();
+    final saveCompleted = await tester.runAsync(() async {
+      final file = File(sessionPath);
+      for (var i = 0; i < 100 && !await file.exists(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      return await file.exists();
+    });
+    expect(saveCompleted, isTrue);
+    await tester.pumpAndSettle();
+    final saved = (await tester.runAsync(
+      () => const AudioSessionStore().open(sessionPath),
+    ))!;
+    expect(saved.tracks.single.name, 'Room microphone');
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('F2 opens rename for the selected audio track', (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.f2);
+    await tester.pumpAndSettle();
+    expect(find.text('Rename track'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('rename-track-name')),
+      'Guitar take',
+    );
+    await tester.tap(find.text('Rename'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Guitar take'), findsWidgets);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('Zoom to Fit scales the arrangement to imported audio',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    await tester.tap(find.byTooltip('View menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Zoom to Fit'));
+    await tester.pumpAndSettle();
+
+    final zoom = tester.widget<Slider>(
+      find.byKey(const ValueKey('timeline-zoom')),
+    );
+    final trackContentWidth = 120 * timelinePixelsPerSecond(92) + 84;
+    expect(zoom.value, closeTo((1440 - 222 - 196) / trackContentWidth, 1e-6));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('cut and paste restores audio at the transport position',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    engine.frames.add(const EngineTelemetry(
+      playheadSeconds: 5,
+      sampleRateHz: 44100,
+      peakLeft: 0,
+      peakRight: 0,
+      isPlaying: false,
+    ));
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cut'));
+    await tester.pumpAndSettle();
+    expect(await engine.getTrackCount(), 0);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(await engine.getTrackCount(), 1);
+    expect(engine.calls, contains('start:2:5.0'));
+    expect(find.textContaining('take.wav copy'), findsWidgets);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('Ctrl+C, Ctrl+V and Ctrl+D edit imported audio tracks',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(await engine.getTrackCount(), 2);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(await engine.getTrackCount(), 3);
+    expect(engine.calls, contains('start:3:0.0'));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('Delete removes the selected imported audio track',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+    await tester.pumpAndSettle();
+
+    expect(await engine.getTrackCount(), 0);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('picker cancellation leaves transport and inventory untouched',
@@ -226,19 +1134,31 @@ void main() {
       'removal targets the requested track when selection changes in flight',
       (tester) async {
     final engine = FakeEngine();
-    await mountWorkspace(tester, engine);
+    var pick = 0;
+    await mountWorkspace(
+      tester,
+      engine,
+      picker: () async => XFile(
+        pick++ == 0 ? 'C:/audio/removed.wav' : 'C:/audio/target.wav',
+      ),
+    );
     await importAudio(tester);
+    await importAudio(tester);
+    final beforeRemoval =
+        tester.widget<TimelineView>(find.byType(TimelineView));
+    expect(beforeRemoval.tracks, hasLength(2));
     engine.removalResult = Completer<void>();
     await deleteSelected(tester, settle: false);
-    await tester.ensureVisible(find.text('lead vocal / close'));
-    await tester.tap(find.text('lead vocal / close'));
+    final timeline = tester.widget<TimelineView>(find.byType(TimelineView));
+    timeline.onTrackSelected(beforeRemoval.tracks.first);
     await tester.pump();
     engine.removalResult!.complete();
     await tester.pumpAndSettle();
-    expect(engine.calls.last, 'remove:1');
-    expect(importedClip, findsNothing);
-    expect(find.text('lead vocal / close'), findsOneWidget);
-    expect(find.text('Selected: lead vocal / close'), findsOneWidget);
+    expect(engine.calls.last, 'remove:2');
+    final afterRemoval = tester.widget<TimelineView>(find.byType(TimelineView));
+    expect(afterRemoval.tracks, hasLength(1));
+    expect(afterRemoval.tracks.single.id, beforeRemoval.tracks.first.id);
+    expect(afterRemoval.selectedTrackId, beforeRemoval.tracks.first.id);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -301,7 +1221,7 @@ void main() {
     expect(first.disposeCount, 1);
     expect(restarted.isCompleted, isTrue);
     expect(importedClip, findsNothing);
-    expect(find.textContaining('DEMO CLIPS ONLY'), findsOneWidget);
+    expect(find.textContaining('EMPTY SESSION'), findsOneWidget);
     expect(find.byType(MaterialBanner), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
@@ -320,11 +1240,13 @@ void main() {
     dock.onPanChanged(importedTrack, 0.75);
     dock.onMuteChanged(importedTrack, true);
     await tester.pumpAndSettle();
-    expect(engine.calls, containsAllInOrder([
-      'volume:1:0.25',
-      'pan:1:0.75',
-      'mute:1:true',
-    ]));
+    expect(
+        engine.calls,
+        containsAllInOrder([
+          'volume:1:0.25',
+          'pan:1:0.75',
+          'mute:1:true',
+        ]));
     expect(importedTrack.volume, 0.25);
     expect(importedTrack.pan, 0.75);
     expect(importedTrack.muted, isTrue);
@@ -348,7 +1270,8 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('session file menu saves and restores real native mixer state',
+  testWidgets(
+      'session file menu saves and restores audio and synth mixer state',
       (tester) async {
     final directory = Directory.systemTemp.createTempSync('aetherband-ui-');
     addTearDown(() => directory.deleteSync(recursive: true));
@@ -358,6 +1281,7 @@ void main() {
     final first = FakeEngine();
     final restored = FakeEngine();
     var creations = 0;
+    final stagedEngine = Completer<void>();
 
     await mountWorkspace(
       tester,
@@ -365,17 +1289,37 @@ void main() {
       picker: () async => XFile(audio.path),
       sessionPicker: () async => XFile(sessionPath),
       sessionSavePicker: () async => sessionPath,
-      factory: () async => creations++ == 0 ? first : restored,
+      factory: () async {
+        if (creations++ == 0) return first;
+        stagedEngine.complete();
+        return restored;
+      },
     );
     await importAudio(tester);
-    final imported = tester.widget<InstrumentDock>(find.byType(InstrumentDock))
+    await tester.tap(find.byTooltip('Track menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add Instrument Track'));
+    await tester.pumpAndSettle();
+    final imported = tester
+        .widget<InstrumentDock>(find.byType(InstrumentDock))
         .tracks
-        .singleWhere((track) => track.id.startsWith('native-'));
+        .singleWhere(
+            (track) => track.kind == 'AUDIO' && track.id.startsWith('native-'));
+    final instrument = tester
+        .widget<InstrumentDock>(find.byType(InstrumentDock))
+        .tracks
+        .singleWhere((track) => track.kind == 'INSTRUMENT');
     final stableId = imported.id;
+    final instrumentId = instrument.id;
     final mixer = tester.widget<InstrumentDock>(find.byType(InstrumentDock));
     mixer.onVolumeChanged(imported, 0.35);
     mixer.onPanChanged(imported, 0.8);
     mixer.onMuteChanged(imported, true);
+    mixer.onSoloChanged(imported, true);
+    mixer.onVolumeChanged(instrument, 0.45);
+    mixer.onPanChanged(instrument, 0.7);
+    mixer.onMuteChanged(instrument, true);
+    mixer.onSoloChanged(instrument, true);
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('File menu'));
@@ -397,32 +1341,79 @@ void main() {
     expect(saved.tracks.single.gain, 0.35);
     expect(saved.tracks.single.pan, 0.8);
     expect(saved.tracks.single.muted, isTrue);
+    expect(saved.tracks.single.solo, isTrue);
+    expect(saved.instrumentTracks.single.id, instrumentId);
+    expect(saved.instrumentTracks.single.gain, 0.45);
+    expect(saved.instrumentTracks.single.pan, 0.7);
+    expect(saved.instrumentTracks.single.muted, isTrue);
+    expect(saved.instrumentTracks.single.solo, isTrue);
 
+    // The save runs asynchronously from the menu callback. Wait for the UI
+    // completion signal before issuing another session command.
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Saved 2 tracks (1 audio, 1 instrument).'),
+        findsOneWidget);
+    // Let the save's finally block release the session-operation guard.
+    await tester.pump();
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('File menu'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Open Session…'));
     await tester.pump();
-    await tester.runAsync(() async {
-      for (var i = 0; i < 100 && restored.calls.isEmpty; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      }
-    });
     await tester.pumpAndSettle();
-    expect(restored.calls, containsAllInOrder([
-      'load:${File.fromUri(audio.absolute.uri).path}',
-      'volume:1:0.35',
-      'pan:1:0.8',
-      'mute:1:true',
-    ]));
-    final reopened = tester.widget<InstrumentDock>(find.byType(InstrumentDock))
-        .tracks
-        .singleWhere((track) => track.id == stableId);
+    if (find.text('Unsaved audio session changes').evaluate().isNotEmpty) {
+      await tester.tap(find.text('Discard changes'));
+      await tester.pumpAndSettle();
+    }
+    // Alternate real time for file I/O with Flutter pumps so async continuations
+    // can advance through both the picker and the session store.
+    for (var i = 0; i < 100 && !stagedEngine.isCompleted; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    expect(stagedEngine.isCompleted, isTrue);
+    for (var i = 0; i < 100 && first.disposeCount == 0; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+    expect(first.disposeCount, 1);
+    expect(
+        restored.calls,
+        containsAllInOrder([
+          'load:${File.fromUri(audio.absolute.uri).path}',
+          'volume:1:0.35',
+          'pan:1:0.8',
+          'mute:1:true',
+          'solo:1:true',
+          'start:1:0.0',
+        ]));
+    final restoredTracks =
+        tester.widget<InstrumentDock>(find.byType(InstrumentDock)).tracks;
+    final reopened =
+        restoredTracks.singleWhere((track) => track.id == stableId);
     expect(reopened.volume, 0.35);
     expect(reopened.pan, 0.8);
     expect(reopened.muted, isTrue);
-    for (var i = 0; i < 100 && first.disposeCount == 0; i++) {
-      await tester.pump(const Duration(milliseconds: 20));
-    }
+    expect(reopened.solo, isTrue);
+    final restoredInstrument =
+        restoredTracks.singleWhere((track) => track.id == instrumentId);
+    expect(restoredInstrument.volume, 0.45);
+    expect(restoredInstrument.pan, 0.7);
+    expect(restoredInstrument.muted, isTrue);
+    expect(restoredInstrument.solo, isTrue);
+    expect(
+        restored.calls,
+        containsAllInOrder([
+          'synth:6:0:0.45',
+          'synth:7:0:0.7',
+          'synth:8:0:1.0',
+          'synth:9:0:1.0',
+        ]));
     expect(first.disposeCount, 1);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
@@ -455,5 +1446,4 @@ void main() {
     expect(project.existsSync(), isTrue);
     await tester.pumpWidget(const SizedBox.shrink());
   });
-
 }

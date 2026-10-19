@@ -1,7 +1,7 @@
 # Aetherband — Project State Handoff
 
-**Snapshot date:** 2026-10-18
-**Evidence level:** local Windows Rust/Flutter checks, a Windows desktop build and native integration test; macOS runtime verification remains pending. Recheck current CI before relying on this snapshot.
+**Snapshot date:** 2026-10-19
+**Latest local verification:** PR #33 includes the Windows audio repair, HypnoSynth, and DAW editing foundations. Rust workspace tests, callback-allocation, opt-in WASAPI output, Clippy, the release C ABI DLL, full Dart analysis, all 64 desktop Flutter tests and the Windows Release build pass locally. The opt-in native integration test also passes against the default Windows output device and reports nonzero arranged-pattern telemetry. Latest-head CI is running. Speaker/headphone audibility and microphone/line-in capture remain unverified.
 
 ## Product identity
 
@@ -13,19 +13,20 @@ Aetherband is an early-alpha, open-source desktop DAW. Its long-term direction i
 - **Audio engine/DSP:** Rust in `core/`.
 - **Interop:** versioned C ABI in `bindings/c_abi/`, consumed through Dart FFI.
 - **Audio I/O/decoding:** Rust engine components using the existing audio/device and decoder stack.
-- **Target desktop platforms:** Windows and macOS.
+- **Target desktop platform:** Windows only by current owner direction; other platforms are deferred.
 
 Do not reintroduce C#/.NET/Avalonia as a second desktop frontend. Verify current project files before changing build scripts, APIs or dependency versions.
 
 ## Known implementation boundaries
 
-- The Flutter workspace and arrangement are still prototype-stage; demo tracks/clips are not proof of a loaded or persisted project.
-- Native engine initialization, telemetry and initial transport controls are wired through an adapter/controller. Verify every specific operation before treating it as end-to-end complete.
-- The native engine exposes a set of transport, telemetry, device, test-tone and track operations; inspect `bindings/c_abi/src/lib.rs` as the source of truth before adding or assuming APIs.
-- Audio import now queries source duration through ABI 0.3.0. Native calls run outside Flutter's UI isolate, with the actual engine confined to a dedicated Rust OS thread. Imported clips use probed metadata when available, label unknown duration, and do not fabricate waveforms or support visual-only movement/mixing. Track removal preserves state on command rejection. Reconnecting clears the old engine's native IDs and requires reimport.
-- Record UI controls must not imply actual recording unless a real recording path exists.
+- The launch arrangement is a real empty session rather than six visual demo tracks. Imported audio remains duration-aware and native playback is routed to the default Windows device using its native sample format.
+- The real-time Rust callback now renders imported tracks and HypnoSynth, supports full oversized buffers, and defers decoder/player reclamation to the control thread. Device stream errors are surfaced through telemetry. Space toggles play/pause and R toggles recording through the native engine.
+- HypnoSynth is an original polyphonic instrument with three original presets, live keyboard input and a persisted, editable 16-step sequence with tempo/metronome playback. Its musical references do not use copied recordings or claim to recreate a specific patch.
+- ABI 0.12.0 and Dart FFI carry transport seek, BPM and configurable 2–7/4 time signatures, synth, master gain, track solo state, imported-audio clip positions and source-bounded split/join/trim regions, editable 16-step HypnoSynth patterns scheduled as arrangement regions, HypnoSynth track gain/pan/mute/solo, offline signed stereo PCM24 WAV export at fixed 48 kHz and Windows input recording. Session schema v6 saves pattern IDs, note/rest data and positions alongside one HypnoSynth track; schema v1 through v5 remain readable. Pattern clips support copy/cut/paste/duplicate and undo/redo for insertion, removal, movement and step-note edits. Sessions stage media in a fresh engine before replacing active state.
+- Rust callback tests confirm audible generated and decoded signals; physical speaker or loopback listening still requires a user machine with an audio output.
+- Windows recording uses the default input device and a background stereo signed PCM24 WAV writer; stopping finalizes and imports the take at the transport position. Input hardware behavior remains unverified.
 - Live meters must use actual engine telemetry, not invented animation.
-- Project save/load, MIDI editing, instruments, effects, automation, plugin hosting, spatial rendering and final export must not be claimed complete unless current code and tests prove it.
+- Measured PCM/IEEE-float WAV waveforms load off the UI isolate and render from decoded peaks; unsupported audio formats show an explicit unavailable state. The Region menu splits, joins contiguous regions, and trims region starts/ends to the stopped playhead. These operations update native playback and persisted source ranges; audio clips also have drag handles for source-bounded edge trimming, with preview, native playback, session persistence and chronological undo/redo. One HypnoSynth instrument track can be added, renamed, deleted and persisted, with working mixer gain/pan/mute/solo. It has no independent MIDI regions or track-specific sequencer. MIDI regions, time stretching, Bounce in Place, effects, automation and plugin hosting remain incomplete. Imported audio clips can be moved and their start positions persist.
 
 ## Critical invariants
 
@@ -39,20 +40,15 @@ Do not reintroduce C#/.NET/Avalonia as a second desktop frontend. Verify current
 ## Current priorities
 
 See [Feature Tracker](FEATURE_TRACKER.md) for the living backlog. Initial order:
-1. Recheck and repair CI on the latest mainline.
-2. Verify the Flutter ↔ Rust integration and transport behaviour on Windows/macOS.
-3. Complete a coherent import → arrange → playback workflow.
-4. Define and implement project save/reopen.
-5. Add a basic stereo export path.
-6. Grow editing, MIDI/instruments and effects through tested vertical slices.
-7. Revisit spatial audio and advanced creative-engine experiments when core workflows are coherent.
+1. Listen to HypnoSynth and imported audio through actual Windows output hardware.
+2. Verify input recording with a real Windows microphone/line-in device and listen to output through speakers.
+3. Add editable MIDI regions and MIDI data persistence; extend waveform editing and undo/redo.
 
-## Known uncertainty
+## Current verification and uncertainty
 
-The 2026-10-18 local checks passed Rust formatting/check/test and C ABI build, Flutter analysis/tests, a Windows desktop build and native import/transport/removal/queued-shutdown testing. Existing Clippy findings in unchanged audio/decoder/DSP/track code prevent `cargo clippy --workspace --all-targets -- -D warnings` from passing. See [verification record](VERIFICATION_2026-10-18.md) for exact scope and limitations.
+On 2026-10-19, local verification passed for Rust audio/core/FFI and the complete desktop Flutter suite (64 passed) and Windows Release desktop build. The opt-in native integration test passed against the default Windows output device and observed nonzero arranged-pattern telemetry; the release DLL also emitted nonzero stereo pattern-region samples to the WASAPI callback through direct Dart FFI. CI is running for the current PR head. These results do not prove speaker/headphone audibility or successful microphone/line-in capture.
 
-This document is not a runtime test report. It does not independently prove current CI status, device behaviour, audio output, persistence, export or platform packaging. Use current GitHub Actions logs and local results. Update this snapshot when evidence changes, and date it when a new status review is performed.
-
+PR #33 remains open, mergeable and unmerged. New local edits must be published to the same PR and checked by remote CI; do not infer sound quality or hardware recording from callback/unit tests alone.
 ## Required handoff format
 
 For each agent task, report **Implemented**, **Not implemented**, **Verified**, **Not verified**, **Known risks**, and **Next step**. Link the relevant PR/commit and checks when available.

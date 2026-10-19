@@ -3,7 +3,7 @@
 //! Exposes a flat, C-compatible interface for desktop frontends through Dart FFI.
 
 use daw_core::ringbuf::TelemetryFrame;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
 
@@ -14,6 +14,8 @@ pub const DAW_OK: i32 = 0;
 pub const DAW_ERROR_INVALID_ARGUMENT: i32 = -1;
 pub const DAW_ERROR_COMMAND_REJECTED: i32 = -3;
 pub const DAW_ERROR_TRACK_NOT_FOUND: i32 = -4;
+pub const DAW_ERROR_EXPORT_FAILED: i32 = -5;
+pub const DAW_ERROR_RECORDING_FAILED: i32 = -6;
 
 /// Opaque handle representing a DAW engine instance.
 #[repr(C)]
@@ -58,6 +60,25 @@ pub struct DAWTrackInfo {
     pub total_frames: u64,
     pub sample_rate: u32,
     pub channels: u32,
+}
+
+/// Summary of a finalized input recording.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DAWRecordingStats {
+    pub sample_rate: u32,
+    pub frames_written: u64,
+    pub frames_dropped: u64,
+}
+
+impl From<daw_core::device::RecordingStats> for DAWRecordingStats {
+    fn from(stats: daw_core::device::RecordingStats) -> Self {
+        Self {
+            sample_rate: stats.sample_rate,
+            frames_written: stats.frames_written,
+            frames_dropped: stats.frames_dropped,
+        }
+    }
 }
 
 impl From<&daw_core::TrackInfo> for DAWTrackInfo {
@@ -110,7 +131,209 @@ impl Default for DAWDeviceInfo {
 /// Returns the API version (major << 16 | minor << 8 | patch).
 #[no_mangle]
 pub extern "C" fn daw_get_api_version() -> u32 {
-    3 << 8
+    12 << 8
+}
+
+/// Starts recording from the default Windows input device to a new WAV path.
+/// Existing files are never overwritten.
+///
+/// # Safety
+/// `engine` must be a live engine handle with serialized calls; `path` must
+/// point to a NUL-terminated UTF-8 path for the duration of this call.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_start_recording(
+    engine: *mut DAWEngine,
+    path: *const c_char,
+) -> i32 {
+    if engine.is_null() || path.is_null() {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    }
+    let Some(eng) = to_core_mut(engine) else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    let Ok(path) = CStr::from_ptr(path).to_str() else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    match eng.start_recording(std::path::Path::new(path)) {
+        Ok(_) => DAW_OK,
+        Err(_) => DAW_ERROR_RECORDING_FAILED,
+    }
+}
+
+/// Stops input recording, drains the writer and finalizes the WAV header.
+///
+/// # Safety
+/// `engine` must be a live engine handle; `out_stats` must be writable for one
+/// `DAWRecordingStats`. Calls must be serialized and not race with destroy.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_stop_recording(
+    engine: *mut DAWEngine,
+    out_stats: *mut DAWRecordingStats,
+) -> i32 {
+    if engine.is_null() || out_stats.is_null() {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    }
+    let Some(eng) = to_core_mut(engine) else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    match eng.stop_recording() {
+        Ok(stats) => {
+            out_stats.write(stats.into());
+            DAW_OK
+        }
+        Err(_) => DAW_ERROR_RECORDING_FAILED,
+    }
+}
+
+/// Render the loaded audio session to stereo signed 24-bit PCM WAV without changing playback.
+///
+/// # Safety
+/// `engine` must be a live engine handle with serialized calls; `path` must point to a
+/// readable NUL-terminated UTF-8 path for the duration of the call.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_export_wav(engine: *mut DAWEngine, path: *const c_char) -> i32 {
+    if engine.is_null() || path.is_null() {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    }
+    let Some(eng) = to_core_mut(engine) else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    let Ok(path) = CStr::from_ptr(path).to_str() else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    if eng.export_wav(std::path::Path::new(path)).is_ok() {
+        DAW_OK
+    } else {
+        DAW_ERROR_EXPORT_FAILED
+    }
+}
+
+/// HypnoSynth events: 0 note-on (key 0..127, velocity 0..1), 1 note-off,
+/// 2 preset (0..2), 3 macro (key 0..4, value 0..1), 4 all-sounds-off,
+/// 5 set an eight-note-per-bar sequencer step (step 0..15, note 0..127 or -1 for rest);
+/// 6-9 set HypnoSynth track gain (0..1), pan (0..1), mute (0/1), and solo (0/1), key 0.
+///
+/// # Safety
+/// `engine` must be a live handle returned by `daw_engine_create`, with calls
+/// serialized on its owner thread and no concurrent destroy.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_synth_event(
+    engine: *mut DAWEngine,
+    event: u32,
+    key: u32,
+    value: f32,
+) -> i32 {
+    let Some(eng) = to_core_mut(engine) else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    if eng.synth_event(event, key, value) {
+        DAW_OK
+    } else {
+        DAW_ERROR_COMMAND_REJECTED
+    }
+}
+
+/// Install or update a 16-step HypnoSynth arrangement region. Each note is
+/// -1 for a rest or a MIDI note in 0..=127. Start time is timeline seconds.
+///
+/// # Safety
+/// `engine` must be a live serialized handle and `notes` must point to 16
+/// readable `i32` values for the duration of this call.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_set_sequence_region(
+    engine: *mut DAWEngine,
+    region_id: u32,
+    start_seconds: f64,
+    notes: *const i32,
+) -> i32 {
+    if engine.is_null() || notes.is_null() || region_id == 0 {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    }
+    let Some(eng) = to_core_mut(engine) else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    if !start_seconds.is_finite() || !(0.0..=86_400.0).contains(&start_seconds) {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    }
+    let values = std::slice::from_raw_parts(notes, 16);
+    let mut pattern = [None; 16];
+    for (slot, value) in pattern.iter_mut().zip(values.iter().copied()) {
+        if !(-1..=127).contains(&value) {
+            return DAW_ERROR_INVALID_ARGUMENT;
+        }
+        *slot = (value >= 0).then_some(value as u8);
+    }
+    if eng.set_sequence_region(region_id, start_seconds, pattern) {
+        DAW_OK
+    } else {
+        DAW_ERROR_COMMAND_REJECTED
+    }
+}
+
+/// Remove a HypnoSynth arrangement region by its nonzero session-local ID.
+///
+/// # Safety
+/// `engine` must be a live serialized handle.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_remove_sequence_region(
+    engine: *mut DAWEngine,
+    region_id: u32,
+) -> i32 {
+    let Some(eng) = to_core_mut(engine) else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    if region_id == 0 {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    }
+    if eng.remove_sequence_region(region_id) {
+        DAW_OK
+    } else {
+        DAW_ERROR_COMMAND_REJECTED
+    }
+}
+
+/// Set implicit track solo. Other tracks stay muted until the final solo clears.
+///
+/// # Safety
+/// `engine` must be a live handle returned by `daw_engine_create`, with calls
+/// serialized on its owner thread and no concurrent destroy.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_solo_track(
+    engine: *mut DAWEngine,
+    track_id: u32,
+    solo: u8,
+) -> i32 {
+    let Some(eng) = to_core_mut(engine) else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    if eng.solo_track(daw_core::ringbuf::TrackId(track_id), solo != 0) {
+        DAW_OK
+    } else {
+        DAW_ERROR_TRACK_NOT_FOUND
+    }
+}
+
+/// Configure tempo, quarter-note beats per bar, metronome and HypnoSynth phrase.
+///
+/// # Safety
+/// `engine` must be a live handle returned by `daw_engine_create`, with calls
+/// serialized on its owner thread and no concurrent destroy.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_configure_transport(
+    engine: *mut DAWEngine,
+    bpm: f32,
+    beats_per_bar: u8,
+    metronome: u8,
+    sequence: u8,
+) -> i32 {
+    let Some(eng) = to_core_mut(engine) else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    if eng.configure_transport(bpm, beats_per_bar, metronome != 0, sequence != 0) {
+        DAW_OK
+    } else {
+        DAW_ERROR_COMMAND_REJECTED
+    }
 }
 
 /// Creates a new DAW engine instance and initializes the default audio stream.
@@ -182,6 +405,27 @@ pub unsafe extern "C" fn daw_engine_stop(engine: *mut DAWEngine) -> i32 {
         }
     } else {
         -1
+    }
+}
+
+/// Seeks the transport to an absolute position in seconds.
+///
+/// # Safety
+/// `engine` must be null or a valid handle returned by `daw_engine_create` that
+/// has not been destroyed. Calls for one handle must be serialized.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_seek_seconds(engine: *mut DAWEngine, seconds: f64) -> i32 {
+    if !seconds.is_finite() || seconds < 0.0 || seconds > 86_400.0 {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    }
+    if let Some(eng) = to_core_ref(engine) {
+        if eng.seek_seconds(seconds) {
+            DAW_OK
+        } else {
+            DAW_ERROR_COMMAND_REJECTED
+        }
+    } else {
+        DAW_ERROR_INVALID_ARGUMENT
     }
 }
 
@@ -459,6 +703,59 @@ pub unsafe extern "C" fn daw_engine_set_track_pan(
     }
 }
 
+/// Sets an audio clip's absolute start time in session seconds.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_set_track_start_seconds(
+    engine: *mut DAWEngine,
+    track_id: u32,
+    seconds: f64,
+) -> i32 {
+    if let Some(eng) = to_core_mut(engine) {
+        if eng.set_track_start_seconds(daw_core::ringbuf::TrackId(track_id), seconds) {
+            0
+        } else {
+            -3
+        }
+    } else {
+        -1
+    }
+}
+
+/// Sets the source interval used by an audio region.
+///
+/// # Safety
+/// `engine` must be null or a valid, live engine handle. Calls for one handle
+/// must be serialized.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_set_track_region_seconds(
+    engine: *mut DAWEngine,
+    track_id: u32,
+    source_start_seconds: f64,
+    duration_seconds: f64,
+) -> i32 {
+    if !source_start_seconds.is_finite()
+        || !duration_seconds.is_finite()
+        || source_start_seconds < 0.0
+        || duration_seconds <= 0.0
+        || source_start_seconds + duration_seconds > 86_400.0
+    {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    }
+    if let Some(eng) = to_core_mut(engine) {
+        if eng.set_track_region_seconds(
+            daw_core::ringbuf::TrackId(track_id),
+            source_start_seconds,
+            duration_seconds,
+        ) {
+            DAW_OK
+        } else {
+            DAW_ERROR_COMMAND_REJECTED
+        }
+    } else {
+        DAW_ERROR_INVALID_ARGUMENT
+    }
+}
+
 /// Mutes or unmutes a track.
 #[no_mangle]
 pub unsafe extern "C" fn daw_engine_mute_track(
@@ -496,7 +793,86 @@ mod ffi_contract_tests {
 
     #[test]
     fn api_version_matches_dart_ffi_contract() {
-        assert_eq!(daw_get_api_version(), 0x0000_0300);
+        assert_eq!(daw_get_api_version(), 0x0000_0C00);
+    }
+
+    #[test]
+    fn export_rejects_null_engine_or_path() {
+        assert_eq!(
+            unsafe { daw_engine_export_wav(ptr::null_mut(), ptr::null()) },
+            DAW_ERROR_INVALID_ARGUMENT
+        );
+    }
+
+    #[test]
+    fn seek_rejects_null_handles_and_invalid_positions() {
+        unsafe {
+            assert_eq!(daw_engine_seek_seconds(ptr::null_mut(), 1.0), -1);
+            assert_eq!(daw_engine_seek_seconds(ptr::null_mut(), -1.0), -1);
+            assert_eq!(daw_engine_seek_seconds(ptr::null_mut(), f64::NAN), -1);
+            assert_eq!(daw_engine_seek_seconds(ptr::null_mut(), 86_400.1), -1);
+        }
+    }
+
+    #[test]
+    fn sequence_region_exports_reject_null_arguments_and_zero_ids() {
+        let notes = [60_i32; 16];
+        unsafe {
+            assert_eq!(
+                daw_engine_set_sequence_region(ptr::null_mut(), 1, 0.0, notes.as_ptr()),
+                DAW_ERROR_INVALID_ARGUMENT
+            );
+            assert_eq!(
+                daw_engine_set_sequence_region(ptr::null_mut(), 1, 0.0, ptr::null()),
+                DAW_ERROR_INVALID_ARGUMENT
+            );
+            assert_eq!(
+                daw_engine_remove_sequence_region(ptr::null_mut(), 1),
+                DAW_ERROR_INVALID_ARGUMENT
+            );
+            assert_eq!(
+                daw_engine_remove_sequence_region(ptr::null_mut(), 0),
+                DAW_ERROR_INVALID_ARGUMENT
+            );
+        }
+    }
+
+    #[test]
+    fn region_rejects_null_handles_and_invalid_ranges() {
+        unsafe {
+            assert_eq!(
+                daw_engine_set_track_region_seconds(ptr::null_mut(), 1, 0.0, 1.0),
+                DAW_ERROR_INVALID_ARGUMENT
+            );
+            assert_eq!(
+                daw_engine_set_track_region_seconds(ptr::null_mut(), 1, -0.1, 1.0),
+                DAW_ERROR_INVALID_ARGUMENT
+            );
+            assert_eq!(
+                daw_engine_set_track_region_seconds(ptr::null_mut(), 1, 0.0, 0.0),
+                DAW_ERROR_INVALID_ARGUMENT
+            );
+            assert_eq!(
+                daw_engine_set_track_region_seconds(ptr::null_mut(), 1, 86_400.0, 1.0),
+                DAW_ERROR_INVALID_ARGUMENT
+            );
+        }
+    }
+
+    #[test]
+    fn recording_exports_reject_null_arguments() {
+        assert_eq!(
+            unsafe { daw_engine_start_recording(ptr::null_mut(), ptr::null()) },
+            DAW_ERROR_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            unsafe { daw_engine_stop_recording(ptr::null_mut(), ptr::null_mut()) },
+            DAW_ERROR_INVALID_ARGUMENT
+        );
+        assert_eq!(std::mem::size_of::<DAWRecordingStats>(), 24);
+        assert_eq!(std::mem::offset_of!(DAWRecordingStats, sample_rate), 0);
+        assert_eq!(std::mem::offset_of!(DAWRecordingStats, frames_written), 8);
+        assert_eq!(std::mem::offset_of!(DAWRecordingStats, frames_dropped), 16);
     }
 
     #[test]
@@ -511,9 +887,12 @@ mod ffi_contract_tests {
                 duration_secs: 0.0,
             },
             output_frames: 48000,
+            source_start_frame: 0,
+            start_frame: 0,
             gain: 0.8,
             pan: 0.5,
             muted: false,
+            solo: false,
         };
         let info = DAWTrackInfo::from(&track);
         assert_eq!(info.total_frames, track.info.total_frames);

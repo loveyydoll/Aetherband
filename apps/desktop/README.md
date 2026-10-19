@@ -1,16 +1,14 @@
 # Aetherband Flutter Desktop
 
-This is the target desktop frontend for Aetherband, built with Flutter/Dart. It is intended to communicate with the native Rust audio engine through the existing C ABI using Dart FFI. The Rust engine remains responsible for audio I/O, decoding, mixing, and DSP.
+This is Aetherband's Windows-only desktop frontend, built with Flutter/Dart. It communicates with the native Rust audio engine through the versioned C ABI using Dart FFI. Other operating systems are deferred by the current project direction.
 
 ## Status
 
-Use **Import audio** in the arrangement toolbar (or Track → Add Audio Track) to load a file. Import rewinds transport so the source starts at timeline zero. Clips use probed duration; unavailable duration is labelled. Imported audio has no fabricated waveform and cannot be visually moved or mixed until those native workflows are wired. Demo clips and instrument controls remain previews. Engine errors and failed operations are surfaced.
+Use **Import** in the arrangement toolbar to load audio; known-duration clips can be moved on the beat grid while stopped at the start. The Region menu splits a selected audio clip at the stopped playhead into two playable source ranges, retained when saving and reopening the session. Split tracks can be copied and duplicated with their region ranges intact. The Audio menu lists Windows output devices and switches the engine stream. HypnoSynth plays live keys and its generated phrase. Sessions save and reopen imported tracks and mixer/performance settings. **Export Mixdown** writes stereo signed 24-bit PCM WAV at fixed 48 kHz. Waveforms and input recording are implemented; editable MIDI regions, trim/resize, split-edit undo and effects processing remain future work and are not represented as working controls.
 
 ## Prerequisites
 
-Install the stable Flutter SDK and platform build tools:
-- Windows: https://docs.flutter.dev/platform-integration/desktop
-- macOS: https://docs.flutter.dev/platform-integration/desktop
+Install the stable Flutter SDK and Windows desktop build tools: https://docs.flutter.dev/platform-integration/desktop
 
 Build the Rust C ABI library from the repository root:
 
@@ -27,8 +25,6 @@ flutter test
 flutter run -d windows
 ```
 
-On macOS use `flutter run -d macos`.
-
 ## Architecture
 
 - `lib/src/aetherband_app.dart`: arrangement-first application and workspace.
@@ -39,7 +35,7 @@ On macOS use `flutter run -d macos`.
 
 All native calls are isolated behind the engine controller. Do not pass audio buffers through widgets or platform channels, and do not run DSP in Dart. The FFI adapter must serialize engine access and destroy native resources only after polling and control calls have stopped.
 
-The app cannot claim full engine integration until Windows and macOS native loading, real playback, track loading, error paths, and clean shutdown have been exercised.
+The app currently targets Windows only. Nonzero samples, output-device selection, pause/restart, import, telemetry, export and clean shutdown have been exercised on the local WASAPI device; physical speaker listening and loopback capture remain unverified.
 
 ## Native integration test
 
@@ -50,4 +46,4 @@ $env:AETHERBAND_NATIVE_LIBRARY = (Resolve-Path ../../target/debug/daw_core.dll).
 flutter test test/native_engine_integration_test.dart
 ```
 
-On macOS, set the same environment variable to an absolute path to `target/debug/libdaw_core.dylib`. An available output device is required. The test generates a quiet 44.1 kHz mono WAV with a Unicode path, checks metadata, playback telemetry, Pause/Stop/restart, removal/failure handling, backlog limits and queued shutdown. It does not independently record or assess the physical speaker output.
+An available Windows output device is required. The test generates a quiet 44.1 kHz mono WAV with a Unicode path, checks device enumeration and selection, metadata, playback telemetry, Pause/Stop/restart, export, removal/failure handling, backlog limits and queued shutdown. It does not independently record or assess the physical speaker output.

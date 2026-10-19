@@ -9,7 +9,7 @@ Aetherband is an early-alpha, open-source desktop DAW. The long-term direction i
 - **Desktop UI:** Flutter/Dart in `apps/desktop/`.
 - **Audio engine/DSP:** Rust in `core/`.
 - **Native boundary:** versioned C ABI in `bindings/c_abi/`, consumed through Dart FFI.
-- **Target platforms:** Windows and macOS.
+- **Current target:** Windows only. Other platforms are deferred by owner direction (2026-10-19).
 - The previous C#/.NET + Avalonia frontend is retired. Do not recreate a second desktop frontend unless the owner explicitly reverses this decision.
 - Verify current source, project files, APIs, CI and PR state. Documentation is a dated aid, not proof that a feature works.
 
@@ -68,7 +68,7 @@ flutter analyze
 flutter test
 ```
 
-These are commands to run, not claims that they passed. Inspect current CI and workflow files for platform builds. Audio/device changes also need documented runtime checks on supported platforms.
+These are commands to run, not claims that they passed. Windows is the current validation target. Audio/device changes also need documented runtime checks on Windows hardware.
 
 ## Completion report
 

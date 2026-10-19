@@ -1,6 +1,6 @@
-//! CPAL 0.15 stream handles are not Send. Dart isolates serialize calls but can
-//! migrate between OS threads, so the actual engine must live on one Rust thread.
-//! Only owned commands and Send results cross this bounded control-side queue.
+//! Keep engine/device lifecycle and decoder work serialized on one Rust control
+//! thread, away from Flutter's UI isolate. Only owned commands and Send results
+//! cross this bounded control-side queue; CPAL's Send support is not required.
 //! None of this channel, allocation or waiting runs on the audio callback.
 
 use std::path::Path;
@@ -35,8 +35,8 @@ impl<T: 'static> ControlThread<T> {
                 while let Ok(job) = jobs.recv() {
                     job(&mut engine);
                 }
-                // The non-Send engine and its stream are destroyed here, on
-                // the same OS thread that created and operated them.
+                // The engine and its stream are destroyed here, on the same
+                // OS thread that created and operated them.
             })
             .map_err(|_| ())?;
         if initialization.recv() != Ok(true) {
@@ -95,12 +95,51 @@ impl EngineHandle {
     command!(play);
     command!(pause);
     command!(stop);
+    pub fn seek_seconds(&self, seconds: f64) -> bool {
+        self.call(move |engine| {
+            if !seconds.is_finite() || seconds < 0.0 {
+                return false;
+            }
+            let frame = seconds * engine.output_sample_rate() as f64;
+            if !frame.is_finite() || frame > i64::MAX as f64 {
+                return false;
+            }
+            engine.seek(frame.round() as i64)
+        })
+        .unwrap_or(false)
+    }
+    command!(synth_event, event: u32, key: u32, value: f32);
+    pub fn set_sequence_region(
+        &self,
+        id: u32,
+        start_seconds: f64,
+        notes: [Option<u8>; 16],
+    ) -> bool {
+        self.call(move |engine| engine.set_sequence_region(id, start_seconds, notes))
+            .unwrap_or(false)
+    }
+    command!(remove_sequence_region, id: u32);
+    command!(configure_transport, bpm: f32, beats_per_bar: u8, metronome: bool, sequence: bool);
     command!(set_master_volume, gain: f32);
+    pub fn export_wav(&self, path: &Path) -> Result<(), ()> {
+        let path = path.to_owned();
+        self.call(move |engine| engine.export_mixdown(&path).map_err(|_| ()))?
+    }
+    pub fn start_recording(&self, path: &Path) -> Result<u32, ()> {
+        let path = path.to_owned();
+        self.call(move |engine| engine.start_recording(&path).map_err(|_| ()))?
+    }
+    pub fn stop_recording(&self) -> Result<daw_core::device::RecordingStats, ()> {
+        self.call(|engine| engine.stop_recording().map_err(|_| ()))?
+    }
     command!(set_test_tone, enabled: bool, frequency: f32);
     command!(remove_track, id: TrackId);
     command!(set_track_volume, id: TrackId, gain: f32);
     command!(set_track_pan, id: TrackId, pan: f32);
+    command!(set_track_start_seconds, id: TrackId, seconds: f64);
+    command!(set_track_region_seconds, id: TrackId, source_start: f64, duration: f64);
     command!(mute_track, id: TrackId, muted: bool);
+    command!(solo_track, id: TrackId, solo: bool);
 
     pub fn enumerate_devices(&self) -> Result<Vec<DeviceInfo>, DeviceError> {
         self.call(|engine| engine.enumerate_devices())

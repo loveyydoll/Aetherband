@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -53,9 +53,6 @@ jobs:
         working-directory: .
         run: cargo build -p daw_core_ffi
 
-      - name: Generate desktop runners for the CI host
-        run: flutter create --platforms=windows,macos .
-
       - name: Install dependencies
         run: flutter pub get
 
@@ -68,7 +65,3 @@ jobs:
       - name: Build Windows desktop
         if: runner.os == 'Windows'
         run: flutter build windows --debug
-
-      - name: Build macOS desktop
-        if: runner.os == 'macOS'
-        run: flutter build macos --debug

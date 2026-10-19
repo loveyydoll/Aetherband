@@ -11,6 +11,12 @@ class ClipTile extends StatelessWidget {
     required this.isSelected,
     required this.onTap,
     required this.onMove,
+    required this.onMoveStart,
+    required this.onMoveEnd,
+    required this.canResize,
+    required this.onResizeStart,
+    required this.onResize,
+    required this.onResizeEnd,
     super.key,
   });
 
@@ -18,19 +24,34 @@ class ClipTile extends StatelessWidget {
   final bool isSelected;
   final VoidCallback onTap;
   final ValueChanged<double> onMove;
+  final VoidCallback onMoveStart;
+  final VoidCallback onMoveEnd;
+  final bool canResize;
+  final ValueChanged<bool> onResizeStart;
+  final void Function(bool trimStart, double dx) onResize;
+  final ValueChanged<bool> onResizeEnd;
 
   @override
   Widget build(BuildContext context) {
     final base = clip.color;
     final duration = clip.durationSeconds;
+    final peaks = clip.waveformPeaks;
+    final waveformStatus = clip.isSequenceRegion
+        ? '16-step HypnoSynth pattern'
+        : !clip.waveformLoaded
+            ? 'Analyzing waveform'
+            : peaks == null
+                ? 'Waveform unavailable for this audio format'
+                : 'Decoded PCM waveform';
     return Tooltip(
       message: clip.isDemo
           ? 'Demo clip'
-          : '${clip.title} · ${duration == null ? 'Duration unknown' : '${duration.toStringAsFixed(2)} s'} · Waveform not generated',
+          : '${clip.title} · ${clip.isSequenceRegion ? waveformStatus : '${duration == null ? 'Duration unknown' : '${duration.toStringAsFixed(2)} s'} · $waveformStatus'}',
       child: GestureDetector(
         onTap: onTap,
-        onHorizontalDragUpdate:
-            clip.isDemo ? (details) => onMove(details.delta.dx) : null,
+        onHorizontalDragStart: (_) => onMoveStart(),
+        onHorizontalDragUpdate: (details) => onMove(details.delta.dx),
+        onHorizontalDragEnd: (_) => onMoveEnd(),
         child: Container(
           height: 50,
           decoration: BoxDecoration(
@@ -54,7 +75,79 @@ class ClipTile extends StatelessWidget {
                         seed: clip.id.hashCode),
                   ),
                 ),
-              if (!clip.isDemo)
+              if (clip.isSequenceRegion)
+                Positioned.fill(
+                  top: 18,
+                  bottom: 5,
+                  left: 8,
+                  right: 8,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      for (final note in clip.sequenceNotes)
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 1),
+                            child: FractionallySizedBox(
+                              heightFactor: note == null
+                                  ? 0.08
+                                  : 0.3 + ((note % 24) / 24) * 0.7,
+                              alignment: Alignment.bottomCenter,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: base.withValues(
+                                      alpha: note == null ? 0.24 : 0.92),
+                                  borderRadius: BorderRadius.circular(1),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              if (!clip.isDemo && !clip.isSequenceRegion && peaks != null)
+                Positioned.fill(
+                  child: CustomPaint(
+                    key: ValueKey('audio-waveform-${clip.id}'),
+                    painter: AudioWaveformPainter(
+                      color: base.withValues(alpha: 0.88),
+                      peaks: peaks,
+                    ),
+                  ),
+                ),
+              if (!clip.isDemo &&
+                  !clip.isSequenceRegion &&
+                  !clip.waveformLoaded)
+                const Positioned(
+                  left: 8,
+                  right: 6,
+                  top: 24,
+                  child: Text(
+                    'Analyzing waveform…',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: AetherColors.secondaryText, fontSize: 8),
+                  ),
+                ),
+              if (!clip.isDemo &&
+                  !clip.isSequenceRegion &&
+                  clip.waveformLoaded &&
+                  peaks == null)
+                const Positioned(
+                  left: 8,
+                  right: 6,
+                  top: 24,
+                  child: Text(
+                    'Waveform unavailable',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: AetherColors.secondaryText, fontSize: 8),
+                  ),
+                ),
+              if (!clip.isDemo && !clip.isSequenceRegion)
                 Positioned(
                   left: 8,
                   right: 6,
@@ -87,12 +180,72 @@ class ClipTile extends StatelessWidget {
                   ),
                 ),
               ),
+              if (canResize) ...[
+                _ResizeHandle(
+                  key: ValueKey('clip-resize-start-${clip.id}'),
+                  trimStart: true,
+                  onStart: onResizeStart,
+                  onResize: onResize,
+                  onEnd: onResizeEnd,
+                ),
+                _ResizeHandle(
+                  key: ValueKey('clip-resize-end-${clip.id}'),
+                  trimStart: false,
+                  onStart: onResizeStart,
+                  onResize: onResize,
+                  onEnd: onResizeEnd,
+                ),
+              ],
             ],
           ),
         ),
       ),
     );
   }
+}
+
+class _ResizeHandle extends StatelessWidget {
+  const _ResizeHandle({
+    required this.trimStart,
+    required this.onStart,
+    required this.onResize,
+    required this.onEnd,
+    super.key,
+  });
+
+  final bool trimStart;
+  final ValueChanged<bool> onStart;
+  final void Function(bool trimStart, double dx) onResize;
+  final ValueChanged<bool> onEnd;
+
+  @override
+  Widget build(BuildContext context) => Positioned(
+        left: trimStart ? 0 : null,
+        right: trimStart ? null : 0,
+        top: 0,
+        bottom: 0,
+        width: 12,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.resizeLeftRight,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragStart: (_) => onStart(trimStart),
+            onHorizontalDragUpdate: (details) =>
+                onResize(trimStart, details.delta.dx),
+            onHorizontalDragEnd: (_) => onEnd(trimStart),
+            child: Center(
+              child: Container(
+                width: 2,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: AetherColors.paper.withValues(alpha: 0.72),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
 }
 
 class WaveformPainter extends CustomPainter {
@@ -125,4 +278,33 @@ class WaveformPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant WaveformPainter oldDelegate) =>
       oldDelegate.color != color || oldDelegate.seed != seed;
+}
+
+class AudioWaveformPainter extends CustomPainter {
+  const AudioWaveformPainter({required this.color, required this.peaks});
+
+  final Color color;
+  final List<double> peaks;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (peaks.isEmpty || size.isEmpty) return;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.4
+      ..strokeCap = StrokeCap.round;
+    final centerY = size.height * 0.62;
+    final scaleY = size.height * 0.30;
+    final scaleX = size.width / peaks.length;
+    for (var i = 0; i < peaks.length; i++) {
+      final amplitude = peaks[i].clamp(0.025, 1.0) * scaleY;
+      final x = (i + 0.5) * scaleX;
+      canvas.drawLine(Offset(x, centerY - amplitude),
+          Offset(x, centerY + amplitude), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant AudioWaveformPainter oldDelegate) =>
+      oldDelegate.color != color || !identical(oldDelegate.peaks, peaks);
 }

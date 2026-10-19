@@ -8,7 +8,7 @@ This roadmap is organized as versioned delivery milestones instead of broad deve
 - **Native audio engine:** Rust.
 - **Interop:** versioned C ABI in `bindings/c_abi/`, consumed by a single Dart FFI adapter.
 - **Removed target:** C#/.NET + Avalonia is not a supported target for future desktop development. Its frontend is being retired in favor of Flutter.
-- **Platform targets:** Windows and macOS first. Keep OS-specific native library packaging explicit.
+- **Current platform target:** Windows only by owner direction (2026-10-19). Keep other platforms deferred until Windows audio and session workflows are dependable.
 
 The migration is driven primarily by custom UI flexibility and control over timeline/rendering optimization, plus rapid design iteration, a consistent cross-platform UI, and a cleaner native-engine boundary. Flutter is not presumed faster without measurements.
 
@@ -26,7 +26,7 @@ Deliverables:
 - CI runs Flutter analyze/tests and Rust format/check/test/build.
 
 Acceptance gates:
-- Windows and macOS native library loads and ABI smoke tests pass.
+- Windows native library load and ABI smoke tests pass. Other desktop targets are deferred.
 - FFI struct size/alignment/field layout is validated against Rust.
 - No native calls race destruction; no long native work blocks the Flutter UI isolate.
 - Missing library, incompatible API version, and negative return codes appear as visible errors.
@@ -49,7 +49,7 @@ Acceptance: load/play/pause/stop/remove tests; project round-trip and malformed-
 - Virtualized timeline rendering for large sessions.
 - Keyboard/mouse interaction and accessibility.
 
-Acceptance: timeline model tests, large-session performance profiles, Windows/macOS DPI and resizing tests.
+Acceptance: timeline model tests, large-session performance profiles, and Windows DPI/resizing tests.
 
 ## Alpha 0.4 — Recording & Export
 
@@ -104,7 +104,7 @@ Acceptance: reproducible stress tests on supported OS versions, release checklis
 
 - Documented and supported production workflows.
 - Stable project-format policy, installer/update process and contribution guide.
-- All release gates pass on the declared Windows/macOS matrix.
+- All release gates pass on the declared Windows-only matrix. Revisit platform scope separately.
 
 ## Rules for status updates
 
