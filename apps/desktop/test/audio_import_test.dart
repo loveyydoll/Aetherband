@@ -441,6 +441,25 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('Zoom to Fit scales the arrangement to imported audio',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    await tester.tap(find.byTooltip('View menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Zoom to Fit'));
+    await tester.pumpAndSettle();
+
+    final zoom = tester.widget<Slider>(
+      find.byKey(const ValueKey('timeline-zoom')),
+    );
+    final trackContentWidth = 120 * timelinePixelsPerSecond(92) + 84;
+    expect(zoom.value, closeTo((1440 - 222 - 196) / trackContentWidth, 1e-6));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('picker cancellation leaves transport and inventory untouched',
       (tester) async {
     final engine = FakeEngine();

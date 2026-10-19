@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -126,6 +127,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   String? _recordingPath;
   double _recordingStartSeconds = 0;
   double _zoom = 1;
+  double _timelineViewportWidth = 900;
   int? _selectedOutputDeviceIndex;
   String? _selectedOutputDeviceName;
 
@@ -267,6 +269,22 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       return;
     }
     await _stop();
+  }
+
+  void _zoomToFit() {
+    final tempo = _performance.tempo.round();
+    final clipEnd = _tracks.expand((track) => track.clips).fold<double>(
+          0,
+          (end, clip) => math.max(
+            end,
+            clip.timelineLeft(tempo) + clip.timelineWidth(tempo),
+          ),
+        );
+    final contentWidth = math.max(1400.0, clipEnd + 84);
+    setState(() {
+      _zoom =
+          (_timelineViewportWidth / contentWidth).clamp(0.2, 1.5).toDouble();
+    });
   }
 
   bool _rejectSessionChangeDuringRecording() {
@@ -1221,6 +1239,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       case 'view.mixer':
         setState(() => _showMixer = !_showMixer);
         return;
+      case 'view.zoomToFit':
+        _zoomToFit();
+        return;
       case 'track.addInstrument':
         setState(() => _showMixer = false);
         return;
@@ -1707,6 +1728,12 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final compact = constraints.maxWidth < 1000;
+                _timelineViewportWidth = math.max(
+                  1.0,
+                  constraints.maxWidth -
+                      (compact || !_browserOpen ? 0 : 222) -
+                      196,
+                );
                 return Column(
                   children: [
                     if (_engineError != null)
@@ -2360,7 +2387,11 @@ class _TimelineToolbar extends StatelessWidget {
           SizedBox(
               width: 120,
               child: Slider(
-                  value: zoom, min: 0.65, max: 1.5, onChanged: onZoomChanged)),
+                  key: const ValueKey('timeline-zoom'),
+                  value: zoom,
+                  min: 0.2,
+                  max: 1.5,
+                  onChanged: onZoomChanged)),
           const Icon(Icons.zoom_in,
               size: 15, color: AetherColors.secondaryText),
           const SizedBox(width: 8),

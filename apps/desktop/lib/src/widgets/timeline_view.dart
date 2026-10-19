@@ -48,8 +48,10 @@ class TimelineView extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
+        final timelineViewportWidth =
+            math.max(1.0, constraints.maxWidth - _headerWidth).toDouble();
         final baseWidth =
-            math.max(1400.0, constraints.maxWidth / zoom).toDouble();
+            math.max(1400.0, timelineViewportWidth / zoom).toDouble();
         final clipEnd = tracks.expand((track) => track.clips).fold<double>(
               0,
               (end, clip) => math.max(
