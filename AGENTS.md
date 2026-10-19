@@ -68,7 +68,7 @@ flutter analyze
 flutter test
 ```
 
-These are commands to run, not claims that they passed. Inspect current CI and workflow files for platform builds. Audio/device changes also need documented runtime checks on supported platforms.
+These are commands to run, not claims that they passed. Windows is the current validation target. Audio/device changes also need documented runtime checks on Windows hardware.
 
 ## Completion report
 

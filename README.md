@@ -236,7 +236,7 @@ flutter test
 flutter run -d windows
 ```
 
-Use `flutter run -d macos` on macOS. Build the native engine library for the host platform and make it available at the location expected by the FFI adapter.
+Windows is the only supported development target for this work. Other platforms are deferred.
 
 **Before reporting a feature as working**, test the relevant path end to end. A successful compile alone does not prove that audio playback, recording, device changes, or shutdown behaves correctly on real hardware.
 
