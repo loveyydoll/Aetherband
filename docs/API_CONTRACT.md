@@ -1,4 +1,21 @@
-# C ABI Contract — Aetherband
+# Legacy C ABI Contract — Migration Reference
+
+**Status:** Historical contract for the Rust engine and Flutter/Dart FFI. This is not the target integration architecture. The committed native target is C++/JUCE under ADR-008 in DECISIONS.md.
+
+The contents below describe the old ABI so contributors can inspect behavior during migration. Do not extend the ABI or Dart FFI for new target features unless an explicitly scoped legacy-maintenance task requires it. Preserve the old implementation until the corresponding C++/JUCE behavior passes acceptance criteria.
+
+## How to use this document
+
+- Treat bindings/c_abi/src/lib.rs and its tests as the historical source of truth for legacy ABI behavior.
+- Check actual exports and test coverage before relying on any version or ownership statement below.
+- Do not mechanically copy Rust ownership or thread assumptions into the C++ design.
+- The target application should use native C++/JUCE interfaces rather than a Dart FFI boundary.
+- Keep all audio callback safety constraints: no I/O, blocking, unpredictable allocation, or UI dispatch in the callback.
+
+## Historical ABI details
+
+The sections retained below document the prior ABI and its version history. They are not commitments for the new architecture.
+\n\n# C ABI Contract — Aetherband
 
 **Current ABI version:** `0.3.0` (`daw_get_api_version() == 0x00000300`)
 **Source of truth:** `bindings/c_abi/src/lib.rs`. If this document disagrees with the Rust exports, fix the documentation or deliberately update the ABI and version together.
