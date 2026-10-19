@@ -1,117 +1,114 @@
-# Aetherband Roadmap — Versioned Alpha
+# Aetherband Roadmap — Native C++ Migration
 
-This roadmap is organized as versioned delivery milestones instead of broad development phases. A version is a target scope, not evidence that its features are already complete. Mark a milestone complete only after its acceptance gates pass on the current commit.
+This roadmap describes engineering stages, not delivery-date promises. A milestone is complete only when its exit criteria have evidence on the current commit and the relevant target platforms.
 
-## Product architecture decision
+## Architecture direction
 
-- **Desktop UI:** Flutter + Dart.
-- **Native audio engine:** Rust.
-- **Interop:** versioned C ABI in `bindings/c_abi/`, consumed by a single Dart FFI adapter.
-- **Removed target:** C#/.NET + Avalonia is not a supported target for future desktop development. Its frontend is being retired in favor of Flutter.
-- **Platform targets:** Windows and macOS first. Keep OS-specific native library packaging explicit.
+- **Core language:** C++20 or newer where supported.
+- **Build system:** CMake.
+- **Desktop framework:** not yet finalized; JUCE is a leading candidate pending a cross-platform technical spike.
+- **Audio runtime and DSP:** native C++ modules, with an Aetherband-owned processing graph and explicit real-time contracts.
+- **Platforms:** Windows and macOS.
+- **Optional C#:** allowed only when a concrete integration need justifies the additional runtime and interface boundary.
+- **Legacy stack:** Rust/C ABI/Flutter/Dart are kept as references during migration, not as the target architecture.
 
-The migration is driven primarily by custom UI flexibility and control over timeline/rendering optimization, plus rapid design iteration, a consistent cross-platform UI, and a cleaner native-engine boundary. Flutter is not presumed faster without measurements.
+## Stage 1 — Native foundation
 
-## Alpha 0.1 — Flutter Engine Connection
+**Goal:** establish a small, testable C++ codebase.
 
-**Goal:** Replace the mock transport with a real Flutter-to-Rust control path.
+Deliver:
+- CMake/C++20 project and warnings.
+- Buffer primitives and additive mixer.
+- Unit tests and CTest integration.
+- Windows/macOS build verification.
 
-Deliverables:
-- Dart FFI declarations match the actual exported C ABI, including struct layouts and integer widths.
-- Native library discovery/loading for supported platforms with actionable errors.
-- API-version check and native return-code handling.
-- Safe engine lifecycle: create once, serialize calls, stop and destroy cleanly.
-- Connect transport, test tone, telemetry/meters, device enumeration/selection, and basic track operations where supported by the current ABI.
-- Remove the Avalonia/.NET desktop app, generated C# bindings, and .NET-only CI path after replacement checks are in place.
-- CI runs Flutter analyze/tests and Rust format/check/test/build.
+Exit criteria:
+- Both target platforms build from documented steps.
+- Native tests pass on both.
+- Buffer dimensions and invalid inputs have explicit behavior.
 
-Acceptance gates:
-- Windows and macOS native library loads and ABI smoke tests pass.
-- FFI struct size/alignment/field layout is validated against Rust.
-- No native calls race destruction; no long native work blocks the Flutter UI isolate.
-- Missing library, incompatible API version, and negative return codes appear as visible errors.
-- No mock telemetry or simulated recording is presented as actual audio.
-- Manual playback/device tests are recorded separately from unit tests.
+## Stage 2 — Audio runtime
 
-## Alpha 0.2 — Audio Import & Session Basics
+**Goal:** reliable device lifecycle and real-time processing.
 
-- File picker and native audio-track loading/removal.
-- Real track inventory and transport state.
-- Versioned project/session schema and save/load.
-- Missing-file resolution and recovery UI.
+Deliver:
+- Device enumeration/open/close behind a small interface.
+- Callback-owned processing path.
+- Transport and bounded command/telemetry flow.
+- Clear engine/device lifecycle and error reporting.
 
-Acceptance: load/play/pause/stop/remove tests; project round-trip and malformed-project tests; no silent data loss.
+Exit criteria:
+- Known-signal playback tested on Windows and macOS.
+- Repeated open/play/stop/close cycles pass.
+- No callback allocation, file I/O or blocking lock in the reviewed processing path.
 
-## Alpha 0.3 — Arrangement & Waveforms
+## Stage 3 — Executing DSP graph
 
-- Real waveform peak generation and cache invalidation.
-- Arrangement zoom, scroll, clip selection and non-destructive move/split.
-- Virtualized timeline rendering for large sessions.
-- Keyboard/mouse interaction and accessibility.
+**Goal:** build the processing core that Aetherband can evolve.
 
-Acceptance: timeline model tests, large-session performance profiles, Windows/macOS DPI and resizing tests.
+Deliver:
+- Processor interface and graph validation.
+- Gain/pan and summing processors.
+- Explicit channel layouts, parameter changes and graph lifecycle.
+- Deterministic offline rendering.
 
-## Alpha 0.4 — Recording & Export
+Exit criteria:
+- Offline golden-signal tests pass.
+- Graph connections and channel mismatches fail safely.
+- Real-time graph changes follow a documented safe protocol.
 
-- Audio input/device selection and recording state machine.
-- Background recording writer and recoverable takes.
-- Offline WAV mixdown/export with progress and cancellation.
+## Stage 4 — First useful DAW workflow
 
-Acceptance: device/interruption tests, write-error recovery, exported-audio regression tests.
+**Goal:** create, save and reopen a basic multitrack session.
 
-## Alpha 0.5 — Mixing Workflow
+Deliver:
+- Versioned project/session model.
+- WAV import and background decode.
+- Track/clip scheduling and transport.
+- Mixer and offline stereo WAV export.
+- Native desktop shell with a basic arrangement.
 
-- Track and master gain/pan/mute/solo.
-- Real meters and a coherent mixer panel.
-- Undo/redo foundation, shortcuts, preferences and device status.
-- Routing/buses/sends only when supported by engine design and tests.
+Exit criteria:
+- Import → arrange → play → save → reopen → export works end-to-end.
+- Missing media and failed writes are reported safely.
+- Session round-trip and audio output are tested.
 
-Acceptance: mixer correctness and stress tests at documented track counts; no UI updates at unbounded frequency.
+## Stage 5 — Instruments and production tools
 
-## Alpha 0.6 — MIDI & Built-in Instruments
+**Goal:** restore and expand proven creative workflows.
 
-- MIDI event model and editing.
-- Piano roll and MIDI recording/input.
-- Native synth, sampler and drum-machine foundations.
+Deliver:
+- C++ HypnoSynth port with regression fixtures.
+- MIDI event model and piano-roll foundations.
+- Recording, effects, routing, automation and undo/redo.
+- Additional formats only after explicit tests.
 
-Acceptance: deterministic project persistence, MIDI timing and event-editing tests.
+Exit criteria:
+- Instrument output and state persistence tests pass.
+- MIDI timing and automation behavior are tested.
+- Recording/export recovery and real hardware behavior are validated.
 
-## Alpha 0.7 — Effects & Automation
+## Stage 6 — Ecosystem and hardening
 
-- Built-in audio effects and parameter state.
-- Sample-accurate or explicitly bounded automation.
-- Presets and parameter serialization.
+**Goal:** prepare a dependable open-source DAW for broader testing.
 
-Acceptance: DSP tests, automation timing tests, CPU-budget measurements.
+Deliver:
+- Evaluate plugin formats and project interchange.
+- Performance profiling with realistic sessions.
+- Accessibility, keyboard workflow, preferences and packaging.
+- Dependency/license audit and contributor documentation.
 
-## Alpha 0.8 — Plugin Hosting & Interchange
+Exit criteria:
+- Windows/macOS support matrix published.
+- Reproducible builds and stress tests.
+- No known critical data-loss or audio-safety defects.
+- Known limitations and supported workflows documented.
 
-- Evaluate CLAP first; evaluate VST3 support and licensing requirements separately.
-- Plugin scanning, validation, crash containment and compatibility matrix.
-- Interchange formats and project portability improvements.
+## Rules for reporting progress
 
-Acceptance: architecture and legal review; third-party plugin failures must not corrupt project state or silently compromise audio safety.
-
-## Alpha 0.9 — Performance & Release Candidate
-
-- Profile CPU, memory, UI frame times, loading, waveform rendering and audio callback budget.
-- Accessibility, keyboard navigation, installers/signing, crash diagnostics and docs.
-- Project compatibility policy and release-candidate triage.
-
-Acceptance: reproducible stress tests on supported OS versions, release checklist, no known critical data-loss or audio-safety defects.
-
-## 1.0 — Stable Desktop DAW
-
-- Documented and supported production workflows.
-- Stable project-format policy, installer/update process and contribution guide.
-- All release gates pass on the declared Windows/macOS matrix.
-
-## Rules for status updates
-
-Use only these status labels:
-- **Planned:** not implemented.
-- **In progress:** implementation exists but acceptance criteria are incomplete.
-- **Implemented, unverified:** code exists but automated/manual evidence is incomplete.
-- **Verified:** stated acceptance criteria passed on the current commit, with evidence recorded.
-
-Never mark a version complete merely because its UI mock or native function exists.
+- Code presence is not verification.
+- A successful build is not proof of audio-device behavior.
+- A graph model is not proof of DSP execution.
+- WAV tests do not prove support for other media formats.
+- A visual prototype is not a functioning workflow.
+- Keep the existing Rust implementation until the replacement demonstrates the required behavior; preserve history even after legacy code is retired.
