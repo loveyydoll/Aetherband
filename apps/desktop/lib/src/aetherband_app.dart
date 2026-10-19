@@ -2829,6 +2829,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         _RegionTrimEdit(:final trackId) => trackId,
         _SequenceRegionEdit(:final trackId) => trackId,
         _SequenceNotesEdit(:final trackId) => trackId,
+        _TrackOrderEdit(:final trackId) => trackId,
         _ => '',
       };
 
@@ -2868,6 +2869,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         await _applySequenceRegionHistory(edit, redo: redo);
       } else if (edit is _SequenceNotesEdit) {
         await _applySequenceNotesHistory(edit, redo: redo);
+      } else if (edit is _TrackOrderEdit) {
+        _applyTrackOrderHistory(edit, redo: redo);
       }
     } finally {
       _historyOperationPending = false;
@@ -3280,12 +3283,23 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   /// resources. The session store serializes the ordered track list, so the
   /// lane order survives Save/Open just like other session edits.
   void _moveTrack(TrackModel track, int delta) {
-    if (_trackOperationPending || _initializingEngine || _isRecording) return;
+    if (_trackOperationPending ||
+        _historyOperationPending ||
+        _initializingEngine ||
+        _isRecording ||
+        _telemetry.isPlaying) {
+      return;
+    }
     final currentIndex = _tracks.indexWhere((item) => item.id == track.id);
     final targetIndex = currentIndex + delta;
     if (currentIndex < 0 || targetIndex < 0 || targetIndex >= _tracks.length) {
       return;
     }
+    _pushHistory(_TrackOrderEdit(
+      trackId: track.id,
+      beforeIndex: currentIndex,
+      afterIndex: targetIndex,
+    ));
     setState(() {
       final moved = _tracks.removeAt(currentIndex);
       _tracks.insert(targetIndex, moved);
@@ -3802,6 +3816,40 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       ),
     );
   }
+}
+
+  void _applyTrackOrderHistory(
+    _TrackOrderEdit edit, {
+    required bool redo,
+  }) {
+    final source = redo ? _redoHistory : _undoHistory;
+    final destination = redo ? _undoHistory : _redoHistory;
+    if (source.isEmpty || !identical(source.last, edit)) return;
+    final currentIndex = _tracks.indexWhere((track) => track.id == edit.trackId);
+    final targetIndex = redo ? edit.afterIndex : edit.beforeIndex;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= _tracks.length) {
+      _reportMixerFailure('Track order history', StateError('Track no longer exists.'));
+      return;
+    }
+    setState(() {
+      final track = _tracks.removeAt(currentIndex);
+      _tracks.insert(targetIndex, track);
+      _markSessionChanged();
+      source.removeLast();
+      destination.add(edit);
+    });
+  }
+
+class _TrackOrderEdit {
+  const _TrackOrderEdit({
+    required this.trackId,
+    required this.beforeIndex,
+    required this.afterIndex,
+  });
+
+  final String trackId;
+  final int beforeIndex;
+  final int afterIndex;
 }
 
 class _ClipMoveEdit {
