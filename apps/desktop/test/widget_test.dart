@@ -39,4 +39,23 @@ void main() {
     // real hardware or depend on a machine-specific native library.
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets('Record menu metronome configures the audio transport',
+      (tester) async {
+    tester.view.physicalSize = const Size(1440, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final engine = FakeEngine();
+
+    await tester.pumpWidget(AetherbandApp(createEngine: () async => engine));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Record menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Toggle Metronome'));
+    await tester.pumpAndSettle();
+
+    expect(engine.calls, contains('transport:92.0:true:false'));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }

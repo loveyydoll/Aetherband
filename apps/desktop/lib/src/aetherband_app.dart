@@ -746,6 +746,13 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       case 'transport.record':
         _showFeatureUnavailable('Audio recording');
         return;
+      case 'record.metronome':
+        _changePerformance(
+            _performance.copyWith(metronome: !_performance.metronome));
+        return;
+      case 'record.countIn':
+        _showFeatureUnavailable('Count-in recording');
+        return;
       default:
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -940,6 +947,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
             unawaited(_newSession()),
         const SingleActivator(LogicalKeyboardKey.keyN, meta: true): () =>
             unawaited(_newSession()),
+        const SingleActivator(LogicalKeyboardKey.keyK): () =>
+            _changePerformance(
+                _performance.copyWith(metronome: !_performance.metronome)),
       },
       child: Focus(
         autofocus: true,
