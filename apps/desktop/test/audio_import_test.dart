@@ -472,7 +472,11 @@ void main() {
       for (var i = 0; i < 100 && !stagedEngine.isCompleted; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }
-      expect(stagedEngine.isCompleted, isTrue);
+      final visibleMessages = tester
+          .widgetList<SnackBar>(find.byType(SnackBar))
+          .map((snackBar) => snackBar.content)
+          .join(' | ');
+      expect(stagedEngine.isCompleted, isTrue, reason: visibleMessages);
       for (var i = 0; i < 100 && first.disposeCount == 0; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }
