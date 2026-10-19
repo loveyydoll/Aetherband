@@ -1,53 +1,23 @@
-# Aetherband Flutter Desktop
+# Legacy Flutter Desktop Reference
 
-This is the target desktop frontend for Aetherband, built with Flutter/Dart. It is intended to communicate with the native Rust audio engine through the existing C ABI using Dart FFI. The Rust engine remains responsible for audio I/O, decoding, mixing, and DSP.
+**Status: retired target architecture; retained for migration and behavior comparison only.**
 
-## Status
+The desktop app in this directory was built with Flutter/Dart and communicated with the legacy Rust audio engine through a C ABI and Dart FFI. This is not the target architecture. The committed direction is a native C++/JUCE application under ADR-008 in docs/DECISIONS.md.
 
-Use **Import audio** in the arrangement toolbar (or Track → Add Audio Track) to load a file. Import rewinds transport so the source starts at timeline zero. Clips use probed duration; unavailable duration is labelled. Imported audio has no fabricated waveform and cannot be visually moved or mixed until those native workflows are wired. Demo clips and instrument controls remain previews. Engine errors and failed operations are surfaced.
+## When to use this directory
 
-## Prerequisites
+Use it only to inspect historical UI behavior, session workflows, FFI contracts, or regression expectations while migrating to C++/JUCE. Do not add new product features here unless the project owner explicitly requests legacy maintenance.
 
-Install the stable Flutter SDK and platform build tools:
-- Windows: https://docs.flutter.dev/platform-integration/desktop
-- macOS: https://docs.flutter.dev/platform-integration/desktop
+## Preservation policy
 
-Build the Rust C ABI library from the repository root:
+Do not delete this code wholesale. Keep it available until the corresponding C++/JUCE behavior passes documented acceptance criteria. Do not assume a working Flutter screen proves physical audio behavior or native parity.
 
-```sh
-cargo build -p daw_core_ffi
-```
+## Target migration references
 
-Then from this directory:
+- docs/ARCHITECTURE.md
+- docs/CPP_MIGRATION_PLAN.md
+- docs/PROJECT_STATE.md
+- docs/FEATURE_TRACKER.md
+- docs/UI_AND_UX_GUIDELINES.md
 
-```sh
-flutter pub get
-flutter analyze
-flutter test
-flutter run -d windows
-```
-
-On macOS use `flutter run -d macos`.
-
-## Architecture
-
-- `lib/src/aetherband_app.dart`: arrangement-first application and workspace.
-- `lib/src/theme.dart`: design tokens and theme.
-- `lib/src/models.dart`: timeline presentation models; demo data is not a loaded native session.
-- `lib/src/native_engine.dart`: Dart FFI adapter for the C ABI.
-- `lib/src/widgets/`: timeline and workspace panels.
-
-All native calls are isolated behind the engine controller. Do not pass audio buffers through widgets or platform channels, and do not run DSP in Dart. The FFI adapter must serialize engine access and destroy native resources only after polling and control calls have stopped.
-
-The app cannot claim full engine integration until Windows and macOS native loading, real playback, track loading, error paths, and clean shutdown have been exercised.
-
-## Native integration test
-
-The default test suite skips hardware-dependent playback. To exercise the built library on Windows in PowerShell:
-
-```powershell
-$env:AETHERBAND_NATIVE_LIBRARY = (Resolve-Path ../../target/debug/daw_core.dll).Path
-flutter test test/native_engine_integration_test.dart
-```
-
-On macOS, set the same environment variable to an absolute path to `target/debug/libdaw_core.dylib`. An available output device is required. The test generates a quiet 44.1 kHz mono WAV with a Unicode path, checks metadata, playback telemetry, Pause/Stop/restart, removal/failure handling, backlog limits and queued shutdown. It does not independently record or assess the physical speaker output.
+The native C++ build and JUCE setup will be documented in native/README.md once integrated and verified.
