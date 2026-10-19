@@ -10,6 +10,7 @@ import 'package:aetherband_desktop/src/engine_controller.dart';
 import 'package:aetherband_desktop/src/models.dart';
 import 'package:aetherband_desktop/src/widgets/clip_tile.dart';
 import 'package:aetherband_desktop/src/widgets/workspace_panels.dart';
+import 'package:aetherband_desktop/src/widgets/timeline_view.dart';
 import 'package:aetherband_desktop/src/session_store.dart';
 
 class FakeEngine implements EngineController, PerformanceEngine {
@@ -269,9 +270,10 @@ void main() {
     await importAudio(tester);
     engine.removalResult = Completer<void>();
     await deleteSelected(tester, settle: false);
-    final remainingClip = find.text('removed.wav').first;
-    await tester.ensureVisible(remainingClip);
-    await tester.tap(remainingClip);
+    final timeline = tester.widget<TimelineView>(find.byType(TimelineView));
+    timeline.onTrackSelected(timeline.tracks.firstWhere(
+      (track) => track.name == 'removed.wav',
+    ));
     await tester.pump();
     engine.removalResult!.complete();
     await tester.pumpAndSettle();
@@ -446,6 +448,10 @@ void main() {
     await tester.tap(find.byTooltip('File menu'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Open Session…'));
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(find.text('Unsaved audio session changes'), findsOneWidget);
+    await tester.tap(find.text('Discard changes'));
     await tester.pump();
     await tester.runAsync(() async {
       for (var i = 0; i < 100 && first.disposeCount == 0; i++) {
