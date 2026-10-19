@@ -1,4 +1,4 @@
-# Aetherband — Engineering Status Snapshot
+<!-- Historical snapshot. Current target architecture is C++/JUCE; see ADR-008 in DECISIONS.md and the current README/ARCHITECTURE/PROJECT_STATE docs. Preserve this snapshot for historical engineering context only. -->\n\n# Aetherband — Engineering Status Snapshot
 
 > **Historical snapshot:** This document describes the repository on 2026-10-16 and is not current implementation guidance. The Flutter/Dart FFI migration was merged in [PR #12](https://github.com/loveyydoll/Aetherband/pull/12); C#/Avalonia has been removed. For current state, start with [README.md](../README.md), [ARCHITECTURE.md](ARCHITECTURE.md), and [DEVELOPMENT_AND_RELEASE_TRACKING.md](DEVELOPMENT_AND_RELEASE_TRACKING.md). Verify current CI and source before acting on any historical risk below.
 

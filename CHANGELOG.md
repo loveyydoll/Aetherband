@@ -4,6 +4,14 @@ All notable changes to Aetherband are recorded here. This is a development chang
 
 ## [Unreleased]
 
+### Architecture and documentation
+
+- **2026-10-19 — Native C++/JUCE direction:** Accepted ADR-008, making C++20+ and JUCE the committed application foundation, with CMake and Windows/macOS as required targets. Aetherband owns DSP graph execution, processor lifecycle, routing, transport, and offline-rendering semantics.
+- **2026-10-19 — Documentation overhaul:** Aligned the current README, architecture, vision, project state, migration plan, roadmap, feature tracker, audio-engine contract, project-format notes, contributor/agent guidance, and technology-stack guidance.
+- **Migration safety:** Rust/C ABI/Flutter/Dart are retained as legacy references until the native replacement meets acceptance criteria; they are not the target architecture.
+
+### Added
+
 ### Added
 
 - **2026-10-18 — Audio session persistence (pending merge):** Added a versioned early-alpha `.aetherband.json` format for imported audio source paths and stable track IDs, plus mixer gain/pan/mute settings. The File menu now supports Save, Save As, Open and New Session; project reads/writes run off the UI isolate. Open validates files before staging a new native engine, avoiding destructive partial session replacement. Demo clips, real clip editing and bundled assets remain unimplemented.

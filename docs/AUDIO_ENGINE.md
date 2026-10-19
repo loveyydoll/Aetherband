@@ -1,132 +1,36 @@
-# Aetherband Audio Engine Specification: Aetherband
+# Aetherband Audio Engine — Target Contract
 
-## 1. Real-Time Audio Constraints (The Real-Time Thread Contract)
+**Status:** Requirements for the C++/JUCE target, not a description of a fully implemented engine. The legacy Rust engine is reference material only.
 
-The audio callback executes on a high-priority, real-time operating system thread scheduled directly by the audio subsystem (WASAPI on Windows, CoreAudio on macOS). To guarantee audio continuity without audible dropouts (xruns), the audio callback must adhere to the **Real-Time Thread Contract**.
+## Architecture boundary
 
-### 1.1 Prohibited Operations on the Audio Thread
-1. **NO Memory Allocation or Deallocation:**
-   - Any invocation of `malloc`, `free`, `realloc`, or Rust constructs like `Vec::push`, `Box::new`, `String::from`, `format!` is strictly prohibited.
-   - Deallocating memory (e.g., dropping a vector or heap-allocated struct) returns memory to the OS heap and can acquire an internal heap lock; this is strictly prohibited.
-2. **NO Blocking Synchronization / Mutexes:**
-   - Standard OS mutexes (`std::sync::Mutex`, Windows `CRITICAL_SECTION`, POSIX `pthread_mutex`) risk **priority inversion**—where the real-time audio thread waits on a low-priority UI thread holding the lock.
-   - Only lock-free, wait-free atomic operations and Single-Producer Single-Consumer (SPSC) ring buffers are permitted.
-3. **NO Filesystem or Disk I/O:**
-   - Reading or writing to disk can stall for tens or hundreds of milliseconds due to OS page cache misses, disk spin-up, or background paging.
-4. **NO Operating System or Network Calls:**
-   - Logging (`println!`, logging frameworks that write to files or console), socket operations, and time-query syscalls are prohibited.
-5. **NO FFI Calls into Managed Runtimes:**
-   - Calling back into C# or Swift from the audio thread is forbidden, as managed runtimes may trigger garbage collector safepoints or ARC reference deallocations.
+The target runtime is C++ and uses JUCE for device/platform infrastructure. Aetherband owns transport semantics, command scheduling, DSP graph execution, processor lifecycle, routing, parameter/automation timing, and offline rendering. Keep domain logic testable without the UI or a physical device.
 
-### 1.2 Real-Time Verification
-In continuous integration and debug test suites, the real-time audio callback is wrapped using the `assert_no_alloc` crate. Any accidental allocation inside the audio loop triggers an immediate assertion panic during automated testing.
+## Real-time callback contract
 
----
+The callback must perform bounded, predictable processing. It must not read/write files, access the network, allocate/deallocate unpredictably, wait on a contended mutex/future/thread, decode media, resample files, compile graphs, create/destroy complex processors, or invoke unbounded logging.
 
-## 2. Latency Anatomy & Math
+Prepare buffers, decoded media, processor state, and graph snapshots on non-real-time threads. Define safe transfer and retirement rules. Use a bounded command/telemetry mechanism and specify overflow behavior. Do not call a design lock-free or wait-free without verifying implementation and memory ordering.
 
-Audio latency is often misunderstood. A block size of 128 frames does **not** represent the total round-trip latency. Total latency is the sum of multiple pipeline stages:
+## Contracts to define
 
-$$T_{\text{total}} = T_{\text{input\_hw}} + T_{\text{input\_buffer}} + T_{\text{dsp\_processing}} + T_{\text{output\_buffer}} + T_{\text{output\_hw}} + T_{\text{dac\_conversion}}$$
+- Sample rate, block size, channel layout, and buffer ownership.
+- Device enumeration/open/close, device changes, failure reporting, and shutdown.
+- Transport clock, play/stop/seek semantics, and scheduling precision.
+- Processor prepare/process/release lifecycle.
+- Parameter updates, automation timing, and event/MIDI handling.
+- Graph validation, cycles/feedback policy, channel compatibility, and safe graph replacement.
+- Offline rendering consistency and output format.
+- Latency reporting, underflow/overflow behavior, and diagnostics.
 
-### Practical Latency Table at 48,000 Hz
+## Testing sequence
 
-| Buffer Size (Frames) | Block Duration ($T_{\text{block}}$) | Typical Windows WASAPI Shared Round-Trip | Typical Windows WASAPI Exclusive Round-Trip | Typical macOS CoreAudio Round-Trip |
-| :--- | :--- | :--- | :--- | :--- |
-| **64 frames** | **1.33 ms** | $\approx 25\text{–}35\text{ ms}$ (Resampled by OS) | $\approx 4\text{–}6\text{ ms}$ | $\approx 3.5\text{–}5\text{ ms}$ |
-| **128 frames** | **2.67 ms** | $\approx 28\text{–}38\text{ ms}$ | $\approx 6\text{–}9\text{ ms}$ | $\approx 5.5\text{–}7.5\text{ ms}$ |
-| **256 frames** | **5.33 ms** | $\approx 33\text{–}43\text{ ms}$ | $\approx 11\text{–}15\text{ ms}$ | $\approx 10\text{–}13\text{ ms}$ |
-| **512 frames** | **10.67 ms** | $\approx 44\text{–}55\text{ ms}$ | $\approx 22\text{–}26\text{ ms}$ | $\approx 21\text{–}24\text{ ms}$ |
+1. Deterministic unit tests for buffers, parameters, processors, and graph validation.
+2. Offline known-signal/golden-output tests for processing and routing.
+3. Callback-path review for allocation/blocking hazards.
+4. JUCE device tests: enumerate, open, play known signal, stop, close, repeat.
+5. Windows and macOS checks including device errors and clean shutdown.
 
-- **MVP Target:** 256 or 512 frames default for rock-solid stability during initial testing; selectable down to 128 or 64 frames for low-latency live monitoring.
+A successful compile does not prove audio works. Offline tests do not prove physical-device behavior. Record platform support per OS and test type.
 
----
-
-## 3. Audio I/O Driver Architecture
-
-`cpal` is used as an OS-level audio stream binding, but it is encapsulated behind our custom `AudioBackend` trait:
-
-```mermaid
-classDiagram
-    class AudioBackend {
-        <<trait>>
-        +enumerate_devices() Vec~DeviceInfo~
-        +open_output_stream(config, callback) StreamHandle
-        +open_input_stream(config, callback) StreamHandle
-    }
-    class CpalBackend {
-        -cpal_host: Host
-        +enumerate_devices()
-        +open_output_stream()
-    }
-    class AsioBackend {
-        <<future>>
-        -asio_host: AsioHost
-        +enumerate_devices()
-    }
-    AudioBackend <|-- CpalBackend
-    AudioBackend <|-- AsioBackend
-```
-
-### 3.1 Device Management & Disconnection Handling
-- When the user selects a new device in Avalonia, the UI sends a command to the control thread.
-- The control thread gracefully stops the existing stream, cleans up resources, and opens the new stream.
-- If an active device is disconnected by the OS (e.g., USB cable pulled):
-  1. `cpal` invokes an error callback (`StreamErrorCallback`).
-  2. The error callback catches the device fault, marks the engine as `DeviceLost`, and pushes a notification to the UI via the telemetry ring buffer.
-  3. The engine transitions safely to an idle state without crashing.
-  4. The UI displays an alert: *"Audio output device disconnected. Select a new device in Preferences."*
-
----
-
-## 4. Processing Pipeline & Mixer Topology
-
-Within each audio callback block (e.g., 128 frames), processing follows a strict sequential pipeline:
-
-```mermaid
-flowchart LR
-    Start([Hardware Callback]) --> PopCmds[1. Pop SPSC Commands\nUpdate volumes & state]
-    PopCmds --> PullAudio[2. Pull Track Buffers\nFrom pre-allocated ring buffers]
-    PullAudio --> ApplyDSP[3. Process Track DSP\nFilters, EQs, gain ramps]
-    ApplyDSP --> SumMixer[4. Sum into Master Bus\nApply Equal Power Pan Law]
-    SumMixer --> MasterFX[5. Master Bus DSP\nVolume fader & Limiter]
-    MasterFX --> ComputeMeters[6. Calculate Peak/RMS\nPush to Telemetry Queue]
-    ComputeMeters --> WriteHW([Write to Output Buffer])
-```
-
-### 4.1 Sample-Accurate Gain Ramping (Anti-Zipper)
-When a user moves a volume fader from $0.0\text{ dB}$ ($g = 1.0$) down to $-6.0\text{ dB}$ ($g \approx 0.501$), jumping directly to $0.501$ produces an audible high-frequency "zipper" pop.
-The engine implements linear or exponential gain ramping across $N$ samples:
-
-$$g[n] = g_{\text{current}} + n \cdot \left(\frac{g_{\text{target}} - g_{\text{current}}}{N}\right)$$
-
-Where $N$ is typically 128 to 256 samples ($\approx 2.6\text{–}5.3\text{ ms}$). This ensures completely silent, smooth parameter modulation.
-
-### 4.2 Equal-Power Panning Law
-To ensure that an audio track does not sound louder when panned dead-center compared to hard-left or hard-right, we use the standard **-3 dB Equal-Power Panning Law**:
-
-$$g_L(\theta) = \cos\left(\frac{\pi}{2} \cdot \theta\right), \quad g_R(\theta) = \sin\left(\frac{\pi}{2} \cdot \theta\right)$$
-
-Where $\theta \in [0.0, 1.0]$ represents pan position ($0.0 = \text{Full Left}$, $0.5 = \text{Center}$, $1.0 = \text{Full Right}$). At center ($\theta = 0.5$):
-
-$$g_L = \cos\left(\frac{\pi}{4}\right) = \frac{\sqrt{2}}{2} \approx 0.7071 \; (-3.01\text{ dB})$$
-
----
-
-## 5. Transport stop/reset regression checklist\n\nThe UI resetting its local timer is not proof that the audio engine stopped. The engine telemetry is authoritative, and Stop must be consumed by the audio callback. Regression coverage must verify non-silent playback before Stop, silence after Stop, stopped telemetry with a zero playhead, and correct restart behavior. Draining already-decoded ring-buffer blocks does not by itself rewind a decoder worker; restart/rewind semantics must be explicitly implemented and tested. Keep this work on the control/worker side where needed and preserve the real-time callback's no-allocation/no-blocking contract.\n\n## 6. Ring Buffers and Thread Communication
-
-Cross-thread communication relies entirely on the `rtrb` crate (Single-Producer Single-Consumer wait-free ring buffer):
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                      LOCK-FREE SPSC RING BUFFERS                       │
-├────────────────────────────────────────────────────────────────────────┤
-│ UI Thread ──[push: max 1024]──► CommandQueue ──[pop]──► Audio Thread   │
-│                                                                        │
-│ Audio Thread ──[push: max 2048]► TelemetryQueue ──[pop]► UI (60Hz)     │
-│                                                                        │
-│ Disk Worker ──[push: audio frames]► TrackStreamQueue ──► Audio Thread  │
-└────────────────────────────────────────────────────────────────────────┘
-```
-
-- **Wait-Free Guarantee:** Neither `push` nor `pop` ever waits on the other thread. If the command queue is full, the command is rejected or buffered in UI memory. If the telemetry queue is full, the oldest meter frame is discarded without impeding audio playback.
+See ARCHITECTURE.md, CPP_MIGRATION_PLAN.md, and FEATURE_TRACKER.md.

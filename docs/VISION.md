@@ -1,35 +1,34 @@
 # Product Vision: Aetherband
 
-## Vision
+Aetherband is a free and open-source desktop DAW for following musical ideas wherever they lead. It should bring recording, arrangement, editing, mixing, synthesis, and sound design into one expressive environment.
 
-Aetherband is a free, open-source desktop DAW designed to combine an expressive, arrangement-first creative workspace with reliable native audio processing. The product prioritizes low-friction songwriting, deep editing when needed, portability, and transparent engineering.
+The creative direction values immediacy and precision without imitating any single existing DAW. The workspace should feel designed for music: clear arrangement and mixer workflows, purposeful visual hierarchy, fast keyboard/mouse interaction, and room for unusual textures, layered productions, and artist-specific instruments.
 
-## Architecture decision
+This is a target vision, not a claim that the current prototype already provides these workflows.
 
-- **Desktop UI:** Flutter + Dart.
-- **Audio engine and DSP:** Rust.
-- **Native boundary:** versioned C ABI consumed through Dart FFI.
-- **Initial platforms:** Windows and macOS.
+## Committed architecture
 
-Flutter is the selected frontend because the project needs fine-grained control over timeline, waveform, mixer and instrument UI; rapid visual iteration; consistent rendering across supported desktops; and room to profile and optimize custom DAW interactions. This does not imply automatic performance wins: rendering and large-session behavior must be measured.
+- C++20 or newer as the primary language.
+- JUCE as the native application, UI, audio, and platform framework.
+- CMake as the build system.
+- Windows and macOS as required desktop targets.
+- Aetherband-owned DSP graph semantics, processor lifecycle, routing, transport, parameter/automation behavior, and offline-rendering rules.
+- GPL-3.0-or-later as the license goal, with compatible dependency choices.
 
-The previous Avalonia/C# frontend has been removed from the desktop target. The product has one intended desktop UI to avoid duplicating frontend work and splitting feature parity across frameworks.
+Rust, C ABI/Dart FFI, Flutter, and Dart are legacy references only. Do not build new target features on that stack. C# is not planned for the core.
 
-## Core principles
+## Principles
 
-1. **Real-time audio integrity:** no UI work, file I/O, allocation or blocking operation in the audio callback.
-2. **Intuitive by default, deep on demand:** a clear arrangement workflow with precise tools when needed.
-3. **Desktop-first:** keyboard, mouse, high-DPI and multi-window workflows are first-class.
-4. **Native audio core:** decoding, DSP, mixing and device I/O remain in Rust.
-5. **Explicit FFI:** documented ABI, validated layouts, clear ownership and real error reporting.
-6. **Non-destructive editing:** imported sources are preserved and project state is recoverable.
-7. **Honest capability claims:** mock UI is not a substitute for implemented and tested engine behavior.
-8. **Open source:** GPLv3, reproducible builds and no proprietary lock-in.
+1. Creative continuity: recording, arrangement, editing, mixing, and sound design should work together.
+2. Native reliability: device lifecycle, timing, recovery, shutdown, and media handling must be tested.
+3. DSP ownership: Aetherband owns graph execution semantics without reinventing every established algorithm.
+4. Real-time discipline: no blocking I/O, unpredictable allocation, or contended waits in the audio callback.
+5. Modularity: UI, session model, media, runtime, DSP, and instruments have clear contracts.
+6. Open development: architecture, trade-offs, limitations, and dependency licensing remain inspectable.
+7. Honest progress: distinguish planned work, implementation, automated tests, and platform/device verification.
 
-## Long-term capabilities
+## First product milestone
 
-- Reliable multitrack playback, recording, project save/load and export.
-- Waveforms, non-destructive editing, undo/redo and advanced mixing.
-- MIDI editing, built-in instruments and native effects.
-- Plugin hosting after compatibility, legal and crash-containment review.
-- Shared project format and possible future companion clients, only after the desktop product is stable.
+Build a native JUCE application on both Windows and macOS, open/close an audio device, and play a known signal safely. Then prove a minimal DAW workflow: import WAV, arrange multiple tracks, play/mix, save/reopen, and export WAV.
+
+See ARCHITECTURE.md, CPP_MIGRATION_PLAN.md, and ROADMAP.md.

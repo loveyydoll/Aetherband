@@ -1,4 +1,4 @@
-# Engine Foundation Audit
+<!-- Historical audit of the Rust/Flutter implementation. Its original recommendation predates the accepted C++/JUCE migration decision. Treat source observations as migration evidence, not current architectural direction. -->\n\n# Engine Foundation Audit
 
 **Audit date:** 2026-10-17  
 **Baseline:** `main` at the time this audit branch was created  

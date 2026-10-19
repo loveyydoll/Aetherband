@@ -1,58 +1,51 @@
 # Aetherband — Project State Handoff
 
-**Snapshot date:** 2026-10-18
-**Evidence level:** local Windows Rust/Flutter checks, a Windows desktop build and native integration test; macOS runtime verification remains pending. Recheck current CI before relying on this snapshot.
+**Last reconciled:** 2026-10-19  
+**Branch context:** rewrite/cpp-native-foundation, draft migration PR #35  
+**Evidence level:** Repository review. The current C++ foundation has not been independently built or run on Windows/macOS in this migration step.
 
-## Product identity
+## Product
 
-Aetherband is an early-alpha, open-source desktop DAW. Its long-term direction is an arrangement-first creative workspace that combines production, precise editing, mixing and future extensibility. Aether Patcher is a possible future separate visual-programming application, not the current implementation priority.
+Aetherband is an early-stage, free/open-source desktop DAW. Its intended creative direction is an expressive arrangement-first workspace combining recording, editing, mixing, instruments, and sound design. Windows and macOS are required targets.
 
-## Current architecture
+## Binding architecture
 
-- **Desktop UI:** Flutter/Dart in `apps/desktop/`.
-- **Audio engine/DSP:** Rust in `core/`.
-- **Interop:** versioned C ABI in `bindings/c_abi/`, consumed through Dart FFI.
-- **Audio I/O/decoding:** Rust engine components using the existing audio/device and decoder stack.
-- **Target desktop platforms:** Windows and macOS.
+- C++20 or newer.
+- JUCE is the committed framework, not a candidate.
+- CMake build system.
+- Aetherband-owned runtime and DSP semantics.
+- Windows and macOS required.
+- GPL-3.0-or-later is the license goal, subject to dependency compatibility.
+- Rust/C ABI/Dart FFI/Flutter/Dart are legacy references only.
+- C# is not part of the planned core.
 
-Do not reintroduce C#/.NET/Avalonia as a second desktop frontend. Verify current project files before changing build scripts, APIs or dependency versions.
+See ADR-008 in DECISIONS.md. Do not reopen framework selection without explicit owner direction.
 
-## Known implementation boundaries
+## C++ foundation present
 
-- The Flutter workspace and arrangement are still prototype-stage; demo tracks/clips are not proof of a loaded or persisted project.
-- Native engine initialization, telemetry and initial transport controls are wired through an adapter/controller. Verify every specific operation before treating it as end-to-end complete.
-- The native engine exposes a set of transport, telemetry, device, test-tone and track operations; inspect `bindings/c_abi/src/lib.rs` as the source of truth before adding or assuming APIs.
-- Audio import now queries source duration through ABI 0.3.0. Native calls run outside Flutter's UI isolate, with the actual engine confined to a dedicated Rust OS thread. Imported clips use probed metadata when available, label unknown duration, and do not fabricate waveforms or support visual-only movement/mixing. Track removal preserves state on command rejection. Reconnecting clears the old engine's native IDs and requires reimport.
-- Record UI controls must not imply actual recording unless a real recording path exists.
-- Live meters must use actual engine telemetry, not invented animation.
-- Project save/load, MIDI editing, instruments, effects, automation, plugin hosting, spatial rendering and final export must not be claimed complete unless current code and tests prove it.
+- CMake/C++20 project scaffold.
+- Planar floating-point audio buffer.
+- Basic additive mixer.
+- Initial unit tests for those primitives.
 
-## Critical invariants
+These are source-level observations, not proof that tests pass or either platform works. A complete JUCE application, device playback, transport, executing DSP graph, media pipeline, project persistence, HypnoSynth port, and usable arrangement/mixer workflow have not yet been established by this foundation slice.
 
-1. Preserve the reported Stop/rewind fix. A UI playhead reset is not proof that audio stopped; verify engine result and playback silence.
-2. Never perform blocking I/O, blocking locks, sleep, logging, unbounded work or routine heap allocation/destruction in the real-time audio callback.
-3. Keep Flutter responsive; long-running work and file/device operations must not block the UI isolate.
-4. Keep Rust exports, C ABI declarations, Dart FFI signatures, ownership and error semantics synchronized.
-5. Never silently represent an unsupported/failed native operation as success.
-6. Treat session/media data as user work: avoid destructive changes and preserve recoverability.
+## Migration safety
 
-## Current priorities
+Do not delete the legacy Rust/Flutter implementation wholesale. Audit actual behavior, then port and test it in small slices. Retire a legacy subsystem only when its C++ replacement passes documented acceptance criteria. Preserve Git history.
 
-See [Feature Tracker](FEATURE_TRACKER.md) for the living backlog. Initial order:
-1. Recheck and repair CI on the latest mainline.
-2. Verify the Flutter ↔ Rust integration and transport behaviour on Windows/macOS.
-3. Complete a coherent import → arrange → playback workflow.
-4. Define and implement project save/reopen.
-5. Add a basic stereo export path.
-6. Grow editing, MIDI/instruments and effects through tested vertical slices.
-7. Revisit spatial audio and advanced creative-engine experiments when core workflows are coherent.
+## Immediate priorities
 
-## Known uncertainty
+1. Integrate JUCE with a documented CMake setup.
+2. Build and launch a minimal native app on Windows and macOS.
+3. Enumerate devices, play a known signal, and test repeated open/start/stop/close.
+4. Define callback-safe runtime contracts and an executing DSP graph.
+5. Prove deterministic offline processing.
+6. Deliver WAV import → multitrack arrange/play/mix → save/reopen → WAV export.
+7. Port HypnoSynth and broaden production features.
 
-The 2026-10-18 local checks passed Rust formatting/check/test and C ABI build, Flutter analysis/tests, a Windows desktop build and native import/transport/removal/queued-shutdown testing. Existing Clippy findings in unchanged audio/decoder/DSP/track code prevent `cargo clippy --workspace --all-targets -- -D warnings` from passing. See [verification record](VERIFICATION_2026-10-18.md) for exact scope and limitations.
+## Evidence rules
 
-This document is not a runtime test report. It does not independently prove current CI status, device behaviour, audio output, persistence, export or platform packaging. Use current GitHub Actions logs and local results. Update this snapshot when evidence changes, and date it when a new status review is performed.
+Code exists is not proof of compilation. Compilation is not proof tests pass. Passing tests is not proof of hardware behavior. Legacy features are not C++ parity. WAV tests do not imply other formats work. A UI prototype is not a complete DAW workflow.
 
-## Required handoff format
-
-For each agent task, report **Implemented**, **Not implemented**, **Verified**, **Not verified**, **Known risks**, and **Next step**. Link the relevant PR/commit and checks when available.
+Update this file when architecture decisions or verified platform status change.
