@@ -13,13 +13,14 @@ import 'package:aetherband_desktop/src/widgets/workspace_panels.dart';
 import 'package:aetherband_desktop/src/widgets/timeline_view.dart';
 import 'package:aetherband_desktop/src/session_store.dart';
 
-class FakeEngine implements EngineController, PerformanceEngine {
+class FakeEngine implements EngineController, PerformanceEngine, ExportEngine {
   final frames = StreamController<EngineTelemetry>.broadcast();
   final calls = <String>[];
   Completer<LoadedAudioTrack>? importResult;
   Completer<void>? removalResult;
   Object? importError;
   Object? mixerError;
+  Object? exportError;
   int disposeCount = 0;
   int count = 0;
 
@@ -104,6 +105,12 @@ class FakeEngine implements EngineController, PerformanceEngine {
   }
 
   @override
+  Future<void> exportWav(String path) async {
+    calls.add('export:$path');
+    if (exportError != null) throw exportError!;
+  }
+
+  @override
   Future<int> getTrackCount() async => count;
   @override
   Future<void> dispose() async {
@@ -122,6 +129,7 @@ Future<void> mountWorkspace(
   Future<EngineController> Function()? factory,
   Future<XFile?> Function()? sessionPicker,
   Future<String?> Function()? sessionSavePicker,
+  Future<String?> Function()? exportSavePicker,
   double width = 1440,
   double height = 1000,
 }) async {
@@ -134,6 +142,7 @@ Future<void> mountWorkspace(
     pickAudioFile: picker ?? () async => XFile('C:/audio/take.wav'),
     pickSessionFile: sessionPicker,
     pickSessionSavePath: sessionSavePicker,
+    pickExportSavePath: exportSavePicker,
   ));
   await tester.pumpAndSettle();
 }
@@ -155,6 +164,24 @@ Future<void> deleteSelected(WidgetTester tester, {bool settle = true}) async {
 }
 
 void main() {
+  testWidgets('File menu exports a stereo WAV through the engine',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(
+      tester,
+      engine,
+      exportSavePicker: () async => 'C:/exports/Untitled Session',
+    );
+    await tester.tap(find.byTooltip('File menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Export Mixdown…'));
+    await tester.pumpAndSettle();
+
+    expect(engine.calls, contains('export:C:/exports/Untitled Session.wav'));
+    expect(find.textContaining('Stereo WAV exported to'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   test('source rate determines duration; absent frame counts stay unknown', () {
     expect(
         const LoadedAudioTrack(
@@ -268,8 +295,8 @@ void main() {
     );
     await importAudio(tester);
     await importAudio(tester);
-    final beforeRemoval = tester
-        .widget<TimelineView>(find.byType(TimelineView));
+    final beforeRemoval =
+        tester.widget<TimelineView>(find.byType(TimelineView));
     expect(beforeRemoval.tracks, hasLength(2));
     engine.removalResult = Completer<void>();
     await deleteSelected(tester, settle: false);

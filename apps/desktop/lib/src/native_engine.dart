@@ -43,8 +43,10 @@ typedef _TransportN = Int32 Function(Pointer<Void>, Float, Uint8, Uint8);
 typedef _TransportD = int Function(Pointer<Void>, double, int, int);
 typedef _MasterN = Int32 Function(Pointer<Void>, Float);
 typedef _MasterD = int Function(Pointer<Void>, double);
+typedef _ExportN = Int32 Function(Pointer<Void>, Pointer<Utf8>);
+typedef _ExportD = int Function(Pointer<Void>, Pointer<Utf8>);
 
-const int _expectedApiVersion = 0x00000500;
+const int _expectedApiVersion = 0x00000600;
 
 final class _TrackInfo extends Struct {
   @Uint64()
@@ -77,7 +79,8 @@ final class _MeteringFrame extends Struct {
 /// The worker isolate owns every native pointer and serializes all calls,
 /// including polling and destruction. Only commands/metadata cross isolates;
 /// importing, restarting decoders and releasing hardware cannot block Flutter.
-class NativeEngineController implements EngineController, PerformanceEngine {
+class NativeEngineController
+    implements EngineController, PerformanceEngine, ExportEngine {
   NativeEngineController._() {
     _events.listen(_onEvent);
   }
@@ -181,6 +184,15 @@ class NativeEngineController implements EngineController, PerformanceEngine {
   @override
   Future<void> setMasterVolume(double gain) => _request<void>('master', gain);
   @override
+  Future<void> exportWav(String path) {
+    if (path.isEmpty || path.contains('\u0000')) {
+      return Future.error(ArgumentError(
+          'Export path must be nonempty and contain no NUL bytes.'));
+    }
+    return _request<void>('export', path);
+  }
+
+  @override
   Future<void> pause() => _request<void>('pause');
   @override
   Future<void> stop() => _request<void>('stop');
@@ -204,13 +216,21 @@ class NativeEngineController implements EngineController, PerformanceEngine {
 
   @override
   Future<void> setTrackVolume(int trackId, double gain) {
-    _checkUnitParameter('gain', gain);
+    try {
+      _checkUnitParameter('gain', gain);
+    } on ArgumentError catch (error) {
+      return Future<void>.error(error);
+    }
     return _request<void>('volume', (trackId, gain));
   }
 
   @override
   Future<void> setTrackPan(int trackId, double pan) {
-    _checkUnitParameter('pan', pan);
+    try {
+      _checkUnitParameter('pan', pan);
+    } on ArgumentError catch (error) {
+      return Future<void>.error(error);
+    }
     return _request<void>('pan', (trackId, pan));
   }
 
@@ -277,6 +297,8 @@ Future<void> _runNativeEngine((SendPort, String?) configuration) async {
             await session.configureTransport(bpm, metronome, sequence);
           case 'master':
             await session.setMasterVolume(argument as double);
+          case 'export':
+            await session.exportWav(argument as String);
           case 'play':
             await session.play();
           case 'pause':
@@ -327,11 +349,13 @@ Future<void> _runNativeEngine((SendPort, String?) configuration) async {
 
 /// Used only on the dedicated native control isolate. This object's pointers,
 /// library, timer and handle never cross the isolate boundary.
-class _NativeEngineSession implements EngineController, PerformanceEngine {
+class _NativeEngineSession
+    implements EngineController, PerformanceEngine, ExportEngine {
   _NativeEngineSession._({
     required this.synthNative,
     required this.transportNative,
     required this.masterNative,
+    required this.exportNative,
     required DynamicLibrary library,
     required Pointer<Void> handle,
     required _CommandD playNative,
@@ -390,6 +414,7 @@ class _NativeEngineSession implements EngineController, PerformanceEngine {
   final _SynthD synthNative;
   final _TransportD transportNative;
   final _MasterD masterNative;
+  final _ExportD exportNative;
   final int sampleRateHz;
   final StreamController<EngineTelemetry> _telemetry =
       StreamController<EngineTelemetry>.broadcast();
@@ -455,6 +480,8 @@ class _NativeEngineSession implements EngineController, PerformanceEngine {
         'daw_engine_configure_transport');
     final master = library
         .lookupFunction<_MasterN, _MasterD>('daw_engine_set_master_volume');
+    final export =
+        library.lookupFunction<_ExportN, _ExportD>('daw_engine_export_wav');
     final outHandle = calloc<Pointer<Void>>();
     try {
       final result = create(outHandle);
@@ -480,6 +507,7 @@ class _NativeEngineSession implements EngineController, PerformanceEngine {
           synthNative: synth,
           transportNative: transport,
           masterNative: master,
+          exportNative: export,
           library: library,
           handle: handle,
           playNative: play,
@@ -637,6 +665,23 @@ class _NativeEngineSession implements EngineController, PerformanceEngine {
   Future<void> setMasterVolume(double gain) async {
     if (_disposed) throw StateError('Native engine has been disposed.');
     _check('master volume', masterNative(_handle, gain));
+  }
+
+  @override
+  Future<void> exportWav(String path) async {
+    if (_disposed) throw StateError('Native engine has been disposed.');
+    final nativePath = path.toNativeUtf8();
+    try {
+      final result = exportNative(_handle, nativePath);
+      if (result != 0) {
+        throw StateError(
+          'Mixdown export failed. Add imported audio or enable the HypnoSynth '
+          'phrase, use clips with known duration, and choose a different output file.',
+        );
+      }
+    } finally {
+      calloc.free(nativePath);
+    }
   }
 
   void _poll() {

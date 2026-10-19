@@ -21,6 +21,7 @@ class AetherbandApp extends StatelessWidget {
     this.pickAudioFile,
     this.pickSessionFile,
     this.pickSessionSavePath,
+    this.pickExportSavePath,
     super.key,
   });
 
@@ -28,6 +29,7 @@ class AetherbandApp extends StatelessWidget {
   final Future<XFile?> Function()? pickAudioFile;
   final Future<XFile?> Function()? pickSessionFile;
   final Future<String?> Function()? pickSessionSavePath;
+  final Future<String?> Function()? pickExportSavePath;
 
   @override
   Widget build(BuildContext context) {
@@ -40,6 +42,7 @@ class AetherbandApp extends StatelessWidget {
         pickAudioFile: pickAudioFile,
         pickSessionFile: pickSessionFile,
         pickSessionSavePath: pickSessionSavePath,
+        pickExportSavePath: pickExportSavePath,
       ),
     );
   }
@@ -51,6 +54,7 @@ class AetherbandWorkspace extends StatefulWidget {
     this.pickAudioFile,
     this.pickSessionFile,
     this.pickSessionSavePath,
+    this.pickExportSavePath,
     super.key,
   });
 
@@ -58,6 +62,7 @@ class AetherbandWorkspace extends StatefulWidget {
   final Future<XFile?> Function()? pickAudioFile;
   final Future<XFile?> Function()? pickSessionFile;
   final Future<String?> Function()? pickSessionSavePath;
+  final Future<String?> Function()? pickExportSavePath;
 
   @override
   State<AetherbandWorkspace> createState() => _AetherbandWorkspaceState();
@@ -411,6 +416,32 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         : '${location.path}.aetherband.json';
   }
 
+  Future<void> _flushPendingMixerActions() async {
+    // Clip drags update visually first and debounce their native position
+    // command. Flush before either saving or rendering the engine's snapshot.
+    for (final entry in _clipPositionTimers.entries.toList()) {
+      entry.value.cancel();
+      final clip = _tracks
+          .expand((track) => track.clips)
+          .where((clip) => clip.id == entry.key)
+          .firstOrNull;
+      final track = clip == null
+          ? null
+          : _tracks.where((track) => track.clips.contains(clip)).firstOrNull;
+      final nativeId = track == null ? null : _nativeTrackIds[track.id];
+      final engine = _engine;
+      if (clip != null && track != null && nativeId != null && engine != null) {
+        _queueMixerAction(
+          _commitClipStart(engine, track, clip, nativeId, clip.startSeconds),
+        );
+      }
+    }
+    _clipPositionTimers.clear();
+    if (_mixerActions.isNotEmpty) {
+      await Future.wait(_mixerActions.toList());
+    }
+  }
+
   Future<void> _saveSession({bool saveAs = false}) async {
     if (_trackOperationPending || _initializingEngine) return;
     var path = saveAs ? null : _sessionPath;
@@ -420,35 +451,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     }
     setState(() => _trackOperationPending = true);
     try {
-      // A drag is visually immediate and its native command is debounced.
-      // Flush those commands before capturing the session so saved positions
-      // and the engine cannot diverge when Save is clicked immediately.
-      for (final entry in _clipPositionTimers.entries.toList()) {
-        entry.value.cancel();
-        final clip = _tracks
-            .expand((track) => track.clips)
-            .where((clip) => clip.id == entry.key)
-            .firstOrNull;
-        final track = clip == null
-            ? null
-            : _tracks.where((track) => track.clips.contains(clip)).firstOrNull;
-        final nativeId = track == null ? null : _nativeTrackIds[track.id];
-        final engine = _engine;
-        if (clip != null &&
-            track != null &&
-            nativeId != null &&
-            engine != null) {
-          _queueMixerAction(
-            _commitClipStart(engine, track, clip, nativeId, clip.startSeconds),
-          );
-        }
-      }
-      _clipPositionTimers.clear();
       // Do not write optimistic fader values while a native rejection is
       // still possible. No further mixer edits are admitted during the save.
-      if (_mixerActions.isNotEmpty) {
-        await Future.wait(_mixerActions.toList());
-      }
+      await _flushPendingMixerActions();
       if (!mounted) return;
       final title = _titleFromSessionPath(path);
       final document = _captureAudioSession(title);
@@ -472,6 +477,49 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Session save failed: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _trackOperationPending = false);
+    }
+  }
+
+  Future<void> _exportMixdown() async {
+    if (_trackOperationPending || _initializingEngine) return;
+    final engine = _engine;
+    if (engine is! ExportEngine) {
+      _showFeatureUnavailable(
+          'Mixdown export requires the Windows audio engine');
+      return;
+    }
+    final exportEngine = engine as ExportEngine;
+    final selectedPath = widget.pickExportSavePath != null
+        ? await widget.pickExportSavePath!()
+        : (await getSaveLocation(
+            suggestedName: '$_sessionTitle.wav',
+            acceptedTypeGroups: const <XTypeGroup>[
+              XTypeGroup(label: 'WAV audio', extensions: ['wav']),
+            ],
+          ))
+            ?.path;
+    if (selectedPath == null || !mounted) return;
+    final path = selectedPath.toLowerCase().endsWith('.wav')
+        ? selectedPath
+        : '$selectedPath.wav';
+    setState(() => _trackOperationPending = true);
+    try {
+      await _flushPendingMixerActions();
+      if (!mounted) return;
+      await exportEngine.exportWav(path);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Stereo WAV exported to $path')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Mixdown export failed: $error')),
         );
       }
     } finally {
@@ -777,6 +825,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         return;
       case 'file.saveAs':
         unawaited(_saveSession(saveAs: true));
+        return;
+      case 'file.export':
+        unawaited(_exportMixdown());
         return;
       case 'view.browser':
         setState(() => _browserOpen = !_browserOpen);

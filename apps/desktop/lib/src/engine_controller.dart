@@ -55,3 +55,7 @@ abstract interface class PerformanceEngine {
   Future<void> configureTransport(double bpm, bool metronome, bool sequence);
   Future<void> setMasterVolume(double gain);
 }
+
+abstract interface class ExportEngine {
+  Future<void> exportWav(String path);
+}

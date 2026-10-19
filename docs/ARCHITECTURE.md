@@ -27,7 +27,7 @@ The former C#/.NET + Avalonia frontend is retired and removed from the desktop a
 - **Telemetry:** Rust engine telemetry -> C ABI struct -> Dart polling adapter -> UI state.
 - **Audio:** Rust decoder workers -> preallocated/bounded engine buffers -> Rust audio callback -> OS audio device.
 
-ABI 0.5.0 exposes engine lifecycle, transport and telemetry; Windows output-device enumeration/selection; HypnoSynth events and performance settings; track import, metadata, start scheduling, gain, pan, mute and solo. Check `bindings/c_abi/src/lib.rs` as the source of truth before adding calls. The playhead and clip positions use the active output rate. Output-device selection is available natively but is not wired into Flutter.
+ABI 0.6.0 exposes engine lifecycle, transport and telemetry; Windows output-device enumeration/selection; HypnoSynth events and performance settings; track import, metadata, start scheduling, gain, pan, mute and solo; and offline stereo WAV export. Check `bindings/c_abi/src/lib.rs` as the source of truth before adding calls. The playhead and clip positions use the active output rate. Output-device selection is available natively but is not wired into Flutter.
 
 Native calls run in a long-lived Dart isolate, serialized with polling and disposal. The opaque C handle delegates engine and decoder work to a dedicated Rust control thread through a bounded channel, keeping that work away from Flutter's UI isolate and preserving one serialized engine owner. This remains an architectural choice; the current CPAL 0.18 stream is Send. The control channel is separate from real-time SPSC queues; blocking and allocation remain off the audio callback. See ADR-008 in [Decisions](DECISIONS.md).
 

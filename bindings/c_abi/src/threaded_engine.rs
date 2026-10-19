@@ -98,6 +98,10 @@ impl EngineHandle {
     command!(synth_event, event: u32, key: u32, value: f32);
     command!(configure_transport, bpm: f32, metronome: bool, sequence: bool);
     command!(set_master_volume, gain: f32);
+    pub fn export_wav(&self, path: &Path) -> Result<(), ()> {
+        let path = path.to_owned();
+        self.call(move |engine| engine.export_mixdown(&path).map_err(|_| ()))?
+    }
     command!(set_test_tone, enabled: bool, frequency: f32);
     command!(remove_track, id: TrackId);
     command!(set_track_volume, id: TrackId, gain: f32);

@@ -3,7 +3,7 @@
 //! Exposes a flat, C-compatible interface for desktop frontends through Dart FFI.
 
 use daw_core::ringbuf::TelemetryFrame;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
 
@@ -14,6 +14,7 @@ pub const DAW_OK: i32 = 0;
 pub const DAW_ERROR_INVALID_ARGUMENT: i32 = -1;
 pub const DAW_ERROR_COMMAND_REJECTED: i32 = -3;
 pub const DAW_ERROR_TRACK_NOT_FOUND: i32 = -4;
+pub const DAW_ERROR_EXPORT_FAILED: i32 = -5;
 
 /// Opaque handle representing a DAW engine instance.
 #[repr(C)]
@@ -110,7 +111,30 @@ impl Default for DAWDeviceInfo {
 /// Returns the API version (major << 16 | minor << 8 | patch).
 #[no_mangle]
 pub extern "C" fn daw_get_api_version() -> u32 {
-    5 << 8
+    6 << 8
+}
+
+/// Render the loaded audio session to stereo 16-bit PCM WAV without changing playback.
+///
+/// # Safety
+/// `engine` must be a live engine handle with serialized calls; `path` must point to a
+/// readable NUL-terminated UTF-8 path for the duration of the call.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_export_wav(engine: *mut DAWEngine, path: *const c_char) -> i32 {
+    if engine.is_null() || path.is_null() {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    }
+    let Some(eng) = to_core_mut(engine) else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    let Ok(path) = CStr::from_ptr(path).to_str() else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    if eng.export_wav(std::path::Path::new(path)).is_ok() {
+        DAW_OK
+    } else {
+        DAW_ERROR_EXPORT_FAILED
+    }
 }
 
 /// HypnoSynth events: 0 note-on (key 0..127, velocity 0..1), 1 note-off,
@@ -580,7 +604,15 @@ mod ffi_contract_tests {
 
     #[test]
     fn api_version_matches_dart_ffi_contract() {
-        assert_eq!(daw_get_api_version(), 0x0000_0500);
+        assert_eq!(daw_get_api_version(), 0x0000_0600);
+    }
+
+    #[test]
+    fn export_rejects_null_engine_or_path() {
+        assert_eq!(
+            unsafe { daw_engine_export_wav(ptr::null_mut(), ptr::null()) },
+            DAW_ERROR_INVALID_ARGUMENT
+        );
     }
 
     #[test]

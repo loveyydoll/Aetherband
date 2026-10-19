@@ -10,6 +10,7 @@ pub mod dsp;
 mod envelope;
 pub mod graph;
 pub mod hypnosynth;
+mod offline_export;
 pub mod ringbuf;
 pub mod spatial;
 pub mod track;
@@ -112,6 +113,12 @@ pub struct DAWEngine {
 
     /// Metadata about each loaded track.
     tracks: Vec<TrackInfo>,
+    master_gain: f32,
+    bpm: f32,
+    metronome: bool,
+    sequence: bool,
+    preset: u8,
+    macros: [f32; 5],
 }
 
 impl DAWEngine {
@@ -133,6 +140,12 @@ impl DAWEngine {
             output_sample_rate,
             decoders: HashMap::new(),
             tracks: Vec::new(),
+            master_gain: 0.8,
+            bpm: 92.0,
+            metronome: false,
+            sequence: false,
+            preset: 0,
+            macros: [0.42, 0.38, 0.55, 0.36, 0.7],
         })
     }
 
@@ -309,13 +322,19 @@ impl DAWEngine {
         if !target_gain.is_finite() {
             return false;
         }
-        self.ui_endpoints
+        let gain = target_gain.clamp(0.0, 2.0);
+        let accepted = self
+            .ui_endpoints
             .cmd_producer
             .push(EngineCommand::SetMasterVolume {
-                target_gain: target_gain.clamp(0.0, 2.0),
+                target_gain: gain,
                 ramp_frames: 256,
             })
-            .is_ok()
+            .is_ok();
+        if accepted {
+            self.master_gain = gain;
+        }
+        accepted
     }
 
     /// Enables or disables the diagnostic test tone.
@@ -342,16 +361,26 @@ impl DAWEngine {
                 4 => true,
                 _ => false,
             };
-        valid
-            && self
-                .ui_endpoints
-                .cmd_producer
-                .push(EngineCommand::SynthEvent { event, key, value })
-                .is_ok()
+        if !valid {
+            return false;
+        }
+        let accepted = self
+            .ui_endpoints
+            .cmd_producer
+            .push(EngineCommand::SynthEvent { event, key, value })
+            .is_ok();
+        if accepted {
+            match event {
+                2 => self.preset = key as u8,
+                3 => self.macros[key as usize] = value,
+                _ => {}
+            }
+        }
+        accepted
     }
 
     pub fn configure_transport(&mut self, bpm: f32, metronome: bool, sequence: bool) -> bool {
-        bpm.is_finite()
+        let accepted = bpm.is_finite()
             && (30.0..=300.0).contains(&bpm)
             && self
                 .ui_endpoints
@@ -361,7 +390,43 @@ impl DAWEngine {
                     metronome,
                     sequence,
                 })
-                .is_ok()
+                .is_ok();
+        if accepted {
+            self.bpm = bpm;
+            self.metronome = metronome;
+            self.sequence = sequence;
+        }
+        accepted
+    }
+
+    /// Export a fresh offline stereo mix without seeking or interrupting live playback.
+    pub fn export_mixdown(&self, path: &Path) -> Result<(), offline_export::ExportError> {
+        let tracks = self
+            .tracks
+            .iter()
+            .map(|track| offline_export::ExportTrack {
+                path: Path::new(&track.file_path).to_owned(),
+                start_frame: track.start_frame.max(0) as u64,
+                total_frames: track.output_frames.max(0) as u64,
+                gain: track.gain,
+                pan: track.pan,
+                muted: track.muted,
+                solo: track.solo,
+            })
+            .collect::<Vec<_>>();
+        offline_export::render_stereo_wav(
+            path,
+            &tracks,
+            offline_export::ExportSettings {
+                sample_rate: self.output_sample_rate,
+                master: self.master_gain,
+                bpm: self.bpm,
+                metronome: self.metronome,
+                sequence: self.sequence,
+                preset: self.preset,
+                macros: self.macros,
+            },
+        )
     }
 
     /// Loads an audio file, spawns a background decoder, and returns the new `TrackId`.
@@ -622,6 +687,12 @@ mod engine_tests {
                 muted: false,
                 solo: false,
             }],
+            master_gain: 0.8,
+            bpm: 92.0,
+            metronome: false,
+            sequence: false,
+            preset: 0,
+            macros: [0.42, 0.38, 0.55, 0.36, 0.7],
         };
         assert!(engine.play());
         assert!(!engine.remove_track(TrackId(1)));
