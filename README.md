@@ -129,7 +129,7 @@ Aetherband is in an early stage. The distinction between existing code, verified
 ### Known gaps
 
 - Recording, editable MIDI, waveform display, effects, automation, plugin hosting, clip split/trim/resize and undo/redo remain unimplemented. Imported audio clips snap to quarter-note beats when moved while stopped at the start, and their positions persist in session files.
-- Local Rust and Flutter checks pass, including 30 Flutter tests with the native DLL, default WASAPI output selection/playback and stereo WAV export; a Windows debug build succeeds. The latest device-selector commit is awaiting CI. Physical listening/loopback capture remains unverified.
+- Local Rust and Flutter checks pass, including 30 Flutter tests with the native DLL, default WASAPI output selection/playback and stereo WAV export; a Windows debug build succeeds. Rust and Windows Flutter CI passed on output-selector commit `49e3111`. Physical listening/loopback capture remains unverified.
 - Synced `sources/` references and the pre-existing Desktop checkout remain untouched.
 - The current CI checks need to pass before the migration can be described as stable.
 
