@@ -2,17 +2,16 @@
 applyTo: "**/*.rs, **/Cargo.toml, **/Cargo.lock, **/build.rs"
 ---
 
-# Legacy Rust Engineering — Migration Reference Only
+# Legacy Rust — Migration Reference Only
 
-Rust is no longer the target language for Aetherband's active audio runtime or DSP architecture. These rules remain for safe inspection, focused maintenance and behavioral comparison while the C++ migration is underway.
+Rust is not the target language for Aetherband's active application, audio runtime, or DSP. C++/JUCE is the committed direction.
 
-- Read `AGENTS.md`, `docs/CPP_MIGRATION_PLAN.md`, `docs/PROJECT_STATE.md`, and the relevant legacy module before editing.
-- Do not add new Rust-first product features unless a task explicitly requires maintaining the reference implementation.
-- Do not delete the legacy engine wholesale; it is a source of behavioral reference until C++ replacements meet acceptance criteria.
-- When examining old behavior, verify it against tests and actual source rather than assuming a documented feature is complete.
-- Identify thread ownership and whether a function is reachable from the real-time audio callback.
-- Preserve existing contracts only where they are needed for legacy testing or behavioral comparison; do not extend the C ABI/Dart FFI as the target architecture.
-- Never perform file/network I/O, unpredictable allocation, blocking calls or contended locking in any real-time audio callback.
-- Add or update tests for any legacy behavior changed, and report the platform and test evidence.
-- Do not claim Windows/macOS runtime or audio hardware support without testing the relevant platform.
-- Keep changes focused; port validated behavior to the native C++ target instead of mechanically translating source.
+- Do not add Rust-first product features unless a task explicitly requires legacy maintenance.
+- Preserve the old engine during migration for behavior comparison; do not delete it wholesale.
+- Inspect source and tests before treating documentation as evidence.
+- Port validated behavior to C++/JUCE rather than mechanically translating source.
+- Identify thread ownership and all code reachable from the legacy real-time callback.
+- Preserve old contracts only where needed for reference/testing; do not extend the C ABI/Dart FFI as the target architecture.
+- Never perform I/O, unpredictable allocation/deallocation, blocking calls, or contended locking in a real-time callback.
+- Do not claim platform/device support without relevant tests.
+- For target work, read AGENTS.md, docs/CPP_MIGRATION_PLAN.md, and docs/PROJECT_STATE.md.
