@@ -2,34 +2,39 @@
 
 ## Vision
 
-Aetherband is a free, open-source desktop DAW designed to combine an expressive, arrangement-first creative workspace with reliable native audio processing. The product prioritizes low-friction songwriting, deep editing when needed, portability, and transparent engineering.
+Aetherband is a free and open-source desktop DAW designed around an expressive, arrangement-first creative workspace, reliable native audio, and a processing architecture the project can evolve itself. It should support both focused songwriting and deeper sound design without making creative work feel like operating unrelated tools.
 
-## Architecture decision
+This is a target vision, not a claim that the planned features are currently complete.
 
-- **Desktop UI:** Flutter + Dart.
-- **Audio engine and DSP:** Rust.
-- **Native boundary:** versioned C ABI consumed through Dart FFI.
-- **Initial platforms:** Windows and macOS.
+## Architecture direction
 
-Flutter is the selected frontend because the project needs fine-grained control over timeline, waveform, mixer and instrument UI; rapid visual iteration; consistent rendering across supported desktops; and room to profile and optimize custom DAW interactions. This does not imply automatic performance wins: rendering and large-session behavior must be measured.
+- **Primary language:** C++20 or newer where supported.
+- **Desktop UI:** native C++ framework; JUCE is a leading candidate, subject to a Windows/macOS technical spike.
+- **Audio runtime:** C++ modules with explicit real-time thread and device-lifecycle contracts.
+- **DSP:** an Aetherband-owned processing graph and processor architecture, with external libraries allowed for well-scoped algorithms or infrastructure.
+- **Platforms:** Windows and macOS are required targets.
+- **Optional language integrations:** C# may be considered only when a concrete use case justifies the added runtime and interface boundary.
 
-The previous Avalonia/C# frontend has been removed from the desktop target. The product has one intended desktop UI to avoid duplicating frontend work and splitting feature parity across frameworks.
+Flutter/Dart are no longer the target UI stack. The existing Rust/Flutter implementation is retained during migration as a behavioral reference; it must not be deleted wholesale before the replacement demonstrates tested parity for the agreed workflows.
 
 ## Core principles
 
-1. **Real-time audio integrity:** no UI work, file I/O, allocation or blocking operation in the audio callback.
-2. **Intuitive by default, deep on demand:** a clear arrangement workflow with precise tools when needed.
-3. **Desktop-first:** keyboard, mouse, high-DPI and multi-window workflows are first-class.
-4. **Native audio core:** decoding, DSP, mixing and device I/O remain in Rust.
-5. **Explicit FFI:** documented ABI, validated layouts, clear ownership and real error reporting.
-6. **Non-destructive editing:** imported sources are preserved and project state is recoverable.
-7. **Honest capability claims:** mock UI is not a substitute for implemented and tested engine behavior.
-8. **Open source:** GPLv3, reproducible builds and no proprietary lock-in.
+1. **Creative continuity:** recording, arrangement, editing, sound design and mixing should form one coherent workflow.
+2. **Native reliability:** audio-device behavior, timing, clean shutdown and media handling must be verified on supported systems.
+3. **DSP ownership:** Aetherband controls its graph semantics, routing, parameter model and real-time execution. It does not need to reinvent every standard DSP algorithm.
+4. **Real-time discipline:** no blocking I/O, allocation or contended locks in the audio callback.
+5. **Modular architecture:** UI, project model, media, audio runtime, DSP and instruments have clear contracts and independent tests.
+6. **Honest status:** separate planned features, prototypes, implemented code and verified behavior.
+7. **Open-source sustainability:** prefer GPL-compatible dependencies, documented trade-offs and reproducible builds.
 
-## Long-term capabilities
+## Initial migration objective
 
-- Reliable multitrack playback, recording, project save/load and export.
-- Waveforms, non-destructive editing, undo/redo and advanced mixing.
-- MIDI editing, built-in instruments and native effects.
-- Plugin hosting after compatibility, legal and crash-containment review.
-- Shared project format and possible future companion clients, only after the desktop product is stable.
+Build a minimal native vertical slice before expanding the feature set:
+
+1. Build and test the C++ foundation on Windows and macOS.
+2. Process a known signal through the DSP path and render deterministic offline audio.
+3. Verify audio-device playback and lifecycle behavior.
+4. Import WAV, arrange and play multiple tracks, mix, save/reopen a project and export WAV.
+5. Port HypnoSynth and other proven behavior in small, tested increments.
+
+See [the C++ migration plan](CPP_MIGRATION_PLAN.md) and [the feature tracker](FEATURE_TRACKER.md) for implementation status and acceptance evidence.
