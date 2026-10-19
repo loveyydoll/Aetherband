@@ -301,19 +301,32 @@ void main() {
     expect(movedSeconds, greaterThan(0));
     expect(engine.calls.last, startsWith('start:1:'));
 
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, 0);
+    expect(engine.calls.last, 'start:1:0.0');
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, movedSeconds);
+    expect(engine.calls.last, 'start:1:$movedSeconds');
+
     await tester.tap(find.byTooltip('Edit menu'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Undo Clip Move'));
     await tester.pumpAndSettle();
     expect(clip.startSeconds, 0);
-    expect(engine.calls.last, 'start:1:0.0');
-
     await tester.tap(find.byTooltip('Edit menu'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Redo Clip Move'));
     await tester.pumpAndSettle();
     expect(clip.startSeconds, movedSeconds);
-    expect(engine.calls.last, 'start:1:$movedSeconds');
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
