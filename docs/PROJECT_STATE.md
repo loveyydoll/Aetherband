@@ -46,7 +46,7 @@ See [Feature Tracker](FEATURE_TRACKER.md) for the living backlog. Initial order:
 
 ## Current verification and uncertainty
 
-On 2026-10-19, published head `5b9e7c7` adds the tested Delete-key action. Local Windows checks pass: Rust workspace tests (47 core, 8 ABI, callback-allocation and WASAPI smoke target), Clippy, release DLL build, Flutter analysis and 49 Flutter tests, plus the focused Dart FFI integration test against the release DLL and default output device. The WASAPI smoke produces nonzero callback samples. These results do not prove audible output through speakers or successful microphone/line-in capture. Clippy passes with existing missing-`# Safety` documentation warnings in C ABI exports. Rust run 289 and Flutter desktop run 85 are pending on the current head.
+On 2026-10-19, published head `d7f6543` includes the tested Delete-key action and connects the advertised Ctrl+Alt+E export shortcut. Local Windows checks pass: Rust workspace tests (47 core, 8 ABI, callback-allocation and WASAPI smoke target), Clippy, release DLL build, Flutter analysis and 50 Flutter tests, plus the focused Dart FFI integration test against the release DLL and default output device. The WASAPI smoke produces nonzero callback samples. These results do not prove audible output through speakers or successful microphone/line-in capture. Clippy passes with existing missing-`# Safety` documentation warnings in C ABI exports. Current Windows CI runs are queued.
 
 PR #33 remains open and unmerged. New local edits must be published to the same PR and checked by remote CI; do not infer sound quality or hardware recording from callback/unit tests alone.
 ## Required handoff format

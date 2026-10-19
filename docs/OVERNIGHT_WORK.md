@@ -17,9 +17,9 @@ Branch: `feat/hypnosynth-daw-foundations`. PR: [#33](https://github.com/loveyydo
 
 - Windows `cargo test --workspace --jobs 1`: 47 core tests, 8 C ABI tests, callback-allocation test and WASAPI smoke target pass. The C ABI crate disables irrelevant doctests to avoid duplicate `daw_core` crate candidates.
 - Windows workspace Clippy passes with existing C ABI missing-`# Safety` documentation warnings; optimized C ABI DLL build passes.
-- Flutter analysis is clean; 49 Flutter tests pass and the optional native test is skipped in the default suite. The focused Windows FFI integration test passes against the freshly built release DLL and default output device, covering device selection, synth/sequence state restoration, transport, import, mixer, stereo export and shutdown.
+- Flutter analysis is clean; 50 Flutter tests pass and the optional native test is skipped in the default suite. The focused Windows FFI integration test passes against the freshly built release DLL and default output device, covering device selection, synth/sequence state restoration, transport, import, mixer, stereo export and shutdown.
 - A separate opt-in WASAPI smoke test reaches nonzero HypnoSynth samples and shuts down cleanly. This confirms callback output, not speaker audibility.
-- The Windows runner is now checked into the desktop project; its local debug build passes. Commit `5b9e7c7` publishes the selected-track Delete shortcut with a passing widget test; the PR description is refreshed. Rust run 289 (`39250273385`) and Flutter desktop run 85 (`39250273412`) are running for this head. Local verification includes all 49 Flutter tests, clean analysis and a successful Windows debug build.
+- The Windows runner is now checked into the desktop project; its local debug build passes. Commit `d7f6543` wires the advertised Ctrl+Alt+E export shortcut and includes the tested selected-track Delete action. All 50 Flutter tests, analysis and the Windows debug build pass locally. CI runs Rust 291 (`39250815643`) and Flutter desktop 87 (`39250815823`) are queued for this head.
 
 ## Remaining limits and next work
 
