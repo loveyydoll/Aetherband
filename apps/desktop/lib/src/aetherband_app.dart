@@ -815,9 +815,11 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
             }
           });
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Track removal was incomplete: $error')),
-        );
+        final message = removedNativeIds.isEmpty
+            ? 'Track removal failed: $error'
+            : 'Track removal was incomplete after some regions were removed: $error';
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
       }
     } finally {
       if (mounted) setState(() => _trackOperationPending = false);
