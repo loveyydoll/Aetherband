@@ -553,6 +553,133 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     }
   }
 
+  Future<void> _joinSelectedRegions() async {
+    final track = _selectedTrack;
+    final selected =
+        track?.clips.where((item) => item.id == _selectedClipId).firstOrNull;
+    final engine = _engine;
+    if (track == null || selected == null || selected.isDemo) {
+      _showFeatureUnavailable('Joining unselected or demo regions');
+      return;
+    }
+    if (_trackOperationPending ||
+        _historyOperationPending ||
+        _initializingEngine) {
+      return;
+    }
+    if (_telemetry.isPlaying || _isRecording) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Stop playback and recording before joining regions.'),
+      ));
+      return;
+    }
+    if (engine == null || engine is! AudioRegionEngine) {
+      _showFeatureUnavailable('Audio region editing');
+      return;
+    }
+    final selectedIndex = track.clips.indexOf(selected);
+    final previous = selectedIndex > 0 ? track.clips[selectedIndex - 1] : null;
+    final next = selectedIndex + 1 < track.clips.length
+        ? track.clips[selectedIndex + 1]
+        : null;
+    final pair = _regionsAreContiguous(previous, selected)
+        ? (previous!, selected)
+        : _regionsAreContiguous(selected, next)
+            ? (selected, next!)
+            : null;
+    if (pair == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text(
+            'Select one of two adjacent regions from the same source to join them.'),
+      ));
+      return;
+    }
+    final (left, right) = pair;
+    final leftNativeId = _nativeIdForClip(left);
+    final rightNativeId = _nativeIdForClip(right);
+    final leftDuration = left.durationSeconds;
+    final rightDuration = right.durationSeconds;
+    if (leftNativeId == null ||
+        rightNativeId == null ||
+        leftDuration == null ||
+        rightDuration == null) {
+      _showEngineUnavailable();
+      return;
+    }
+    final joinedDuration = leftDuration + rightDuration;
+    final joinedWaveform =
+        left.waveformPeaks == null || right.waveformPeaks == null
+            ? null
+            : <double>[...left.waveformPeaks!, ...right.waveformPeaks!];
+    final leftWaveform = left.waveformPeaks == null
+        ? null
+        : List<double>.of(left.waveformPeaks!);
+    setState(() => _trackOperationPending = true);
+    try {
+      final regionEngine = engine as AudioRegionEngine;
+      await regionEngine.setTrackRegionSeconds(
+        leftNativeId,
+        left.sourceStartSeconds,
+        joinedDuration,
+      );
+      try {
+        await engine.removeTrack(rightNativeId);
+      } catch (_) {
+        await regionEngine.setTrackRegionSeconds(
+          leftNativeId,
+          left.sourceStartSeconds,
+          leftDuration,
+        );
+        rethrow;
+      }
+      setState(() {
+        left.durationSeconds = joinedDuration;
+        left.waveformPeaks = joinedWaveform;
+        track.clips.remove(right);
+        _nativeRegionIds.remove(right.id);
+        _confirmedClipStarts.remove(right.id);
+        _selectedClipId = left.id;
+        _markSessionChanged();
+      });
+      _pushHistory(_RegionSplitEdit(
+        trackId: track.id,
+        originalClip: left,
+        rightClip: right,
+        originalDuration: joinedDuration,
+        originalWaveform:
+            joinedWaveform == null ? null : List<double>.of(joinedWaveform),
+        splitWaveform: leftWaveform,
+        rightNativeId: rightNativeId,
+        wasJoined: true,
+      ));
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not join audio regions: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _trackOperationPending = false);
+    }
+  }
+
+  bool _regionsAreContiguous(ClipModel? left, ClipModel? right) {
+    if (left == null || right == null || left.isDemo || right.isDemo) {
+      return false;
+    }
+    final leftDuration = left.durationSeconds;
+    final rightDuration = right.durationSeconds;
+    final sameSource = left.sourceDurationSeconds != null &&
+        left.sourceDurationSeconds == right.sourceDurationSeconds;
+    return sameSource &&
+        leftDuration != null &&
+        rightDuration != null &&
+        (left.startSeconds + leftDuration - right.startSeconds).abs() < 0.02 &&
+        (left.sourceStartSeconds + leftDuration - right.sourceStartSeconds)
+                .abs() <
+            0.02;
+  }
+
   Future<void> _importAudio() async {
     if (_trackOperationPending || _initializingEngine) return;
     final engine = _engine;
@@ -1635,6 +1762,12 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       case 'region.split':
         unawaited(_splitSelectedRegionAtPlayhead());
         return;
+      case 'region.join':
+        unawaited(_joinSelectedRegions());
+        return;
+      case 'region.bounce':
+        _showFeatureUnavailable('Bounce in Place');
+        return;
       case 'edit.cut':
         if (_copySelectedAudioTrack()) unawaited(_removeSelectedTrack());
         return;
@@ -1973,7 +2106,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     final regionEngine = engine as AudioRegionEngine;
     setState(() => _trackOperationPending = true);
     try {
-      if (redo) {
+      final doSplit = redo != edit.wasJoined;
+      if (doSplit) {
         final sourcePath = _nativeTrackSources[track.id];
         if (sourcePath == null ||
             await engine.getTrackCount() >= AudioSessionDocument.maxTracks) {
@@ -2552,6 +2686,7 @@ class _RegionSplitEdit {
     required this.originalWaveform,
     required this.splitWaveform,
     required this.rightNativeId,
+    this.wasJoined = false,
   });
 
   final String trackId;
@@ -2561,6 +2696,7 @@ class _RegionSplitEdit {
   final List<double>? originalWaveform;
   final List<double>? splitWaveform;
   int rightNativeId;
+  final bool wasJoined;
 }
 
 class _MenuAction {

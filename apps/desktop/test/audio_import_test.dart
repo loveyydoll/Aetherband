@@ -256,7 +256,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('undo and redo restore a split native audio region',
+  testWidgets('split and join native regions participate in undo history',
       (tester) async {
     final engine = FakeEngine();
     await mountWorkspace(tester, engine);
@@ -293,6 +293,27 @@ void main() {
     expect(await engine.getTrackCount(), 2);
     expect(
         engine.calls.where((call) => call.startsWith('region:')), hasLength(5));
+
+    await tester.tap(find.text('Region'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Join Selected Regions'));
+    await tester.pumpAndSettle();
+    expect(importedClip, findsOneWidget);
+    expect(await engine.getTrackCount(), 1);
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(importedClip, findsNWidgets(2));
+    expect(await engine.getTrackCount(), 2);
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Redo'));
+    await tester.pumpAndSettle();
+    expect(importedClip, findsOneWidget);
+    expect(await engine.getTrackCount(), 1);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
