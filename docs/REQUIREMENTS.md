@@ -1,81 +1,51 @@
-# System Requirements: Aetherband
+# Aetherband System Requirements
 
-## 1. Functional Requirements
+**Scope:** Product and engineering requirements for the native C++/JUCE target. Requirements are goals until implemented and verified; this document is not proof of current capability.
 
-### 1.1 Audio Engine & Hardware I/O
-- **FR-1.1 (P0): Device Enumeration & Selection:** The engine must query and list all available audio output and input devices on the host operating system, reporting device names, default sample rates, and supported buffer sizes.
-- **FR-1.2 (P0): Stream Lifecycle Management:** The engine must reliably open, start, pause, stop, and close audio streams without crashing or leaving devices in a locked state.
-- **FR-1.3 (P0): Device Disconnection Handling:** When an active audio output device is unplugged or switched by the OS, the engine must safely pause playback and notify the UI without crashing.
-- **FR-1.4 (P0): Real-Time Test Signal Generation:** The engine must provide an internal pure Sine Wave oscillator with adjustable frequency (20 Hz – 20 kHz) and amplitude (-60 dB to 0 dB) for pipeline verification.
-- **FR-1.5 (P1): Audio File Decoding & Streaming:** The engine must decode and stream audio files from disk through an asynchronous ring-buffer. WAV playback has been tested; FLAC, MP3, AIFF, OGG, and AAC/M4A are candidates based on the decoding stack and must be confirmed against the implemented decoder configuration and end-to-end tests.
-- **FR-1.6 (P1): Multi-Track Summing & Panning:** The engine must sum multiple simultaneous audio tracks into a master stereo bus using standard pan laws (Equal Power -3 dB).
-- **FR-1.7 (P2): Audio Recording:** The engine must record incoming audio from an input device, writing uncompressed 24-bit/32-bit float WAV data to disk on a background thread.
-- **FR-1.8 (P2): Sample-Rate Conversion:** The engine must dynamically resample audio assets matching the active hardware output rate using high-quality sinc interpolation.
+## 1. Audio engine and hardware I/O
 
-### 1.2 Transport & Timeline
-- **FR-2.1 (P0): Transport Controls:** Play, Pause, Stop and Seek must produce immediate, observable engine behavior. Stop must silence the output, reset the playhead and allow a subsequent Play to restart from the beginning. The Stop fix is reported complete; keep acceptance/verification evidence current and do not describe the original regression as active unless reproduced.
-- **FR-2.2 (P1): Timeline & Musical Grid:** Support sample-accurate playhead tracking, beats-per-minute (BPM) tempo configuration, and musical time signatures (e.g., 4/4, 3/4).
-- **FR-2.3 (P1): Clip Arrangement:** Support placing, moving, splitting, trimming, and looping audio clips on discrete tracks.
+- **FR-1.1 — Device enumeration and selection:** List available input/output devices and report relevant capabilities where the platform exposes them.
+- **FR-1.2 — Stream lifecycle:** Reliably open, start, stop, and close streams without crashes or leaving devices locked.
+- **FR-1.3 — Device changes:** Handle device removal or system-default changes safely and communicate failure/recovery to the UI.
+- **FR-1.4 — Test signal:** Provide a deterministic internal test signal for pipeline verification.
+- **FR-1.5 — File decoding and streaming:** Decode supported formats off the real-time callback and feed playback through a bounded, safe buffering path. WAV is the only format previously reported as tested in the legacy implementation; every other format needs explicit end-to-end tests.
+- **FR-1.6 — Multitrack mixing:** Sum multiple tracks to a master output with documented gain and pan laws.
+- **FR-1.7 — Recording:** Record input to disk without blocking the audio callback; define failure and recovery behavior.
+- **FR-1.8 — Transport:** Define play, stop, seek, loop, and scheduling semantics with predictable timing.
 
-### 1.3 User Interface (Desktop)
-- **FR-3.1 (P0): Real-Time Metering:** Render stereo Peak and RMS volume levels at $\ge 60\text{ FPS}$ with smooth decay physics.
-- **FR-3.2 (P0): Master Volume Fader:** Adjust master gain with de-zippering/smoothing to prevent audible stepping artifacts.
-- **FR-3.3 (P1): Waveform Display:** Render visual audio waveforms for clips with multi-resolution peak caching.
-- **FR-3.4 (P1): Device Configuration Dialog:** Allow the user to select input/output devices, sample rates (44.1 kHz, 48 kHz, 96 kHz), and buffer sizes (64, 128, 256, 512, 1024 frames).
+## 2. DSP and instruments
 
-### 1.4 Project Persistence & Export
-- **FR-4.1 (P1): Project Serialization:** Save and load project metadata (tracks, clip locations, tempo, mixer volumes) into a versioned format (`.dawproject`).
-- **FR-4.2 (P2): Offline Master Bounce:** Render the entire arrangement to a 24-bit 48 kHz stereo WAV file faster than real-time.
+- Implement an executing processor graph, not only graph metadata.
+- Define processor prepare/process/release lifecycle, channel layout, parameter changes, automation timing, routing, graph validation, and safe graph replacement.
+- Support deterministic offline processing and golden-signal tests.
+- Port HypnoSynth only after its behavior and state requirements have been audited.
+- External DSP algorithms are allowed when compatible with project licensing and maintenance goals.
 
----
+## 3. Project/session workflow
 
-## 2. Non-Functional Requirements
+- Provide a versioned session model with stable identifiers.
+- Import and arrange WAV audio, mix multiple tracks, save and reopen sessions, and export stereo WAV.
+- Validate files before replacing the active session.
+- Report missing media and failed writes clearly.
+- Test round-trip persistence, malformed inputs, missing media, and recovery paths.
 
-### 2.1 Real-Time Audio Constraints (Hard Constraints)
-- **NFR-1.1 (Zero Heap Allocation):** The real-time audio callback running on the dedicated OS audio thread must perform **zero** dynamic memory allocations or deallocations (`malloc`, `free`, `Vec::push`, `Box::new`). All buffers must be pre-allocated.
-- **NFR-1.2 (Lock-Free Synchronization):** The audio callback must **never** acquire an operating system mutex or blocking lock (`std::sync::Mutex`, critical section). All communication with other threads must use wait-free Single-Producer Single-Consumer (SPSC) ring buffers.
-- **NFR-1.3 (Zero Blocking I/O):** The audio callback must never perform disk reads, writes, socket operations, or operating system logging.
-- **NFR-1.4 (Real-Time Budget):** At 48 kHz with a 128-sample buffer, the maximum allowed execution time per callback block is **$2.0\text{ ms}$** (leaving a 0.67 ms safety margin below the hard 2.67 ms deadline).
+## 4. Desktop UI and platform support
 
-### 2.2 Performance & Responsiveness
-- **NFR-2.1 (UI Frame Rate):** The desktop interface must render at a consistent 60 FPS (or display refresh rate up to 144 Hz) without stutter during continuous audio playback.
-- **NFR-2.2 (Control Latency):** Transport commands (Play, Stop, Fader adjustments) sent from the UI must take effect in the audio engine within one audio buffer cycle ($< 10\text{ ms}$).
-- **NFR-2.3 (Memory Footprint):** Idle memory consumption of the desktop application must remain under $150\text{ MB}$.
+- Use C++/JUCE and CMake.
+- Windows and macOS are mandatory targets.
+- Provide a music-oriented native workspace with arrangement, mixer, transport, menus, keyboard interaction, resizable panels, and high-DPI support.
+- Keep UI work off the real-time audio callback.
+- Verify build, launch, device lifecycle, and packaging independently on both platforms.
 
-### 2.3 Cross-Platform & Build
-- **NFR-3.1 (Supported OS Versions):**
-  - Windows: Windows 10 (version 1903+) and Windows 11 (64-bit x86_64).
-  - macOS: macOS 12 (Monterey) through current macOS release (Apple Silicon aarch64 and Intel x86_64).
-- **NFR-3.2 (Clean Build System):** The core engine must compile with standard `cargo build`, and the desktop application must build with standard `dotnet build`.
+## 5. Real-time and quality requirements
 
----
+- No blocking I/O, unpredictable allocation/deallocation, contended locks, or unbounded work in the callback.
+- Prepare resources off-thread and define safe ownership/teardown.
+- Add unit, integration, offline audio, and device lifecycle tests.
+- Record exact OS/toolchain/test evidence; do not infer support from source presence.
 
-## 3. Platform-Specific Audio Requirements
+## 6. Deferred scope
 
-### Windows
-- **Driver Model:** Support **WASAPI Shared** (default, universally compatible) and **WASAPI Exclusive** (low latency, bypasses Windows mixer).
-- **Extensibility:** Architecture must accommodate a future **ASIO** driver backend for professional audio interfaces via an optional compile-time feature.
-- **Binary Format:** Core engine compiles as a 64-bit dynamic link library (`daw_core.dll`).
+External plugin hosting, advanced project interchange, additional codecs, mobile apps, and cross-language integrations are not prerequisites for the first usable DAW vertical slice. Revisit them after the core workflow is dependable.
 
-### macOS
-- **Driver Model:** Native integration with **CoreAudio HAL**.
-- **Sample Rate Handling:** CoreAudio handles hardware rate conversions seamlessly, but internal DSP operates at the device's native rate to preserve fidelity.
-- **Binary Format:** Core engine compiles as a 64-bit dynamic library (`libdaw_core.dylib`).
-
----
-
-## 4. Priority Matrix\n\n**Current stabilization finding (2026-10-16):** Runtime testing reports that Stop resets the visible timer/playhead but audio continues. Treat FR-1.2 and FR-2.1 as not accepted until a regression test and manual end-to-end test prove that the audio callback consumes Stop, outputs silence, and resets transport state.
-
-| Feature / Area | Priority | Target Milestone |
-| :--- | :--- | :--- |
-| Audio device discovery & stream start/stop | **P0 (Critical)** | MVP (Phase 1–2) |
-| Allocation-free real-time audio callback | **P0 (Critical)** | MVP (Phase 1) |
-| Sine oscillator & click-free gain fader | **P0 (Critical)** | MVP (Phase 1–2) |
-| Lock-free metering stream (Peak/RMS) | **P0 (Critical)** | MVP (Phase 1–2) |
-| C# Avalonia desktop shell with live VU meter | **P0 (Critical)** | MVP (Phase 2) |
-| Audio file decoder & background streaming | **P1 (High)** | Phase 3 |
-| Multi-track arrangement timeline & waveforms | **P1 (High)** | Phase 3 |
-| Project save/load format (`.dawproject`) | **P1 (High)** | Phase 4 |
-| Audio recording from microphone/line-in | **P2 (Medium)** | Phase 4 |
-| Offline master bounce export (WAV) | **P2 (Medium)** | Phase 4 |
-| Third-party plugin hosting (CLAP / VST3) | **P3 (Future)** | Phase 5 |
+See ARCHITECTURE.md, AUDIO_ENGINE.md, CPP_MIGRATION_PLAN.md, and FEATURE_TRACKER.md.
