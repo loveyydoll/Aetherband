@@ -18,6 +18,7 @@ Checkout: this `overnight/` directory. The Desktop checkout has pre-existing mer
 - Device backend always requests f32 despite reading the device's default format.
 - Callbacks over 2048 frames discard the tail while advancing the full transport duration.
 - Stream restart and decoded-block replacement free heap resources in the audio callback.
+- CPAL 0.15.3 could open the local WASAPI default output, but the process crashed with Windows `STATUS_INVALID_HANDLE` during stream teardown.
 - Baseline Windows `cargo test --workspace --all-targets`: 33 core tests, one callback allocation test and six FFI tests passed. Existing allocation test does not exercise real stream turnover/restart.
 
 SoundCraft reuse is authorized; only its ADSR envelope was adapted, and upstream attribution plus MIT license text are tracked in `third_party/soundcraft/`. Rust and Dart/Flutter are retained because audio DSP/CPAL has a concrete fit in Rust and the UI already uses Flutter; no extra language offered a clear advantage for this vertical slice.
@@ -27,5 +28,6 @@ SoundCraft reuse is authorized; only its ADSR envelope was adapted, and upstream
 - Fixed output conversion for common Windows CPAL default sample formats, callback overflow tail loss, stream-error telemetry, and callback-thread decoder/player destruction.
 - Added Rust HypnoSynth with three authored presets, real note events/macros/phrase/metronome/master controls, a 13-note pointer/computer keyboard, and persisted settings.
 - Replaced the initial fake arrangement with an empty session; connected mixer solo and v2 audio session persistence for imported tracks and synth settings.
-- Rust formatting, all workspace tests (38 core, 1 real-time allocation, 6 ABI), Windows C ABI build, core Clippy and Dart analyzer pass. Flutter test/build execution is blocked because the SDK tries to write a lockfile outside the approved writable root. No physical device listening is claimed.
+- Upgraded CPAL to 0.18.2 and adapted its stream/device API. On this Windows machine, a real default-device stream remained active, played a quiet HypnoSynth note with nonzero callback peaks (L 0.0058, R 0.0048; no reported device error), paused, and shut down cleanly. This verifies nonzero audio reached the active WASAPI callback; physical listening/loopback capture remains unverified.
+- Rust formatting, all workspace tests (38 core, 1 real-time allocation, 6 ABI), Windows C ABI release build, core Clippy and Dart analyzer pass. Flutter test/build execution is blocked locally because the SDK tries to write a lockfile outside the approved writable root; the single PR's Windows CI remains the fallback.
 - Still outstanding: Flutter widget tests and Windows app build on an approved SDK, physical Windows output/listening, and review of CI after opening one PR. Recording, stereo export, editable MIDI, waveform display, clip editing and undo/redo remain out of scope for this repair slice and must be labeled as incomplete.

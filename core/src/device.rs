@@ -116,7 +116,7 @@ impl CpalBackend {
         };
         device
             .default_output_config()
-            .map(|config| config.sample_rate().0)
+            .map(|config| config.sample_rate())
             .map_err(|e| DeviceError::FormatNotSupported(e.to_string()))
     }
 }
@@ -124,10 +124,11 @@ impl CpalBackend {
 impl AudioBackend for CpalBackend {
     fn enumerate_output_devices(&self) -> Result<Vec<DeviceInfo>, DeviceError> {
         let mut result = Vec::new();
-        let default_device_name = self
-            .host
-            .default_output_device()
-            .and_then(|d| d.name().ok());
+        let default_device_name = self.host.default_output_device().and_then(|d| {
+            d.description()
+                .ok()
+                .map(|description| description.name().to_owned())
+        });
 
         let devices = self
             .host
@@ -135,13 +136,16 @@ impl AudioBackend for CpalBackend {
             .map_err(|e| DeviceError::StreamBuildError(e.to_string()))?;
 
         for (idx, device) in devices.enumerate() {
-            let name = device.name().unwrap_or_else(|_| format!("Device {}", idx));
+            let name = device
+                .description()
+                .map(|description| description.name().to_owned())
+                .unwrap_or_else(|_| format!("Device {}", idx));
             let is_default = default_device_name.as_ref() == Some(&name);
 
             // Query supported config or fallback to defaults
             let (default_sample_rate, channels) = device
                 .default_output_config()
-                .map(|cfg| (cfg.sample_rate().0, cfg.channels()))
+                .map(|cfg| (cfg.sample_rate(), cfg.channels()))
                 .unwrap_or((48000, 2));
 
             result.push(DeviceInfo {
@@ -169,12 +173,15 @@ impl AudioBackend for CpalBackend {
                 .ok_or(DeviceError::NoDefaultDevice)?,
         };
 
-        let device_name = device.name().unwrap_or_else(|_| "Unknown Device".into());
+        let device_name = device
+            .description()
+            .map(|description| description.name().to_owned())
+            .unwrap_or_else(|_| "Unknown Device".into());
         let default_config: SupportedStreamConfig = device
             .default_output_config()
             .map_err(|e| DeviceError::FormatNotSupported(e.to_string()))?;
 
-        let sample_rate = default_config.sample_rate().0;
+        let sample_rate = default_config.sample_rate();
         let channels = default_config.channels();
 
         let sample_format = default_config.sample_format();
@@ -222,10 +229,10 @@ fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
     mut processor: AudioProcessor,
     channels: usize,
     running: &Arc<AtomicBool>,
-) -> Result<Stream, cpal::BuildStreamError> {
+) -> Result<Stream, cpal::Error> {
     let running = Arc::clone(running);
     device.build_output_stream(
-        config,
+        *config,
         move |data: &mut [T], _: &OutputCallbackInfo| processor.process_samples(data, channels),
         move |_| {
             running.store(false, Ordering::Relaxed);
