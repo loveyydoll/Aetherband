@@ -2234,7 +2234,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
             sequenceRegionId,
             selectedPattern.startSeconds,
             settings.sequenceNotes);
-        if (notesChanged && selectedTrack != null) {
+        if (mounted && notesChanged && selectedTrack != null) {
           _pushHistory(_SequenceNotesEdit(
             trackId: selectedTrack.id,
             clip: selectedPattern,
@@ -2715,7 +2715,13 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
           }
         }
       } catch (_) {}
-      if (mounted) _reportMixerFailure('Pattern note history', error);
+      if (mounted) {
+        setState(() {
+          edit.clip.sequenceNotes = previous;
+          _performance = _performance.copyWith(sequenceNotes: previous);
+        });
+        _reportMixerFailure('Pattern note history', error);
+      }
     }
   }
 
