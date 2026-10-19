@@ -452,6 +452,10 @@ void main() {
     expect(saved.tracks.single.muted, isTrue);
     expect(saved.tracks.single.solo, isTrue);
 
+    // The save runs asynchronously from the menu callback. Wait for the UI
+    // completion signal before issuing another session command.
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Saved 1 real audio tracks.'), findsOneWidget);
     await tester.tap(find.byTooltip('File menu'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Open Session…'));
