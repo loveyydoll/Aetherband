@@ -79,6 +79,10 @@ void main() {
 
     expect(engine.calls, contains('output:1'));
     expect(find.textContaining('OUTPUT · USB Interface'), findsOneWidget);
+    expect(
+      find.textContaining('Playback stops and returns to the start'),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
