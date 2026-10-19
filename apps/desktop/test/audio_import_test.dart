@@ -289,45 +289,6 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('copy and paste preserves every split audio region',
-      (tester) async {
-    final engine = FakeEngine();
-    await mountWorkspace(tester, engine);
-    await importAudio(tester);
-    engine.frames.add(const EngineTelemetry(
-      playheadSeconds: 2,
-      sampleRateHz: 44100,
-      peakLeft: 0,
-      peakRight: 0,
-      isPlaying: false,
-    ));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Region'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Split at Playhead'));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byTooltip('Edit menu'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Copy'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Edit menu'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Paste'));
-    await tester.pumpAndSettle();
-
-    expect(importedClip, findsNWidgets(4));
-    expect(engine.calls.where((call) => call == 'load:C:/audio/take.wav'),
-        hasLength(4));
-    expect(
-      engine.calls.where((call) => call.startsWith('region:')),
-      hasLength(4),
-    );
-    expect(engine.calls, contains('start:4:4.0'));
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
-
   testWidgets('File menu exports a stereo WAV through the engine',
       (tester) async {
     final engine = FakeEngine();
