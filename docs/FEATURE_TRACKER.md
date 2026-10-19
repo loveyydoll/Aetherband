@@ -1,59 +1,48 @@
 # Aetherband Feature Tracker
 
-**Last reviewed:** 2026-10-19  
-**Purpose:** Migration handoff and prioritization. Status labels describe the current C++ target, not assumed parity with the legacy implementation.
+**Reviewed:** 2026-10-19  
+**Scope:** Native C++/JUCE target. Legacy behavior is not automatically counted as ported.
 
 ## Status vocabulary
 
-- **Verified:** acceptance criteria have been tested and evidence is recorded for the stated platform.
-- **Implemented — unverified:** code exists, but required runtime/platform behavior has not been verified.
-- **Prototype:** demonstration or incomplete implementation; do not present it as a complete workflow.
-- **In progress:** active work exists but the feature is incomplete.
-- **Planned:** not implemented yet.
-- **Blocked:** a named dependency or decision prevents progress.
+- **Verified:** acceptance criteria passed with evidence on the stated platform.
+- **Implemented — unverified:** code exists; required tests/runtime/platform behavior has not been established.
+- **Prototype:** incomplete demonstration, not a complete workflow.
+- **In progress:** active implementation underway.
+- **Planned:** not implemented in the target.
+- **Legacy reference:** exists in Rust/Flutter/Dart but is not target parity.
 
-A merged pull request, API declaration, successful compile, or old implementation is not proof that the target C++ feature is verified.
+## Current architecture
 
-## Current target architecture
+C++20+ / JUCE / CMake; Windows and macOS required; Aetherband owns DSP/runtime semantics. See ADR-008 in DECISIONS.md.
 
-C++20/CMake is the target foundation. Windows and macOS are required platforms. The native desktop framework is not finalized; JUCE is a leading candidate pending a technical spike. The existing Rust/C ABI/Flutter/Dart stack is retained as a reference during migration, not as the target architecture.
-
-## Current C++ foundation
-
-| Feature | Status | Evidence / next action |
+| Area | Target status | Evidence / next action |
 |---|---|---|
-| CMake C++20 project | Implemented — unverified | Added in `native/CMakeLists.txt`; build on Windows and macOS |
-| Planar float audio buffer | Implemented — unverified | Added implementation and unit test; run CTest |
-| Additive mixer | Implemented — unverified | Added implementation and unit test; run CTest |
-| Native test harness | Implemented — unverified | CTest configured; run on both target platforms |
-| Audio-device lifecycle and callback | Planned | Define device abstraction, callback ownership and lifecycle; prove playback on Windows/macOS |
-| Transport and scheduling | Planned | Define timing model and bounded command flow |
-| Executing DSP graph | Planned | Implement processor lifecycle, graph validation and actual audio processing |
-| Deterministic offline rendering | Planned | Add known-signal/golden-output tests |
-| Project/session model | Planned | Versioned schema, stable IDs, save/reopen and missing-media behavior |
-| WAV import and multitrack playback | Planned for C++ target | End-to-end vertical slice |
-| WAV export | Planned for C++ target | Deterministic offline stereo render and output validation |
-| HypnoSynth C++ port | Planned | Audit original implementation and define regression fixtures |
-| Recording, MIDI, effects, automation, undo/redo | Planned | Add in small tested slices after the core runtime works |
-| Native desktop UI | Planned | Evaluate JUCE and alternatives through Windows/macOS spike |
-| C# integrations | Optional / not currently needed | Add only for a concrete, justified use case |
+| CMake C++20 scaffold | Implemented — unverified | Build on Windows and macOS |
+| Planar float audio buffer | Implemented — unverified | Run tests and boundary/invalid-input cases |
+| Additive mixer | Implemented — unverified | Run tests and deterministic audio cases |
+| JUCE application shell | Planned | Integrate JUCE and verify builds/launch on both OSes |
+| Device enumeration/lifecycle | Planned | Enumerate, open, play test signal, stop, close, repeat |
+| Transport and scheduling | Planned | Define clock and command semantics |
+| Real-time command/telemetry flow | Planned | Select bounded mechanism and document overflow/ownership |
+| Executing DSP graph | Planned | Process actual buffers; add routing/golden-signal tests |
+| Offline rendering | Planned | Deterministic render tests and output validation |
+| Session/project model | Planned | Versioned schema, save/reopen, safe failure paths |
+| WAV import/background decode | Planned | Test large files, cancellation, errors, and resampling |
+| Multitrack arrangement/playback/mix | Planned | End-to-end vertical slice |
+| WAV export | Planned | Validate duration, channels, sample rate, and output file |
+| HypnoSynth C++ port | Planned | Audit original behavior and create regression fixtures |
+| Recording/MIDI/effects/automation/undo-redo | Planned | Deliver after runtime and project model |
+| Other audio formats | Planned / unverified | Validate each format independently |
+| Plugin hosting/interchange | Deferred | Reconsider after reliable core workflow |
 
-## Immediate priorities
+## Immediate priority order
 
-1. Configure/build the C++ foundation and run native tests on Windows and macOS.
-2. Audit legacy Rust code, tests and session behavior to create a feature-by-feature port map.
-3. Define audio buffer, sample-rate, block-size, channel-layout, processor lifecycle and command-queue contracts.
-4. Implement a safe audio runtime and an executing DSP graph.
-5. Prove deterministic offline processing and actual hardware playback.
-6. Deliver a basic end-to-end WAV import → arrange → playback/mix → save/reopen → export workflow.
-7. Port HypnoSynth and expand production features only after the vertical slice is reliable.
+1. JUCE/CMake platform proof.
+2. Device lifecycle and known-signal playback.
+3. Real-time runtime contracts.
+4. Executing DSP graph and offline tests.
+5. WAV import → arrange → play/mix → save/reopen → export.
+6. HypnoSynth and additional production features.
 
-## Evidence requirements
-
-For every status change, record:
-- the code path and tests involved;
-- whether the test is unit, integration, offline audio, or manual hardware verification;
-- the operating system and relevant audio device where applicable;
-- known limitations and what remains unverified.
-
-See [C++ Migration Plan](CPP_MIGRATION_PLAN.md), [Project State](PROJECT_STATE.md), and [Architecture](ARCHITECTURE.md).
+Update statuses only with relevant test evidence, OS, and limitations. A merge, API declaration, or source file is not evidence of runtime correctness.
