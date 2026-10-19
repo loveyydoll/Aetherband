@@ -456,10 +456,18 @@ void main() {
     // completion signal before issuing another session command.
     await tester.pumpAndSettle();
     expect(find.textContaining('Saved 1 real audio tracks.'), findsOneWidget);
+    // Let the save's finally block release the session-operation guard.
+    await tester.pump();
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('File menu'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Open Session…'));
     await tester.pump();
+    await tester.pumpAndSettle();
+    if (find.text('Unsaved audio session changes').evaluate().isNotEmpty) {
+      await tester.tap(find.text('Discard changes'));
+      await tester.pumpAndSettle();
+    }
     await tester.runAsync(() async {
       for (var i = 0; i < 100 && !stagedEngine.isCompleted; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 20));
