@@ -257,19 +257,28 @@ void main() {
       'removal targets the requested track when selection changes in flight',
       (tester) async {
     final engine = FakeEngine();
-    await mountWorkspace(tester, engine);
+    var pick = 0;
+    await mountWorkspace(
+      tester,
+      engine,
+      picker: () async => XFile(
+        pick++ == 0 ? 'C:/audio/removed.wav' : 'C:/audio/target.wav',
+      ),
+    );
+    await importAudio(tester);
     await importAudio(tester);
     engine.removalResult = Completer<void>();
     await deleteSelected(tester, settle: false);
-    await tester.ensureVisible(find.text('lead vocal / close'));
-    await tester.tap(find.text('lead vocal / close'));
+    final remainingClip = find.text('removed.wav').first;
+    await tester.ensureVisible(remainingClip);
+    await tester.tap(remainingClip);
     await tester.pump();
     engine.removalResult!.complete();
     await tester.pumpAndSettle();
-    expect(engine.calls.last, 'remove:1');
-    expect(importedClip, findsNothing);
-    expect(find.text('lead vocal / close'), findsOneWidget);
-    expect(find.text('Selected: lead vocal / close'), findsOneWidget);
+    expect(engine.calls.last, 'remove:2');
+    expect(find.text('target.wav'), findsNothing);
+    expect(find.text('removed.wav'), findsWidgets);
+    expect(find.text('Selected: removed.wav'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -439,9 +448,10 @@ void main() {
     await tester.tap(find.text('Open Session…'));
     await tester.pump();
     await tester.runAsync(() async {
-      for (var i = 0; i < 100 && restored.calls.isEmpty; i++) {
+      for (var i = 0; i < 100 && first.disposeCount == 0; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }
+      expect(first.disposeCount, 1);
     });
     await tester.pumpAndSettle();
     expect(
@@ -462,9 +472,6 @@ void main() {
     expect(reopened.pan, 0.8);
     expect(reopened.muted, isTrue);
     expect(reopened.solo, isTrue);
-    for (var i = 0; i < 100 && first.disposeCount == 0; i++) {
-      await tester.pump(const Duration(milliseconds: 20));
-    }
     expect(first.disposeCount, 1);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
