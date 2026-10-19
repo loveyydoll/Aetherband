@@ -464,6 +464,26 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('F2 opens rename for the selected audio track', (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.f2);
+    await tester.pumpAndSettle();
+    expect(find.text('Rename audio track'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('rename-track-name')),
+      'Guitar take',
+    );
+    await tester.tap(find.text('Rename'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Guitar take'), findsWidgets);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('Zoom to Fit scales the arrangement to imported audio',
       (tester) async {
     final engine = FakeEngine();
