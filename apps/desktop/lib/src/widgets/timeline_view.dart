@@ -124,24 +124,22 @@ class TimelineView extends StatelessWidget {
                           ),
                         ),
                       ),
-                      for (var trackIndex = 0;
-                          trackIndex < tracks.length;
-                          trackIndex++)
+                      for (final entry in tracks.asMap().entries)
                         _TrackHeader(
-                          key: ValueKey(tracks[trackIndex].id),
-                          track: tracks[trackIndex],
-                          selected: tracks[trackIndex].id == selectedTrackId,
-                          onTap: () => onTrackSelected(tracks[trackIndex]),
-                          onMute: () => onMuteChanged(
-                              tracks[trackIndex], !tracks[trackIndex].muted),
-                          onSolo: () => onSoloChanged(
-                              tracks[trackIndex], !tracks[trackIndex].solo),
+                          key: ValueKey(entry.value.id),
+                          track: entry.value,
+                          selected: entry.value.id == selectedTrackId,
+                          onTap: () => onTrackSelected(entry.value),
+                          onMute: () =>
+                              onMuteChanged(entry.value, !entry.value.muted),
+                          onSolo: () =>
+                              onSoloChanged(entry.value, !entry.value.solo),
                           onVolumeChanged: (value) =>
-                              onVolumeChanged(tracks[trackIndex], value),
+                              onVolumeChanged(entry.value, value),
                           onMoveTrack: (delta) =>
-                              onMoveTrack(tracks[trackIndex], delta),
-                          canMoveUp: trackIndex > 0,
-                          canMoveDown: trackIndex < tracks.length - 1,
+                              onMoveTrack(entry.value, delta),
+                          canMoveUp: entry.key > 0,
+                          canMoveDown: entry.key < tracks.length - 1,
                           height: laneHeight,
                         ),
                     ],
