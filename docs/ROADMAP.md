@@ -1,114 +1,53 @@
-# Aetherband Roadmap — Native C++ Migration
+# Aetherband Roadmap — C++/JUCE
 
-This roadmap describes engineering stages, not delivery-date promises. A milestone is complete only when its exit criteria have evidence on the current commit and the relevant target platforms.
+This is an engineering sequence, not a delivery-date promise. A milestone is complete only when its exit criteria have evidence on the current code and relevant platforms.
 
-## Architecture direction
+## Binding direction
 
-- **Core language:** C++20 or newer where supported.
-- **Build system:** CMake.
-- **Desktop framework:** not yet finalized; JUCE is a leading candidate pending a cross-platform technical spike.
-- **Audio runtime and DSP:** native C++ modules, with an Aetherband-owned processing graph and explicit real-time contracts.
-- **Platforms:** Windows and macOS.
-- **Optional C#:** allowed only when a concrete integration need justifies the additional runtime and interface boundary.
-- **Legacy stack:** Rust/C ABI/Flutter/Dart are kept as references during migration, not as the target architecture.
+C++20+ / JUCE / CMake / Windows and macOS. Aetherband owns DSP/runtime semantics. Rust/C ABI/Flutter/Dart are migration references only. See ADR-008 in DECISIONS.md.
 
-## Stage 1 — Native foundation
+## Stage 0 — Audit and migration map
 
-**Goal:** establish a small, testable C++ codebase.
+Inventory the legacy engine, UI workflows, tests, media, sessions, instruments, dependencies, and actual platform evidence. Label behavior verified, implemented-but-unverified, partial, unknown, or planned.
 
-Deliver:
-- CMake/C++20 project and warnings.
-- Buffer primitives and additive mixer.
-- Unit tests and CTest integration.
-- Windows/macOS build verification.
+**Exit:** auditable behavior matrix; no parity claims based only on source presence.
 
-Exit criteria:
-- Both target platforms build from documented steps.
-- Native tests pass on both.
-- Buffer dimensions and invalid inputs have explicit behavior.
+## Stage 1 — JUCE platform proof
 
-## Stage 2 — Audio runtime
+Integrate JUCE through a reproducible CMake setup. Build and launch a minimal native window on Windows and macOS. Enumerate devices, open/close a stream, play a known test signal, and verify repeated start/stop/close and clean shutdown. Record JUCE version, modules, licence obligations, and platform prerequisites.
 
-**Goal:** reliable device lifecycle and real-time processing.
+**Exit:** builds, launches, device lifecycle, and packaging checks recorded on both platforms.
 
-Deliver:
-- Device enumeration/open/close behind a small interface.
-- Callback-owned processing path.
-- Transport and bounded command/telemetry flow.
-- Clear engine/device lifecycle and error reporting.
+## Stage 2 — Runtime foundation
 
-Exit criteria:
-- Known-signal playback tested on Windows and macOS.
-- Repeated open/play/stop/close cycles pass.
-- No callback allocation, file I/O or blocking lock in the reviewed processing path.
+Define audio buffers, sample rate, block size, channel layouts, processor lifecycle, transport, bounded command/telemetry flow, device lifecycle, and error handling.
+
+**Exit:** deterministic offline tests pass; callback review finds no I/O, unpredictable allocation, blocking waits, or unsafe processor destruction; device tests pass on both OSes.
 
 ## Stage 3 — Executing DSP graph
 
-**Goal:** build the processing core that Aetherband can evolve.
+Implement real processor execution, graph validation, channel layouts, gain/pan, summing/routing, parameter changes, safe graph updates, and offline rendering.
 
-Deliver:
-- Processor interface and graph validation.
-- Gain/pan and summing processors.
-- Explicit channel layouts, parameter changes and graph lifecycle.
-- Deterministic offline rendering.
+**Exit:** known-signal/golden-output tests cover routing and error paths; invalid graph behavior is safe and documented.
 
-Exit criteria:
-- Offline golden-signal tests pass.
-- Graph connections and channel mismatches fail safely.
-- Real-time graph changes follow a documented safe protocol.
+## Stage 4 — First complete DAW slice
 
-## Stage 4 — First useful DAW workflow
+Build a native JUCE shell, versioned session model, WAV import, multitrack arrangement/playback, mixer, save/reopen, and stereo WAV export.
 
-**Goal:** create, save and reopen a basic multitrack session.
+**Exit:** import → arrange → play/mix → save → reopen → export succeeds on Windows and macOS with persistence and failure-path tests.
 
-Deliver:
-- Versioned project/session model.
-- WAV import and background decode.
-- Track/clip scheduling and transport.
-- Mixer and offline stereo WAV export.
-- Native desktop shell with a basic arrangement.
+## Stage 5 — Instruments and production
 
-Exit criteria:
-- Import → arrange → play → save → reopen → export works end-to-end.
-- Missing media and failed writes are reported safely.
-- Session round-trip and audio output are tested.
+Port HypnoSynth with regression fixtures, then add MIDI/piano roll, recording, effects, routing, automation, undo/redo, and recovery in small slices.
 
-## Stage 5 — Instruments and production tools
+**Exit:** each feature has repeatable tests and known limitations. Test FLAC, MP3, and other formats individually before claiming support.
 
-**Goal:** restore and expand proven creative workflows.
+## Stage 6 — Hardening and ecosystem
 
-Deliver:
-- C++ HypnoSynth port with regression fixtures.
-- MIDI event model and piano-roll foundations.
-- Recording, effects, routing, automation and undo/redo.
-- Additional formats only after explicit tests.
+Profile realistic sessions, stress test, improve accessibility and keyboard workflows, package both platforms, audit dependencies/licenses, and evaluate plugin/interchange support after the core workflow is dependable.
 
-Exit criteria:
-- Instrument output and state persistence tests pass.
-- MIDI timing and automation behavior are tested.
-- Recording/export recovery and real hardware behavior are validated.
+**Exit:** reproducible builds, published Windows/macOS support matrix, no known critical data-loss/audio-safety defects, and clear release criteria.
 
-## Stage 6 — Ecosystem and hardening
+## Reporting rules
 
-**Goal:** prepare a dependable open-source DAW for broader testing.
-
-Deliver:
-- Evaluate plugin formats and project interchange.
-- Performance profiling with realistic sessions.
-- Accessibility, keyboard workflow, preferences and packaging.
-- Dependency/license audit and contributor documentation.
-
-Exit criteria:
-- Windows/macOS support matrix published.
-- Reproducible builds and stress tests.
-- No known critical data-loss or audio-safety defects.
-- Known limitations and supported workflows documented.
-
-## Rules for reporting progress
-
-- Code presence is not verification.
-- A successful build is not proof of audio-device behavior.
-- A graph model is not proof of DSP execution.
-- WAV tests do not prove support for other media formats.
-- A visual prototype is not a functioning workflow.
-- Keep the existing Rust implementation until the replacement demonstrates the required behavior; preserve history even after legacy code is retired.
+Source code is not proof of compilation. A build is not proof of audio behavior. Graph metadata is not audio processing. Legacy functionality is not C++ parity. WAV tests do not imply other formats work. Preserve the legacy implementation until the replacement meets acceptance criteria.
