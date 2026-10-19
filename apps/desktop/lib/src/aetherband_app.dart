@@ -843,62 +843,83 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }) async {
     if (_trackOperationPending || _initializingEngine) return;
     final engine = _engine;
-    final clip = selected.clips.firstOrNull;
+    final clips = List<ClipModel>.of(selected.clips);
     if (engine == null) {
       _showEngineUnavailable();
       return;
     }
-    if (clip == null) return;
-    if (selected.clips.length > 1) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text(
-            'Duplicating a track with split regions is not available yet.'),
-      ));
-      return;
-    }
-    final targetStart = startSeconds ?? clip.startSeconds;
+    if (clips.isEmpty) return;
+    final sourceStart = clips
+        .map((clip) => clip.startSeconds)
+        .reduce((left, right) => math.min(left, right));
+    final targetStart = startSeconds ?? sourceStart;
 
     setState(() => _trackOperationPending = true);
-    int? uncommittedNativeId;
+    final uncommittedNativeIds = <int>[];
     var adopted = false;
     try {
-      if (await engine.getTrackCount() >= AudioSessionDocument.maxTracks) {
+      if (await engine.getTrackCount() + clips.length >
+          AudioSessionDocument.maxTracks) {
         throw StateError(
-            'A session can contain at most ${AudioSessionDocument.maxTracks} audio tracks.');
+            'A session can contain at most ${AudioSessionDocument.maxTracks} audio regions.');
       }
-      final loaded = await engine.loadTrack(source);
-      uncommittedNativeId = loaded.id;
-      await engine.setTrackVolume(loaded.id, selected.volume);
-      await engine.setTrackPan(loaded.id, selected.pan);
-      await engine.muteTrack(loaded.id, selected.muted);
-      await engine.soloTrack(loaded.id, selected.solo);
-      await engine.setTrackStartSeconds(loaded.id, targetStart);
-
       final id = _createPersistentTrackId();
       final suffix = ' copy';
       final name = selected.name.length + suffix.length <= 120
           ? '${selected.name}$suffix'
           : '${selected.name.substring(0, 120 - suffix.length)}$suffix';
-      final duplicateClip = ClipModel(
-        id: '$id-clip',
-        title: clip.title,
-        start: 0,
-        width: 0,
-        color: selected.color,
-        isDemo: false,
-        durationSeconds: loaded.durationSeconds,
-        startSeconds: targetStart,
-        waveformPeaks: clip.waveformPeaks == null
-            ? null
-            : List<double>.of(clip.waveformPeaks!),
-        waveformLoaded: clip.waveformLoaded,
-      );
+      final duplicateClips = <ClipModel>[];
+      final duplicateNativeIds = <String, int>{};
+      for (var index = 0; index < clips.length; index++) {
+        final sourceClip = clips[index];
+        final loaded = await engine.loadTrack(source);
+        uncommittedNativeIds.add(loaded.id);
+        await engine.setTrackVolume(loaded.id, selected.volume);
+        await engine.setTrackPan(loaded.id, selected.pan);
+        await engine.muteTrack(loaded.id, selected.muted);
+        await engine.soloTrack(loaded.id, selected.solo);
+        final duration = sourceClip.durationSeconds ?? loaded.durationSeconds;
+        final regionEngine = engine;
+        final needsRegion = sourceClip.sourceStartSeconds > 0 ||
+            (duration != null &&
+                loaded.durationSeconds != null &&
+                duration < loaded.durationSeconds! - 0.00001);
+        if (needsRegion) {
+          if (regionEngine is! AudioRegionEngine || duration == null) {
+            throw StateError('This engine cannot duplicate trimmed regions.');
+          }
+          await (regionEngine as AudioRegionEngine).setTrackRegionSeconds(
+              loaded.id, sourceClip.sourceStartSeconds, duration);
+        }
+        final clipId =
+            clips.length == 1 ? '$id-clip' : '$id-region-${index + 1}';
+        final duplicateClip = ClipModel(
+          id: clipId,
+          title: sourceClip.title,
+          start: 0,
+          width: 0,
+          color: selected.color,
+          isDemo: false,
+          durationSeconds: duration,
+          sourceDurationSeconds: loaded.durationSeconds,
+          sourceStartSeconds: sourceClip.sourceStartSeconds,
+          startSeconds: targetStart + sourceClip.startSeconds - sourceStart,
+          waveformPeaks: sourceClip.waveformPeaks == null
+              ? null
+              : List<double>.of(sourceClip.waveformPeaks!),
+          waveformLoaded: sourceClip.waveformLoaded,
+        );
+        await engine.setTrackStartSeconds(
+            loaded.id, duplicateClip.startSeconds);
+        duplicateClips.add(duplicateClip);
+        duplicateNativeIds[clipId] = loaded.id;
+      }
       final duplicate = TrackModel(
         id: id,
         name: name,
         kind: selected.kind,
         color: selected.color,
-        clips: <ClipModel>[duplicateClip],
+        clips: duplicateClips,
         muted: selected.muted,
         solo: selected.solo,
         volume: selected.volume,
@@ -906,17 +927,22 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       );
       if (!mounted) return;
       setState(() {
-        _nativeTrackIds[id] = loaded.id;
-        _nativeRegionIds[duplicateClip.id] = loaded.id;
+        _nativeTrackIds[id] = duplicateNativeIds.values.first;
+        _nativeRegionIds.addAll(duplicateNativeIds);
+        for (final clip in duplicateClips) {
+          _confirmedClipStarts[clip.id] = clip.startSeconds;
+        }
         _nativeTrackSources[id] = source;
         _tracks.add(duplicate);
         _selectedTrackId = id;
-        _selectedClipId = duplicateClip.id;
+        _selectedClipId = duplicateClips.first.id;
         _markSessionChanged();
       });
       adopted = true;
-      uncommittedNativeId = null;
-      unawaited(_loadClipWaveform(duplicate, duplicateClip, source));
+      uncommittedNativeIds.clear();
+      for (final clip in duplicateClips) {
+        unawaited(_loadClipWaveform(duplicate, clip, source));
+      }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -924,14 +950,20 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         );
       }
     } finally {
-      if (!adopted && uncommittedNativeId != null) {
-        try {
-          await engine.removeTrack(uncommittedNativeId);
-        } catch (_) {
+      if (!adopted && uncommittedNativeIds.isNotEmpty) {
+        var cleanupFailed = false;
+        for (final nativeId in uncommittedNativeIds) {
+          try {
+            await engine.removeTrack(nativeId);
+          } catch (_) {
+            cleanupFailed = true;
+          }
+        }
+        if (cleanupFailed) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
               content: Text(
-                  'The duplicate could not be added, and its temporary audio track could not be removed.'),
+                  'The duplicate could not be added, and one or more temporary audio regions could not be removed.'),
             ));
           }
         }
@@ -943,16 +975,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   bool _copySelectedAudioTrack() {
     final selected = _selectedTrack;
     final source = selected == null ? null : _nativeTrackSources[selected.id];
-    final clip = selected?.clips.firstOrNull;
-    if (selected == null || source == null || clip == null) {
+    if (selected == null || source == null || selected.clips.isEmpty) {
       _showFeatureUnavailable('Copying demo or instrument tracks');
-      return false;
-    }
-    if (selected.clips.length > 1) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content:
-            Text('Copying a track with split regions is not available yet.'),
-      ));
       return false;
     }
     _copiedAudioTrack = SavedAudioTrack(
@@ -963,7 +987,15 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       pan: selected.pan,
       muted: selected.muted,
       solo: selected.solo,
-      startSeconds: clip.startSeconds,
+      startSeconds: selected.clips.first.startSeconds,
+      regions: selected.clips
+          .map((clip) => SavedAudioRegion(
+                id: clip.id,
+                startSeconds: clip.startSeconds,
+                sourceStartSeconds: clip.sourceStartSeconds,
+                durationSeconds: clip.durationSeconds,
+              ))
+          .toList(growable: false),
     );
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Copied ${selected.name}.')),
@@ -980,21 +1012,25 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       ));
       return;
     }
-    final clip = ClipModel(
-      id: '${copied.id}-clipboard',
-      title: copied.name,
-      start: 0,
-      width: 0,
-      color: AetherColors.sage,
-      isDemo: false,
-      startSeconds: copied.startSeconds,
-    );
+    final clips = copied.effectiveRegions
+        .map((region) => ClipModel(
+              id: region.id,
+              title: copied.name,
+              start: 0,
+              width: 0,
+              color: AetherColors.sage,
+              isDemo: false,
+              durationSeconds: region.durationSeconds,
+              sourceStartSeconds: region.sourceStartSeconds,
+              startSeconds: region.startSeconds,
+            ))
+        .toList(growable: false);
     final sourceTrack = TrackModel(
       id: copied.id,
       name: copied.name,
       kind: 'AUDIO',
       color: AetherColors.sage,
-      clips: <ClipModel>[clip],
+      clips: clips,
       muted: copied.muted,
       solo: copied.solo,
       volume: copied.gain,

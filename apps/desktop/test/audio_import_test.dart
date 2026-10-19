@@ -256,6 +256,38 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('duplicates a split audio track with both native regions',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    engine.frames.add(const EngineTelemetry(
+      playheadSeconds: 2,
+      sampleRateHz: 44100,
+      peakLeft: 0,
+      peakRight: 0,
+      isPlaying: false,
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Region'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Split at Playhead'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Track'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Duplicate Selected Track'));
+    await tester.pumpAndSettle();
+
+    expect(importedClip, findsNWidgets(4));
+    expect(
+        engine.calls.where((call) => call.startsWith('region:')), hasLength(4));
+    expect(engine.calls, contains('start:4:2.0'));
+    expect(find.text('take.wav copy'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('File menu exports a stereo WAV through the engine',
       (tester) async {
     final engine = FakeEngine();
