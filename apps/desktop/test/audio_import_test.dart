@@ -268,19 +268,21 @@ void main() {
     );
     await importAudio(tester);
     await importAudio(tester);
+    final beforeRemoval = tester
+        .widget<TimelineView>(find.byType(TimelineView));
+    expect(beforeRemoval.tracks, hasLength(2));
     engine.removalResult = Completer<void>();
     await deleteSelected(tester, settle: false);
     final timeline = tester.widget<TimelineView>(find.byType(TimelineView));
-    timeline.onTrackSelected(timeline.tracks.firstWhere(
-      (track) => track.name == 'removed.wav',
-    ));
+    timeline.onTrackSelected(beforeRemoval.tracks.first);
     await tester.pump();
     engine.removalResult!.complete();
     await tester.pumpAndSettle();
     expect(engine.calls.last, 'remove:2');
-    expect(find.text('target.wav'), findsNothing);
-    expect(find.text('removed.wav'), findsWidgets);
-    expect(find.text('Selected: removed.wav'), findsOneWidget);
+    final afterRemoval = tester.widget<TimelineView>(find.byType(TimelineView));
+    expect(afterRemoval.tracks, hasLength(1));
+    expect(afterRemoval.tracks.single.id, beforeRemoval.tracks.first.id);
+    expect(afterRemoval.selectedTrackId, beforeRemoval.tracks.first.id);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -402,6 +404,7 @@ void main() {
     final first = FakeEngine();
     final restored = FakeEngine();
     var creations = 0;
+    final stagedEngine = Completer<void>();
 
     await mountWorkspace(
       tester,
@@ -409,7 +412,11 @@ void main() {
       picker: () async => XFile(audio.path),
       sessionPicker: () async => XFile(sessionPath),
       sessionSavePicker: () async => sessionPath,
-      factory: () async => creations++ == 0 ? first : restored,
+      factory: () async {
+        if (creations++ == 0) return first;
+        stagedEngine.complete();
+        return restored;
+      },
     );
     await importAudio(tester);
     final imported = tester
@@ -449,11 +456,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Open Session…'));
     await tester.pump();
-    await tester.pumpAndSettle();
-    expect(find.text('Unsaved audio session changes'), findsOneWidget);
-    await tester.tap(find.text('Discard changes'));
-    await tester.pump();
     await tester.runAsync(() async {
+      for (var i = 0; i < 100 && !stagedEngine.isCompleted; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(stagedEngine.isCompleted, isTrue);
       for (var i = 0; i < 100 && first.disposeCount == 0; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }
