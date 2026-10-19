@@ -1,58 +1,51 @@
 # Aetherband — Project State Handoff
 
-**Updated:** 2026-10-19  
-**Evidence level:** GitHub source review and creation of the first C++ foundation. The new C++ code has not yet been built or run on Windows/macOS in this migration step.
+**Last reconciled:** 2026-10-19  
+**Branch context:** rewrite/cpp-native-foundation, draft migration PR #35  
+**Evidence level:** Repository review. The current C++ foundation has not been independently built or run on Windows/macOS in this migration step.
 
-## Product identity
+## Product
 
-Aetherband is an early-stage, open-source desktop DAW. Its intended direction is an arrangement-first creative workspace with native audio processing, its own DSP architecture, and room for instruments and sound-design workflows. Windows and macOS are required targets.
+Aetherband is an early-stage, free/open-source desktop DAW. Its intended creative direction is an expressive arrangement-first workspace combining recording, editing, mixing, instruments, and sound design. Windows and macOS are required targets.
 
-## Current architecture decision
+## Binding architecture
 
-- **Target application and audio runtime:** C++20 or newer where supported.
-- **Native build system:** CMake.
-- **Desktop framework:** not yet finalized; JUCE is a leading candidate pending a focused cross-platform proof.
-- **DSP:** Aetherband-owned processing graph and processor contracts; third-party libraries may be used when appropriate.
-- **Optional integrations:** C# only if a specific use case justifies it.
-- **Legacy reference:** Rust engine, versioned C ABI, Flutter/Dart frontend and existing project documentation remain available during migration. Flutter/Dart are not the target UI stack.
+- C++20 or newer.
+- JUCE is the committed framework, not a candidate.
+- CMake build system.
+- Aetherband-owned runtime and DSP semantics.
+- Windows and macOS required.
+- GPL-3.0-or-later is the license goal, subject to dependency compatibility.
+- Rust/C ABI/Dart FFI/Flutter/Dart are legacy references only.
+- C# is not part of the planned core.
 
-## New C++ foundation
+See ADR-008 in DECISIONS.md. Do not reopen framework selection without explicit owner direction.
 
-Branch: `rewrite/cpp-native-foundation`  
-Draft PR: [#35 — Start native C++ foundation migration](https://github.com/loveyydoll/Aetherband/pull/35)
+## C++ foundation present
 
-The branch currently adds:
-- CMake project configured for C++20.
-- Planar float audio buffer.
-- Additive mixer.
-- Initial native unit tests.
-- Migration plan and build notes.
+- CMake/C++20 project scaffold.
+- Planar floating-point audio buffer.
+- Basic additive mixer.
+- Initial unit tests for those primitives.
 
-This is a foundation slice only. It does not yet implement device I/O, transport, an executing DSP graph, decoding, recording, sessions, export, HypnoSynth or a DAW UI. Tests are written but still need to be run on Windows and macOS.
+These are source-level observations, not proof that tests pass or either platform works. A complete JUCE application, device playback, transport, executing DSP graph, media pipeline, project persistence, HypnoSynth port, and usable arrangement/mixer workflow have not yet been established by this foundation slice.
 
-## Legacy implementation
+## Migration safety
 
-The previous Rust implementation contains useful reference behavior and should be audited subsystem-by-subsystem. Earlier documentation describes CPAL output, bounded queues, Symphonia decoding, Rubato resampling, track mixing, a versioned C ABI, HypnoSynth, session handling and WAV mixdown. Treat these as claims to verify against current source and tests, not as a guarantee that each workflow is reliable on hardware.
-
-WAV is the only format previously reported as tested. Other formats require explicit validation.
+Do not delete the legacy Rust/Flutter implementation wholesale. Audit actual behavior, then port and test it in small slices. Retire a legacy subsystem only when its C++ replacement passes documented acceptance criteria. Preserve Git history.
 
 ## Immediate priorities
 
-1. Build and run the C++ foundation on Windows and macOS; fix compiler warnings and test failures.
-2. Inventory the existing Rust engine, tests, session schema and instrument behavior.
-3. Specify audio callback, transport, processor lifecycle, buffer/channel, sample-rate and command-queue contracts.
-4. Implement a minimal audio runtime and a real executing DSP graph.
-5. Establish deterministic offline rendering and hardware playback checks.
-6. Build a first useful vertical slice: WAV import, multitrack playback/mixing, save/reopen and WAV export.
-7. Port HypnoSynth and additional workflows only after the foundation is validated.
+1. Integrate JUCE with a documented CMake setup.
+2. Build and launch a minimal native app on Windows and macOS.
+3. Enumerate devices, play a known signal, and test repeated open/start/stop/close.
+4. Define callback-safe runtime contracts and an executing DSP graph.
+5. Prove deterministic offline processing.
+6. Deliver WAV import → multitrack arrange/play/mix → save/reopen → WAV export.
+7. Port HypnoSynth and broaden production features.
 
-## Migration rules
+## Evidence rules
 
-- Do not delete the legacy implementation in a bulk cleanup.
-- Port validated behavior, not Rust code mechanically.
-- Never claim runtime, device or platform support based on compilation alone.
-- Keep UI, project model, media, DSP and audio runtime modular.
-- No blocking I/O, allocation or contended locks in the real-time callback.
-- Keep the README and feature tracker aligned with actual test evidence.
+Code exists is not proof of compilation. Compilation is not proof tests pass. Passing tests is not proof of hardware behavior. Legacy features are not C++ parity. WAV tests do not imply other formats work. A UI prototype is not a complete DAW workflow.
 
-See [C++ Migration Plan](CPP_MIGRATION_PLAN.md), [Feature Tracker](FEATURE_TRACKER.md), [Architecture](ARCHITECTURE.md), and [Engine Foundation Audit](ENGINE_FOUNDATION_AUDIT.md).
+Update this file when architecture decisions or verified platform status change.
