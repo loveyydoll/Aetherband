@@ -2,7 +2,15 @@
 
 All notable changes to Aetherband are recorded here. This is a development changelog, not a substitute for Git tags or GitHub Releases. Dates below identify the merge date of the relevant pull request unless explicitly stated otherwise.
 
-## [Unreleased]\n\n### Architecture and documentation\n\n- **2026-10-19 — Native C++/JUCE direction:** Accepted ADR-008, making C++20+ and JUCE the committed application foundation, with CMake and Windows/macOS as required targets. Aetherband owns DSP graph execution, processor lifecycle, routing, transport, and offline-rendering semantics.\n- **2026-10-19 — Documentation overhaul:** Aligned the current README, architecture, vision, project state, migration plan, roadmap, feature tracker, audio-engine contract, project-format notes, contributor/agent guidance, and technology-stack guidance.\n- **Migration safety:** Rust/C ABI/Flutter/Dart are retained as legacy references until the native replacement meets acceptance criteria; they are not the target architecture.\n\n## [Unreleased]
+## [Unreleased]
+
+### Architecture and documentation
+
+- **2026-10-19 — Native C++/JUCE direction:** Accepted ADR-008, making C++20+ and JUCE the committed application foundation, with CMake and Windows/macOS as required targets. Aetherband owns DSP graph execution, processor lifecycle, routing, transport, and offline-rendering semantics.
+- **2026-10-19 — Documentation overhaul:** Aligned the current README, architecture, vision, project state, migration plan, roadmap, feature tracker, audio-engine contract, project-format notes, contributor/agent guidance, and technology-stack guidance.
+- **Migration safety:** Rust/C ABI/Flutter/Dart are retained as legacy references until the native replacement meets acceptance criteria; they are not the target architecture.
+
+### Added
 
 ### Added
 
