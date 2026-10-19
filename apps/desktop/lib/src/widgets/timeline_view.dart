@@ -20,6 +20,9 @@ class TimelineView extends StatelessWidget {
     required this.onClipMoved,
     required this.onClipMoveStarted,
     required this.onClipMoveFinished,
+    required this.onClipResizeStarted,
+    required this.onClipResized,
+    required this.onClipResizeFinished,
     required this.onMuteChanged,
     required this.onSoloChanged,
     required this.onVolumeChanged,
@@ -38,6 +41,12 @@ class TimelineView extends StatelessWidget {
   final void Function(TrackModel, ClipModel, double) onClipMoved;
   final void Function(TrackModel, ClipModel) onClipMoveStarted;
   final void Function(TrackModel, ClipModel) onClipMoveFinished;
+  final void Function(TrackModel, ClipModel, bool trimStart)
+      onClipResizeStarted;
+  final void Function(TrackModel, ClipModel, bool trimStart, double dx)
+      onClipResized;
+  final void Function(TrackModel, ClipModel, bool trimStart)
+      onClipResizeFinished;
   final void Function(TrackModel, bool) onMuteChanged;
   final void Function(TrackModel, bool) onSoloChanged;
   final void Function(TrackModel, double) onVolumeChanged;
@@ -157,6 +166,15 @@ class TimelineView extends StatelessWidget {
                                         onClipMoveStarted(track, clip),
                                     onClipMoveFinished: (clip) =>
                                         onClipMoveFinished(track, clip),
+                                    onClipResizeStarted: (clip, trimStart) =>
+                                        onClipResizeStarted(
+                                            track, clip, trimStart),
+                                    onClipResized: (clip, trimStart, dx) =>
+                                        onClipResized(
+                                            track, clip, trimStart, dx),
+                                    onClipResizeFinished: (clip, trimStart) =>
+                                        onClipResizeFinished(
+                                            track, clip, trimStart),
                                   ),
                               ],
                             ),
@@ -407,6 +425,9 @@ class _TimelineLane extends StatelessWidget {
     required this.onClipMoved,
     required this.onClipMoveStarted,
     required this.onClipMoveFinished,
+    required this.onClipResizeStarted,
+    required this.onClipResized,
+    required this.onClipResizeFinished,
     super.key,
   });
 
@@ -420,6 +441,9 @@ class _TimelineLane extends StatelessWidget {
   final void Function(ClipModel, double) onClipMoved;
   final ValueChanged<ClipModel> onClipMoveStarted;
   final ValueChanged<ClipModel> onClipMoveFinished;
+  final void Function(ClipModel, bool trimStart) onClipResizeStarted;
+  final void Function(ClipModel, bool trimStart, double dx) onClipResized;
+  final void Function(ClipModel, bool trimStart) onClipResizeFinished;
 
   @override
   Widget build(BuildContext context) {
@@ -443,6 +467,15 @@ class _TimelineLane extends StatelessWidget {
                 onMove: (dx) => onClipMoved(clip, dx),
                 onMoveStart: () => onClipMoveStarted(clip),
                 onMoveEnd: () => onClipMoveFinished(clip),
+                canResize: !clip.isDemo &&
+                    !clip.isSequenceRegion &&
+                    clip.durationSeconds != null &&
+                    clip.sourceDurationSeconds != null,
+                onResizeStart: (trimStart) =>
+                    onClipResizeStarted(clip, trimStart),
+                onResize: (trimStart, dx) => onClipResized(clip, trimStart, dx),
+                onResizeEnd: (trimStart) =>
+                    onClipResizeFinished(clip, trimStart),
               ),
             ),
         ],

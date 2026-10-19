@@ -13,6 +13,10 @@ class ClipTile extends StatelessWidget {
     required this.onMove,
     required this.onMoveStart,
     required this.onMoveEnd,
+    required this.canResize,
+    required this.onResizeStart,
+    required this.onResize,
+    required this.onResizeEnd,
     super.key,
   });
 
@@ -22,6 +26,10 @@ class ClipTile extends StatelessWidget {
   final ValueChanged<double> onMove;
   final VoidCallback onMoveStart;
   final VoidCallback onMoveEnd;
+  final bool canResize;
+  final ValueChanged<bool> onResizeStart;
+  final void Function(bool trimStart, double dx) onResize;
+  final ValueChanged<bool> onResizeEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -172,12 +180,72 @@ class ClipTile extends StatelessWidget {
                   ),
                 ),
               ),
+              if (canResize) ...[
+                _ResizeHandle(
+                  key: ValueKey('clip-resize-start-${clip.id}'),
+                  trimStart: true,
+                  onStart: onResizeStart,
+                  onResize: onResize,
+                  onEnd: onResizeEnd,
+                ),
+                _ResizeHandle(
+                  key: ValueKey('clip-resize-end-${clip.id}'),
+                  trimStart: false,
+                  onStart: onResizeStart,
+                  onResize: onResize,
+                  onEnd: onResizeEnd,
+                ),
+              ],
             ],
           ),
         ),
       ),
     );
   }
+}
+
+class _ResizeHandle extends StatelessWidget {
+  const _ResizeHandle({
+    required this.trimStart,
+    required this.onStart,
+    required this.onResize,
+    required this.onEnd,
+    super.key,
+  });
+
+  final bool trimStart;
+  final ValueChanged<bool> onStart;
+  final void Function(bool trimStart, double dx) onResize;
+  final ValueChanged<bool> onEnd;
+
+  @override
+  Widget build(BuildContext context) => Positioned(
+        left: trimStart ? 0 : null,
+        right: trimStart ? null : 0,
+        top: 0,
+        bottom: 0,
+        width: 12,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.resizeLeftRight,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragStart: (_) => onStart(trimStart),
+            onHorizontalDragUpdate: (details) =>
+                onResize(trimStart, details.delta.dx),
+            onHorizontalDragEnd: (_) => onEnd(trimStart),
+            child: Center(
+              child: Container(
+                width: 2,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: AetherColors.paper.withValues(alpha: 0.72),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
 }
 
 class WaveformPainter extends CustomPainter {

@@ -520,6 +520,32 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('audio region edge handles trim source and timeline bounds',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    final clip = tester.widget<ClipTile>(importedClip).clip;
+
+    final startHandle = find.byKey(ValueKey('clip-resize-start-${clip.id}'));
+    await tester.ensureVisible(startHandle);
+    await tester.drag(startHandle, const Offset(80, 0));
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, greaterThan(0));
+    expect(clip.sourceStartSeconds, clip.startSeconds);
+    expect(clip.durationSeconds, lessThan(120));
+
+    final endHandle = find.byKey(ValueKey('clip-resize-end-${clip.id}'));
+    await tester.ensureVisible(endHandle);
+    final durationBeforeEndTrim = clip.durationSeconds!;
+    await tester.drag(endHandle, const Offset(-80, 0));
+    await tester.pumpAndSettle();
+    expect(clip.durationSeconds, lessThan(durationBeforeEndTrim));
+    expect(engine.calls.any((call) => call.startsWith('region:1:')), isTrue);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('duplicates a split audio track with both native regions',
       (tester) async {
     final engine = FakeEngine();

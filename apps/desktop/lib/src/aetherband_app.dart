@@ -90,6 +90,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   final Map<String, Timer> _clipPositionTimers = <String, Timer>{};
   final Map<String, double> _confirmedClipStarts = <String, double>{};
   final Map<String, double> _clipMoveStarts = <String, double>{};
+  _RegionResizeDraft? _regionResizeDraft;
   final List<Object> _undoHistory = <Object>[];
   final List<Object> _redoHistory = <Object>[];
   bool _historyOperationPending = false;
@@ -2608,6 +2609,204 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     }
   }
 
+  void _beginRegionResize(TrackModel track, ClipModel clip, bool trimStart) {
+    if (clip.isDemo ||
+        clip.isSequenceRegion ||
+        clip.durationSeconds == null ||
+        clip.sourceDurationSeconds == null ||
+        _trackOperationPending ||
+        _historyOperationPending ||
+        _initializingEngine) {
+      return;
+    }
+    final engine = _engine;
+    if (engine is! AudioRegionEngine) return;
+    if (_telemetry.isPlaying || _isRecording) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Stop playback and recording before trimming a clip.'),
+      ));
+      return;
+    }
+    _regionResizeDraft = _RegionResizeDraft(
+      track: track,
+      clip: clip,
+      trimStart: trimStart,
+      beforeSourceStart: clip.sourceStartSeconds,
+      beforeDuration: clip.durationSeconds!,
+      beforeStart: clip.startSeconds,
+      beforeWaveform: clip.waveformPeaks == null
+          ? null
+          : List<double>.of(clip.waveformPeaks!),
+      beforeWaveformLoaded: clip.waveformLoaded,
+    );
+    setState(() {
+      _selectedTrackId = track.id;
+      _selectedClipId = clip.id;
+    });
+  }
+
+  void _resizeRegion(
+      TrackModel track, ClipModel clip, bool trimStart, double dx) {
+    final draft = _regionResizeDraft;
+    if (draft == null ||
+        draft.track != track ||
+        draft.clip != clip ||
+        draft.trimStart != trimStart ||
+        _trackOperationPending) {
+      return;
+    }
+    draft.totalDeltaPx += dx;
+    final pixelsPerSecond = timelinePixelsPerSecond(_performance.tempo);
+    if (pixelsPerSecond <= 0 || _zoom <= 0) return;
+    final delta = draft.totalDeltaPx / _zoom / pixelsPerSecond;
+    final beatSeconds = 60 / _performance.tempo;
+    final minimumDuration = 0.02;
+    double afterSourceStart;
+    double afterDuration;
+    double afterStart;
+    if (trimStart) {
+      final proposedStart = draft.beforeStart + delta;
+      final snappedStart = _snapToBeat
+          ? (proposedStart / beatSeconds).round() * beatSeconds
+          : proposedStart;
+      final earliestDelta =
+          -math.min(draft.beforeSourceStart, draft.beforeStart);
+      final adjustedDelta = (snappedStart - draft.beforeStart)
+          .clamp(earliestDelta, draft.beforeDuration - minimumDuration)
+          .toDouble();
+      afterSourceStart = draft.beforeSourceStart + adjustedDelta;
+      afterStart = draft.beforeStart + adjustedDelta;
+      afterDuration = draft.beforeDuration - adjustedDelta;
+    } else {
+      final proposedEnd = draft.beforeStart + draft.beforeDuration + delta;
+      final snappedEnd = _snapToBeat
+          ? (proposedEnd / beatSeconds).round() * beatSeconds
+          : proposedEnd;
+      final maximumDuration =
+          draft.clip.sourceDurationSeconds! - draft.beforeSourceStart;
+      if (maximumDuration < minimumDuration) return;
+      afterDuration = (snappedEnd - draft.beforeStart)
+          .clamp(minimumDuration, maximumDuration)
+          .toDouble();
+      afterSourceStart = draft.beforeSourceStart;
+      afterStart = draft.beforeStart;
+    }
+    List<double>? waveform;
+    if (draft.beforeWaveform != null &&
+        (trimStart ? afterStart >= draft.beforeStart : true) &&
+        afterDuration <= draft.beforeDuration) {
+      final sourceOffset = trimStart ? afterStart - draft.beforeStart : 0.0;
+      waveform = _sliceWaveform(draft.beforeWaveform!, draft.beforeDuration,
+          sourceOffset, afterDuration);
+    }
+    setState(() {
+      clip.sourceStartSeconds = afterSourceStart;
+      clip.startSeconds = afterStart;
+      clip.durationSeconds = afterDuration;
+      clip.waveformPeaks = waveform;
+      clip.waveformLoaded = waveform != null;
+      _selectedTrackId = track.id;
+      _selectedClipId = clip.id;
+      _markSessionChanged();
+    });
+  }
+
+  void _finishRegionResize(TrackModel track, ClipModel clip, bool trimStart) {
+    final draft = _regionResizeDraft;
+    if (draft == null ||
+        draft.track != track ||
+        draft.clip != clip ||
+        draft.trimStart != trimStart) {
+      return;
+    }
+    _regionResizeDraft = null;
+    if ((clip.sourceStartSeconds - draft.beforeSourceStart).abs() < 0.000001 &&
+        (clip.durationSeconds! - draft.beforeDuration).abs() < 0.000001 &&
+        (clip.startSeconds - draft.beforeStart).abs() < 0.000001) {
+      return;
+    }
+    unawaited(_commitRegionResize(draft));
+  }
+
+  Future<void> _commitRegionResize(_RegionResizeDraft draft) async {
+    final engine = _engine;
+    final clip = draft.clip;
+    final nativeId = _nativeIdForClip(clip);
+    if (engine is! AudioRegionEngine || nativeId == null) {
+      if (mounted) {
+        setState(() {
+          clip.sourceStartSeconds = draft.beforeSourceStart;
+          clip.durationSeconds = draft.beforeDuration;
+          clip.startSeconds = draft.beforeStart;
+          clip.waveformPeaks = draft.beforeWaveform == null
+              ? null
+              : List<double>.of(draft.beforeWaveform!);
+          clip.waveformLoaded = draft.beforeWaveformLoaded;
+        });
+        _showEngineUnavailable();
+      }
+      return;
+    }
+    final controller = engine!;
+    final afterSourceStart = clip.sourceStartSeconds;
+    final afterDuration = clip.durationSeconds!;
+    final afterStart = clip.startSeconds;
+    final afterWaveform = clip.waveformPeaks == null
+        ? null
+        : List<double>.of(clip.waveformPeaks!);
+    setState(() => _trackOperationPending = true);
+    try {
+      final regionEngine = engine as AudioRegionEngine;
+      await regionEngine.setTrackRegionSeconds(
+          nativeId, afterSourceStart, afterDuration);
+      try {
+        await engine.setTrackStartSeconds(nativeId, afterStart);
+      } catch (_) {
+        await regionEngine.setTrackRegionSeconds(
+            nativeId, draft.beforeSourceStart, draft.beforeDuration);
+        await controller.setTrackStartSeconds(nativeId, draft.beforeStart);
+        rethrow;
+      }
+      if (!mounted) return;
+      _confirmedClipStarts[clip.id] = afterStart;
+      setState(() {
+        clip.waveformLoaded = afterWaveform != null;
+        _markSessionChanged();
+      });
+      _pushHistory(_RegionTrimEdit(
+        trackId: draft.track.id,
+        clip: clip,
+        beforeSourceStart: draft.beforeSourceStart,
+        beforeDuration: draft.beforeDuration,
+        beforeStart: draft.beforeStart,
+        beforeWaveform: draft.beforeWaveform,
+        afterSourceStart: afterSourceStart,
+        afterDuration: afterDuration,
+        afterStart: afterStart,
+        afterWaveform: afterWaveform,
+      ));
+      final source = _nativeTrackSources[draft.track.id];
+      if (afterWaveform == null && source != null) {
+        unawaited(_loadClipWaveform(draft.track, clip, source));
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          clip.sourceStartSeconds = draft.beforeSourceStart;
+          clip.durationSeconds = draft.beforeDuration;
+          clip.startSeconds = draft.beforeStart;
+          clip.waveformPeaks = draft.beforeWaveform == null
+              ? null
+              : List<double>.of(draft.beforeWaveform!);
+          clip.waveformLoaded = draft.beforeWaveformLoaded;
+        });
+        _reportMixerFailure('Trim audio clip', error);
+      }
+    } finally {
+      if (mounted) setState(() => _trackOperationPending = false);
+    }
+  }
+
   Future<void> _undoClipMove() => _applyEditHistory(redo: false);
 
   Future<void> _redoClipMove() => _applyEditHistory(redo: true);
@@ -2630,7 +2829,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   Future<void> _applyEditHistory({required bool redo}) async {
     if (_trackOperationPending ||
         _historyOperationPending ||
-        _initializingEngine) {
+        _initializingEngine ||
+        _regionResizeDraft != null) {
       return;
     }
     await _performanceChain;
@@ -2874,9 +3074,14 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         edit.clip.startSeconds = toStart;
         edit.clip.waveformPeaks =
             toWaveform == null ? null : List<double>.of(toWaveform);
+        edit.clip.waveformLoaded = toWaveform != null;
         _confirmedClipStarts[edit.clip.id] = toStart;
         _markSessionChanged();
       });
+      if (toWaveform == null) {
+        final path = _nativeTrackSources[track.id];
+        if (path != null) unawaited(_loadClipWaveform(track, edit.clip, path));
+      }
       source.removeLast();
       destination.add(edit);
     } catch (error) {
@@ -3496,6 +3701,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                                     onClipMoved: _moveClip,
                                     onClipMoveStarted: _beginClipMove,
                                     onClipMoveFinished: _finishClipMove,
+                                    onClipResizeStarted: _beginRegionResize,
+                                    onClipResized: _resizeRegion,
+                                    onClipResizeFinished: _finishRegionResize,
                                     onMuteChanged: _setTrackMute,
                                     onSoloChanged: _setTrackSolo,
                                     onVolumeChanged: _setTrackVolume,
@@ -3657,6 +3865,29 @@ class _RegionTrimEdit {
   final double afterDuration;
   final double afterStart;
   final List<double>? afterWaveform;
+}
+
+class _RegionResizeDraft {
+  _RegionResizeDraft({
+    required this.track,
+    required this.clip,
+    required this.trimStart,
+    required this.beforeSourceStart,
+    required this.beforeDuration,
+    required this.beforeStart,
+    required this.beforeWaveform,
+    required this.beforeWaveformLoaded,
+  });
+
+  final TrackModel track;
+  final ClipModel clip;
+  final bool trimStart;
+  final double beforeSourceStart;
+  final double beforeDuration;
+  final double beforeStart;
+  final List<double>? beforeWaveform;
+  final bool beforeWaveformLoaded;
+  double totalDeltaPx = 0;
 }
 
 class _MenuAction {

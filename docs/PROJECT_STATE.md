@@ -1,7 +1,7 @@
 # Aetherband — Project State Handoff
 
 **Snapshot date:** 2026-10-19
-**Latest local verification:** PR #33 includes the Windows audio repair, HypnoSynth, and DAW editing foundations. Rust workspace tests, callback-allocation, opt-in WASAPI output, Clippy, the release C ABI DLL, full Dart analysis and all 63 desktop Flutter tests pass locally. The opt-in native integration test also passes against the default Windows output device and reports nonzero arranged-pattern telemetry. Latest-head CI is running. Speaker/headphone audibility and microphone/line-in capture remain unverified.
+**Latest local verification:** PR #33 includes the Windows audio repair, HypnoSynth, and DAW editing foundations. Rust workspace tests, callback-allocation, opt-in WASAPI output, Clippy, the release C ABI DLL, full Dart analysis, all 64 desktop Flutter tests and the Windows Release build pass locally. The opt-in native integration test also passes against the default Windows output device and reports nonzero arranged-pattern telemetry. Latest-head CI is running. Speaker/headphone audibility and microphone/line-in capture remain unverified.
 
 ## Product identity
 
@@ -26,7 +26,7 @@ Do not reintroduce C#/.NET/Avalonia as a second desktop frontend. Verify current
 - Rust callback tests confirm audible generated and decoded signals; physical speaker or loopback listening still requires a user machine with an audio output.
 - Windows recording uses the default input device and a background stereo PCM16 WAV writer; stopping finalizes and imports the take at the transport position. Input hardware behavior remains unverified.
 - Live meters must use actual engine telemetry, not invented animation.
-- Measured PCM/IEEE-float WAV waveforms load off the UI isolate and render from decoded peaks; unsupported audio formats show an explicit unavailable state. The Region menu splits, joins contiguous regions, and trims region starts/ends to the stopped playhead. These operations update native playback and persisted source ranges; chronological undo/redo covers them, clip moves and HypnoSynth pattern edits. One HypnoSynth instrument track can be added, renamed, deleted and persisted, with working mixer gain/pan/mute/solo. It has no independent MIDI regions or track-specific sequencer. MIDI regions, stretch resize, Bounce in Place, effects, automation and plugin hosting remain incomplete. Imported audio clips can be moved and their start positions persist.
+- Measured PCM/IEEE-float WAV waveforms load off the UI isolate and render from decoded peaks; unsupported audio formats show an explicit unavailable state. The Region menu splits, joins contiguous regions, and trims region starts/ends to the stopped playhead. These operations update native playback and persisted source ranges; audio clips also have drag handles for source-bounded edge trimming, with preview, native playback, session persistence and chronological undo/redo. One HypnoSynth instrument track can be added, renamed, deleted and persisted, with working mixer gain/pan/mute/solo. It has no independent MIDI regions or track-specific sequencer. MIDI regions, time stretching, Bounce in Place, effects, automation and plugin hosting remain incomplete. Imported audio clips can be moved and their start positions persist.
 
 ## Critical invariants
 
@@ -46,7 +46,7 @@ See [Feature Tracker](FEATURE_TRACKER.md) for the living backlog. Initial order:
 
 ## Current verification and uncertainty
 
-On 2026-10-19, local verification passed for Rust audio/core/FFI and the complete desktop Flutter suite (63 passed). The opt-in native integration test passed against the default Windows output device and observed nonzero arranged-pattern telemetry; the release DLL also emitted nonzero stereo pattern-region samples to the WASAPI callback through direct Dart FFI. CI is running for the current PR head. These results do not prove speaker/headphone audibility or successful microphone/line-in capture.
+On 2026-10-19, local verification passed for Rust audio/core/FFI and the complete desktop Flutter suite (64 passed) and Windows Release desktop build. The opt-in native integration test passed against the default Windows output device and observed nonzero arranged-pattern telemetry; the release DLL also emitted nonzero stereo pattern-region samples to the WASAPI callback through direct Dart FFI. CI is running for the current PR head. These results do not prove speaker/headphone audibility or successful microphone/line-in capture.
 
 PR #33 remains open, mergeable and unmerged. New local edits must be published to the same PR and checked by remote CI; do not infer sound quality or hardware recording from callback/unit tests alone.
 ## Required handoff format
