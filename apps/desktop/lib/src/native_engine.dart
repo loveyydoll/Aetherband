@@ -56,8 +56,8 @@ typedef _TrackInfoD = int Function(Pointer<Void>, int, Pointer<_TrackInfo>);
 
 typedef _SynthN = Int32 Function(Pointer<Void>, Uint32, Uint32, Float);
 typedef _SynthD = int Function(Pointer<Void>, int, int, double);
-typedef _TransportN = Int32 Function(Pointer<Void>, Float, Uint8, Uint8);
-typedef _TransportD = int Function(Pointer<Void>, double, int, int);
+typedef _TransportN = Int32 Function(Pointer<Void>, Float, Uint8, Uint8, Uint8);
+typedef _TransportD = int Function(Pointer<Void>, double, int, int, int);
 typedef _MasterN = Int32 Function(Pointer<Void>, Float);
 typedef _MasterD = int Function(Pointer<Void>, double);
 typedef _ExportN = Int32 Function(Pointer<Void>, Pointer<Utf8>);
@@ -68,7 +68,7 @@ typedef _StopRecordingN = Int32 Function(
     Pointer<Void>, Pointer<_RecordingStats>);
 typedef _StopRecordingD = int Function(Pointer<Void>, Pointer<_RecordingStats>);
 
-const int _expectedApiVersion = 0x00000B00;
+const int _expectedApiVersion = 0x00000C00;
 
 final class _TrackInfo extends Struct {
   @Uint64()
@@ -231,8 +231,9 @@ class NativeEngineController
   Future<void> synthEvent(int event, int key, double value) =>
       _request<void>('synth', (event, key, value));
   @override
-  Future<void> configureTransport(double bpm, bool metronome, bool sequence) =>
-      _request<void>('transport', (bpm, metronome, sequence));
+  Future<void> configureTransport(
+          double bpm, int beatsPerBar, bool metronome, bool sequence) =>
+      _request<void>('transport', (bpm, beatsPerBar, metronome, sequence));
   @override
   Future<void> setMasterVolume(double gain) => _request<void>('master', gain);
   @override
@@ -407,8 +408,10 @@ Future<void> _runNativeEngine((SendPort, String?) configuration) async {
             final (event, key, value) = argument as (int, int, double);
             await session.synthEvent(event, key, value);
           case 'transport':
-            final (bpm, metronome, sequence) = argument as (double, bool, bool);
-            await session.configureTransport(bpm, metronome, sequence);
+            final (bpm, beatsPerBar, metronome, sequence) =
+                argument as (double, int, bool, bool);
+            await session.configureTransport(
+                bpm, beatsPerBar, metronome, sequence);
           case 'master':
             await session.setMasterVolume(argument as double);
           case 'export':
@@ -891,10 +894,12 @@ class _NativeEngineSession
 
   @override
   Future<void> configureTransport(
-      double bpm, bool metronome, bool sequence) async {
+      double bpm, int beatsPerBar, bool metronome, bool sequence) async {
     if (_disposed) throw StateError('Native engine has been disposed.');
-    _check('transport setup',
-        transportNative(_handle, bpm, metronome ? 1 : 0, sequence ? 1 : 0));
+    _check(
+        'transport setup',
+        transportNative(
+            _handle, bpm, beatsPerBar, metronome ? 1 : 0, sequence ? 1 : 0));
   }
 
   @override

@@ -14,6 +14,7 @@ class TimelineView extends StatelessWidget {
     required this.zoom,
     required this.playheadSeconds,
     required this.tempo,
+    required this.beatsPerBar,
     required this.onSeek,
     required this.onTrackSelected,
     required this.onClipSelected,
@@ -35,6 +36,7 @@ class TimelineView extends StatelessWidget {
   final double zoom;
   final double playheadSeconds;
   final int tempo;
+  final int beatsPerBar;
   final ValueChanged<double> onSeek;
   final ValueChanged<TrackModel> onTrackSelected;
   final void Function(TrackModel, ClipModel) onClipSelected;
@@ -66,7 +68,9 @@ class TimelineView extends StatelessWidget {
         final clipEnd = tracks.expand((track) => track.clips).fold<double>(
               0,
               (end, clip) => math.max(
-                  end, clip.timelineLeft(tempo) + clip.timelineWidth(tempo)),
+                  end,
+                  clip.timelineLeft(tempo, beatsPerBar) +
+                      clip.timelineWidth(tempo, beatsPerBar)),
             );
         final contentWidth = math.max(baseWidth, clipEnd + 84) * zoom;
         final availableHeight = constraints.hasBoundedHeight
@@ -81,10 +85,11 @@ class TimelineView extends StatelessWidget {
         final laneHeight = tracks.isEmpty
             ? _minimumLaneHeight
             : ((contentHeight - _rulerHeight) / tracks.length).toDouble();
-        final playheadX =
-            (playheadSeconds * timelinePixelsPerSecond(tempo) * zoom)
-                .clamp(0.0, contentWidth)
-                .toDouble();
+        final playheadX = (playheadSeconds *
+                timelinePixelsPerSecond(tempo, beatsPerBar) *
+                zoom)
+            .clamp(0.0, contentWidth)
+            .toDouble();
 
         return SingleChildScrollView(
           child: SizedBox(
@@ -147,6 +152,7 @@ class TimelineView extends StatelessWidget {
                                   width: contentWidth,
                                   zoom: zoom,
                                   tempo: tempo,
+                                  beatsPerBar: beatsPerBar,
                                   onSeek: onSeek,
                                 ),
                                 for (final track in tracks)
@@ -157,6 +163,7 @@ class TimelineView extends StatelessWidget {
                                     laneHeight: laneHeight,
                                     zoom: zoom,
                                     tempo: tempo,
+                                    beatsPerBar: beatsPerBar,
                                     selectedClipId: selectedClipId,
                                     onClipSelected: (clip) =>
                                         onClipSelected(track, clip),
@@ -364,12 +371,14 @@ class _TimelineRuler extends StatelessWidget {
     required this.width,
     required this.zoom,
     required this.tempo,
+    required this.beatsPerBar,
     required this.onSeek,
   });
 
   final double width;
   final double zoom;
   final int tempo;
+  final int beatsPerBar;
   final ValueChanged<double> onSeek;
 
   @override
@@ -379,7 +388,7 @@ class _TimelineRuler extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTapDown: (details) {
-        final secondsPerBar = 240 / tempo;
+        final secondsPerBar = 60 * beatsPerBar / tempo;
         onSeek(details.localPosition.dx / barWidth * secondsPerBar);
       },
       child: SizedBox(
@@ -420,6 +429,7 @@ class _TimelineLane extends StatelessWidget {
     required this.laneHeight,
     required this.zoom,
     required this.tempo,
+    required this.beatsPerBar,
     required this.selectedClipId,
     required this.onClipSelected,
     required this.onClipMoved,
@@ -436,6 +446,7 @@ class _TimelineLane extends StatelessWidget {
   final double laneHeight;
   final double zoom;
   final int tempo;
+  final int beatsPerBar;
   final String? selectedClipId;
   final ValueChanged<ClipModel> onClipSelected;
   final void Function(ClipModel, double) onClipMoved;
@@ -456,9 +467,11 @@ class _TimelineLane extends StatelessWidget {
               child: CustomPaint(painter: TimelineGridPainter(zoom: zoom))),
           for (final clip in track.clips)
             Positioned(
-              left: clip.timelineLeft(tempo) * zoom,
+              left: clip.timelineLeft(tempo, beatsPerBar) * zoom,
               top: (laneHeight - math.min(50.0, laneHeight - 14)) / 2,
-              width: math.max(1.0, clip.timelineWidth(tempo) * zoom).toDouble(),
+              width: math
+                  .max(1.0, clip.timelineWidth(tempo, beatsPerBar) * zoom)
+                  .toDouble(),
               height: math.min(50.0, laneHeight - 14),
               child: ClipTile(
                 clip: clip,

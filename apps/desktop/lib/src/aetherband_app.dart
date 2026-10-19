@@ -319,13 +319,13 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   Future<void> _seekPreviousBar() async {
-    final secondsPerBar = 240 / _performance.tempo;
+    final secondsPerBar = 60 * _performance.beatsPerBar / _performance.tempo;
     final currentBar = (_telemetry.playheadSeconds / secondsPerBar).ceil() - 1;
     await _seekToSeconds(math.max(0, currentBar) * secondsPerBar);
   }
 
   Future<void> _seekNextBar() async {
-    final secondsPerBar = 240 / _performance.tempo;
+    final secondsPerBar = 60 * _performance.beatsPerBar / _performance.tempo;
     final nextBar = (_telemetry.playheadSeconds / secondsPerBar).floor() + 1;
     await _seekToSeconds(nextBar * secondsPerBar);
   }
@@ -335,8 +335,10 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
           0,
           (end, clip) => math.max(
             end,
-            clip.timelineLeft(_performance.tempo.round()) +
-                clip.timelineWidth(_performance.tempo.round()),
+            clip.timelineLeft(
+                    _performance.tempo.round(), _performance.beatsPerBar) +
+                clip.timelineWidth(
+                    _performance.tempo.round(), _performance.beatsPerBar),
           ),
         );
     await _seekToSeconds(endSeconds);
@@ -348,7 +350,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
           0,
           (end, clip) => math.max(
             end,
-            clip.timelineLeft(tempo) + clip.timelineWidth(tempo),
+            clip.timelineLeft(tempo, _performance.beatsPerBar) +
+                clip.timelineWidth(tempo, _performance.beatsPerBar),
           ),
         );
     final contentWidth = math.max(1400.0, clipEnd + 84);
@@ -2175,10 +2178,11 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     }
     if (previous == null ||
         previous.tempo != settings.tempo ||
+        previous.beatsPerBar != settings.beatsPerBar ||
         previous.metronome != settings.metronome ||
         previous.sequence != settings.sequence) {
-      await engine.configureTransport(
-          settings.tempo, settings.metronome, settings.sequence);
+      await engine.configureTransport(settings.tempo, settings.beatsPerBar,
+          settings.metronome, settings.sequence);
     }
     if (previous == null || previous.master != settings.master) {
       await engine.setMasterVolume(settings.master);
@@ -2529,7 +2533,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         (!clip.isSequenceRegion && nativeId == null)) {
       return;
     }
-    final pixelsPerSecond = timelinePixelsPerSecond(_performance.tempo);
+    final pixelsPerSecond =
+        timelinePixelsPerSecond(_performance.tempo, _performance.beatsPerBar);
     final beatSeconds = 60 / _performance.tempo;
     final unsnapped = clip.startSeconds + deltaPx / _zoom / pixelsPerSecond;
     final positioned = _snapToBeat
@@ -2656,7 +2661,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       return;
     }
     draft.totalDeltaPx += dx;
-    final pixelsPerSecond = timelinePixelsPerSecond(_performance.tempo);
+    final pixelsPerSecond =
+        timelinePixelsPerSecond(_performance.tempo, _performance.beatsPerBar);
     if (pixelsPerSecond <= 0 || _zoom <= 0) return;
     final delta = draft.totalDeltaPx / _zoom / pixelsPerSecond;
     final beatSeconds = 60 / _performance.tempo;
@@ -3680,6 +3686,10 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                                   onZoomChanged: (value) =>
                                       setState(() => _zoom = value),
                                   snapToBeat: _snapToBeat,
+                                  beatsPerBar: _performance.beatsPerBar,
+                                  onBeatsPerBarChanged: (value) =>
+                                      _changePerformance(_performance.copyWith(
+                                          beatsPerBar: value)),
                                   onSnapChanged: (value) =>
                                       setState(() => _snapToBeat = value),
                                   browserOpen: _browserOpen,
@@ -3694,6 +3704,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                                     zoom: _zoom,
                                     playheadSeconds: _telemetry.playheadSeconds,
                                     tempo: _performance.tempo.round(),
+                                    beatsPerBar: _performance.beatsPerBar,
                                     onSeek: (seconds) =>
                                         unawaited(_seekToSeconds(seconds)),
                                     onTrackSelected: _selectTrack,
@@ -4283,6 +4294,8 @@ class _TimelineToolbar extends StatelessWidget {
     required this.onZoomChanged,
     required this.snapToBeat,
     required this.onSnapChanged,
+    required this.beatsPerBar,
+    required this.onBeatsPerBarChanged,
     required this.browserOpen,
     required this.onBrowser,
     required this.onImport,
@@ -4294,6 +4307,8 @@ class _TimelineToolbar extends StatelessWidget {
   final ValueChanged<double> onZoomChanged;
   final bool snapToBeat;
   final ValueChanged<bool> onSnapChanged;
+  final int beatsPerBar;
+  final ValueChanged<int> onBeatsPerBarChanged;
   final bool browserOpen;
   final VoidCallback onBrowser;
   final VoidCallback? onImport;
@@ -4346,6 +4361,25 @@ class _TimelineToolbar extends StatelessWidget {
             visualDensity: VisualDensity.compact,
             color: snapToBeat ? AetherColors.sage : AetherColors.secondaryText,
             icon: const Icon(Icons.grid_on, size: 16),
+          ),
+          PopupMenuButton<int>(
+            key: const ValueKey('time-signature-menu'),
+            tooltip: 'Time signature',
+            initialValue: beatsPerBar,
+            onSelected: onBeatsPerBarChanged,
+            itemBuilder: (context) => [
+              for (var beats = 2; beats <= 7; beats++)
+                PopupMenuItem<int>(
+                  value: beats,
+                  child: Text('$beats/4'),
+                ),
+            ],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              child: Text('$beatsPerBar/4',
+                  style:
+                      const TextStyle(color: AetherColors.paper, fontSize: 12)),
+            ),
           ),
           const SizedBox(width: 4),
           const Icon(Icons.layers_outlined, size: 15, color: AetherColors.sage),

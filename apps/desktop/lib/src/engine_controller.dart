@@ -101,7 +101,8 @@ abstract interface class SequenceRegionEngine {
 /// Optional native performance capabilities, separate from imported-track I/O.
 abstract interface class PerformanceEngine {
   Future<void> synthEvent(int event, int key, double value);
-  Future<void> configureTransport(double bpm, bool metronome, bool sequence);
+  Future<void> configureTransport(
+      double bpm, int beatsPerBar, bool metronome, bool sequence);
   Future<void> setMasterVolume(double gain);
 }
 

@@ -42,6 +42,7 @@ pub enum EngineCommand {
     },
     ConfigureTransport {
         bpm: f32,
+        beats_per_bar: u8,
         metronome: bool,
         sequence: bool,
     },

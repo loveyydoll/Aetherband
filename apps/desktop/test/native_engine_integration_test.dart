@@ -35,7 +35,9 @@ void main() {
       final defaultOutput =
           outputDevices.firstWhere((device) => device.isDefault);
       final pattern = List<int?>.filled(16, null)..[0] = 60;
-      await engine.configureTransport(120, false, false);
+      await expectLater(
+          engine.configureTransport(124, 8, false, true), throwsStateError);
+      await engine.configureTransport(120, 4, false, false);
       await engine.setSequenceRegion(77, 0.1, pattern);
       await engine.play();
       final arrangedNote = await engine.telemetry
@@ -47,7 +49,7 @@ void main() {
       expect(arrangedNote.playheadSeconds, greaterThanOrEqualTo(0.1));
       await engine.stop();
       await engine.removeSequenceRegion(77);
-      await engine.configureTransport(124, false, true);
+      await engine.configureTransport(124, 3, false, true);
       await engine.synthEvent(2, 1, 0);
       await engine.synthEvent(3, 0, 0.9);
       await engine.synthEvent(6, 0, 0.6);
@@ -80,7 +82,7 @@ void main() {
       expect(hardRight.peakRight, greaterThan(0));
       await engine.stop();
       await engine.synthEvent(7, 0, 0.75);
-      await engine.configureTransport(92, false, false);
+      await engine.configureTransport(92, 4, false, false);
       await engine.synthEvent(2, 0, 0);
       await engine.synthEvent(3, 0, 0.42);
       await engine.setMasterVolume(0.8);

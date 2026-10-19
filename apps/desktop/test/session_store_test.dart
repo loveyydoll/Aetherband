@@ -138,6 +138,7 @@ void main() {
         preset: 1,
         macros: const [0.7, 0.6, 0.2, 0.3, 0.8],
         tempo: 137,
+        beatsPerBar: 3,
         metronome: true,
         sequence: true,
         sequenceNotes: const [
@@ -170,6 +171,7 @@ void main() {
     expect(restored.performance.preset, 1);
     expect(restored.performance.macros, settings.macros);
     expect(restored.performance.tempo, 137);
+    expect(restored.performance.beatsPerBar, 3);
     expect(restored.performance.metronome, isTrue);
     expect(restored.performance.sequence, isTrue);
     expect(restored.performance.sequenceNotes, settings.sequenceNotes);
@@ -229,9 +231,12 @@ void main() {
   });
 
   test('older performance settings default to the original 16-step phrase', () {
-    final old = const PerformanceSettings().toJson()..remove('sequenceNotes');
+    final old = const PerformanceSettings().toJson()
+      ..remove('sequenceNotes')
+      ..remove('beatsPerBar');
     expect(
         PerformanceSettings.fromJson(old).sequenceNotes, defaultHypnoSequence);
+    expect(PerformanceSettings.fromJson(old).beatsPerBar, 4);
     expect(
       () => PerformanceSettings.fromJson({
         ...old,

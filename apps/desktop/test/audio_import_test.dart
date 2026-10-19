@@ -127,8 +127,8 @@ class FakeEngine
 
   @override
   Future<void> configureTransport(
-      double bpm, bool metronome, bool sequence) async {
-    calls.add('transport:$bpm:$metronome:$sequence');
+      double bpm, int beatsPerBar, bool metronome, bool sequence) async {
+    calls.add('transport:$bpm:$beatsPerBar:$metronome:$sequence');
   }
 
   @override
@@ -651,12 +651,18 @@ void main() {
     final engine = FakeEngine();
     await mountWorkspace(tester, engine);
 
+    await tester.tap(find.byKey(const ValueKey('time-signature-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('3/4').last);
+    await tester.pumpAndSettle();
+
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
 
-    expect(engine.calls, contains('seek:${240 / 92}'));
+    expect(find.text('3/4'), findsOneWidget);
+    expect(engine.calls, contains('seek:${180 / 92}'));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });

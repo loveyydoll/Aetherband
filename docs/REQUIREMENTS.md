@@ -16,7 +16,7 @@
 
 ### 1.2 Transport & Timeline
 - **FR-2.1 (P0): Transport Controls:** Play, Pause, Stop and Seek must produce immediate, observable engine behavior. Stop must silence the output, reset the playhead and allow a subsequent Play to restart from the beginning. The Stop fix is reported complete; keep acceptance/verification evidence current and do not describe the original regression as active unless reproduced.
-- **FR-2.2 (P1): Timeline & Musical Grid:** Support sample-accurate playhead tracking, beats-per-minute (BPM) tempo configuration, and musical time signatures (e.g., 4/4, 3/4).
+- **FR-2.2 (P1): Timeline & Musical Grid:** Support sample-accurate playhead tracking, BPM tempo configuration, and musical time signatures. Implemented for 2–7/4 meters: ruler scaling, bar seek, quarter-beat snapping and metronome accents follow the persisted session meter; older sessions default to 4/4. Verified by 3/4 widget, session round-trip and Rust metronome tests in PR #33.
 - **FR-2.3 (P1): Clip Arrangement:** Support placing, moving, splitting, trimming, and looping audio clips on discrete tracks.
 
 ### 1.3 User Interface (Desktop)

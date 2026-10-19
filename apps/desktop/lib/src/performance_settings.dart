@@ -22,6 +22,7 @@ class PerformanceSettings {
       {this.preset = 0,
       this.macros = const [0.42, 0.38, 0.55, 0.36, 0.7],
       this.tempo = 92,
+      this.beatsPerBar = 4,
       this.metronome = false,
       this.sequence = false,
       this.sequenceNotes = defaultHypnoSequence,
@@ -37,6 +38,7 @@ class PerformanceSettings {
   final int preset;
   final List<double> macros;
   final double tempo;
+  final int beatsPerBar;
   final bool metronome;
   final bool sequence;
   final List<int?> sequenceNotes;
@@ -46,6 +48,7 @@ class PerformanceSettings {
           {int? preset,
           List<double>? macros,
           double? tempo,
+          int? beatsPerBar,
           bool? metronome,
           bool? sequence,
           List<int?>? sequenceNotes,
@@ -54,6 +57,7 @@ class PerformanceSettings {
           preset: preset ?? this.preset,
           macros: macros ?? this.macros,
           tempo: tempo ?? this.tempo,
+          beatsPerBar: beatsPerBar ?? this.beatsPerBar,
           metronome: metronome ?? this.metronome,
           sequence: sequence ?? this.sequence,
           sequenceNotes: sequenceNotes ?? this.sequenceNotes,
@@ -63,6 +67,7 @@ class PerformanceSettings {
         'preset': preset,
         'macros': macros,
         'tempo': tempo,
+        'beatsPerBar': beatsPerBar,
         'metronome': metronome,
         'sequence': sequence,
         'sequenceNotes': sequenceNotes,
@@ -76,6 +81,7 @@ class PerformanceSettings {
     final preset = value['preset'];
     final macros = value['macros'];
     final tempo = value['tempo'];
+    final beatsPerBar = value['beatsPerBar'] ?? 4;
     final master = value['master'];
     final sequenceNotes = value['sequenceNotes'] ?? defaultHypnoSequence;
     if (preset is! int ||
@@ -88,6 +94,9 @@ class PerformanceSettings {
         !tempo.isFinite ||
         tempo < 30 ||
         tempo > 300 ||
+        beatsPerBar is! int ||
+        beatsPerBar < 2 ||
+        beatsPerBar > 7 ||
         master is! num ||
         !master.isFinite ||
         master < 0 ||
@@ -106,6 +115,7 @@ class PerformanceSettings {
         macros:
             List<double>.unmodifiable(macros.map((v) => (v as num).toDouble())),
         tempo: tempo.toDouble(),
+        beatsPerBar: beatsPerBar,
         master: master.toDouble(),
         metronome: value['metronome'] as bool,
         sequence: value['sequence'] as bool,

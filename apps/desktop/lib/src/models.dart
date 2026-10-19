@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'theme.dart';
 
-double timelinePixelsPerSecond(num tempo) => tempo / 240 * 84;
+double timelinePixelsPerSecond(num tempo, [int beatsPerBar = 4]) =>
+    tempo / (beatsPerBar * 60) * 84;
 
 class ClipModel {
   ClipModel({
@@ -37,16 +38,17 @@ class ClipModel {
   final bool isSequenceRegion;
   List<int?> sequenceNotes;
 
-  double timelineLeft(int tempo) =>
-      isDemo ? start : startSeconds * timelinePixelsPerSecond(tempo);
+  double timelineLeft(int tempo, [int beatsPerBar = 4]) => isDemo
+      ? start
+      : startSeconds * timelinePixelsPerSecond(tempo, beatsPerBar);
 
-  double timelineWidth(int tempo) => isDemo
+  double timelineWidth(int tempo, [int beatsPerBar = 4]) => isDemo
       ? width
       : isSequenceRegion
-          ? 8 * 60 / tempo * timelinePixelsPerSecond(tempo)
+          ? 8 * 60 / tempo * timelinePixelsPerSecond(tempo, beatsPerBar)
           : durationSeconds == null
               ? 140 // Explicitly labelled unknown; not presented as a measured length.
-              : durationSeconds! * timelinePixelsPerSecond(tempo);
+              : durationSeconds! * timelinePixelsPerSecond(tempo, beatsPerBar);
 }
 
 class TrackModel {

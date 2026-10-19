@@ -131,7 +131,7 @@ impl Default for DAWDeviceInfo {
 /// Returns the API version (major << 16 | minor << 8 | patch).
 #[no_mangle]
 pub extern "C" fn daw_get_api_version() -> u32 {
-    11 << 8
+    12 << 8
 }
 
 /// Starts recording from the default Windows input device to a new WAV path.
@@ -313,7 +313,7 @@ pub unsafe extern "C" fn daw_engine_solo_track(
     }
 }
 
-/// Configure the sample-clock tempo, metronome and original HypnoSynth phrase.
+/// Configure tempo, quarter-note beats per bar, metronome and HypnoSynth phrase.
 ///
 /// # Safety
 /// `engine` must be a live handle returned by `daw_engine_create`, with calls
@@ -322,13 +322,14 @@ pub unsafe extern "C" fn daw_engine_solo_track(
 pub unsafe extern "C" fn daw_engine_configure_transport(
     engine: *mut DAWEngine,
     bpm: f32,
+    beats_per_bar: u8,
     metronome: u8,
     sequence: u8,
 ) -> i32 {
     let Some(eng) = to_core_mut(engine) else {
         return DAW_ERROR_INVALID_ARGUMENT;
     };
-    if eng.configure_transport(bpm, metronome != 0, sequence != 0) {
+    if eng.configure_transport(bpm, beats_per_bar, metronome != 0, sequence != 0) {
         DAW_OK
     } else {
         DAW_ERROR_COMMAND_REJECTED
@@ -792,7 +793,7 @@ mod ffi_contract_tests {
 
     #[test]
     fn api_version_matches_dart_ffi_contract() {
-        assert_eq!(daw_get_api_version(), 0x0000_0B00);
+        assert_eq!(daw_get_api_version(), 0x0000_0C00);
     }
 
     #[test]

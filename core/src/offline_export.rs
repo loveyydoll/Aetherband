@@ -62,6 +62,7 @@ pub struct ExportSettings {
     pub sample_rate: u32,
     pub master: f32,
     pub bpm: f32,
+    pub beats_per_bar: u8,
     pub metronome: bool,
     pub sequence: bool,
     pub sequence_pattern: [Option<u8>; 16],
@@ -163,6 +164,7 @@ pub fn render_stereo_wav(
         || !(0.0..=2.0).contains(&settings.master)
         || !settings.bpm.is_finite()
         || !(30.0..=300.0).contains(&settings.bpm)
+        || !(2..=7).contains(&settings.beats_per_bar)
         || settings.preset > 2
         || !settings.synth_gain.is_finite()
         || !(0.0..=1.0).contains(&settings.synth_gain)
@@ -225,7 +227,9 @@ pub fn render_stereo_wav(
         .unwrap_or(0);
     // A sequence-only mix renders eight bars, then includes a short release tail.
     let sequence_frames = if settings.sequence && audio_end_frame == 0 {
-        (settings.sample_rate as f64 * 60.0 / settings.bpm as f64 * 32.0) as u64
+        (settings.sample_rate as f64 * 60.0 / settings.bpm as f64
+            * settings.beats_per_bar as f64
+            * 8.0) as u64
     } else {
         0
     };
@@ -301,6 +305,7 @@ fn render_to_temporary(
     let mut region_steps = [-1_i64; MAX_SEQUENCE_REGIONS];
     let mut region_notes = [None; MAX_SEQUENCE_REGIONS];
     let mut click_remaining = 0_u32;
+    let mut click_gain = 1.0_f32;
     let mut written_frames = 0_u64;
     let mut bytes = Vec::with_capacity(OUTPUT_BLOCK_FRAMES * 4);
     let mut left = [0.0_f32; OUTPUT_BLOCK_FRAMES];
@@ -385,10 +390,18 @@ fn render_to_temporary(
             if settings.metronome && timeline_frame < musical_end_frame {
                 if previous_beat == 0.0 || previous_beat.floor() != beat_phase.floor() {
                     click_remaining = (settings.sample_rate as f32 * 0.025) as u32;
+                    click_gain = if (beat_phase.floor() as u64)
+                        .is_multiple_of(settings.beats_per_bar as u64)
+                    {
+                        1.5
+                    } else {
+                        1.0
+                    };
                 }
                 if click_remaining > 0 {
                     let time = click_remaining as f32 / settings.sample_rate as f32;
-                    let click = (time * 1500.0 * std::f32::consts::TAU).sin() * time * 3.0;
+                    let click =
+                        (time * 1500.0 * std::f32::consts::TAU).sin() * time * 3.0 * click_gain;
                     left[frame] += click;
                     right[frame] += click;
                     click_remaining -= 1;
@@ -510,6 +523,7 @@ mod tests {
             sample_rate: 48_000,
             master: 0.8,
             bpm: 92.0,
+            beats_per_bar: 4,
             metronome: false,
             sequence: false,
             sequence_pattern: DEFAULT_SEQUENCE,
@@ -564,6 +578,7 @@ mod tests {
             sample_rate: 8_000,
             master: 0.8,
             bpm: 120.0,
+            beats_per_bar: 3,
             metronome: true,
             sequence: true,
             sequence_pattern: DEFAULT_SEQUENCE,
@@ -579,6 +594,7 @@ mod tests {
         let data = fs::read(&output).unwrap();
         assert_eq!(u16::from_le_bytes([data[22], data[23]]), 2);
         assert_eq!(u32::from_le_bytes(data[24..28].try_into().unwrap()), 8_000);
+        assert_eq!(data.len(), 44 + 14 * 8_000 * 4);
         assert!(data[44..].iter().any(|sample| *sample != 0));
         let _ = fs::remove_file(output);
     }
@@ -598,6 +614,7 @@ mod tests {
             sample_rate: 8_000,
             master: 0.8,
             bpm: 120.0,
+            beats_per_bar: 4,
             metronome: false,
             sequence: false,
             sequence_pattern: [None; 16],
@@ -626,6 +643,7 @@ mod tests {
             sample_rate: 8_000,
             master: 0.8,
             bpm: 300.0,
+            beats_per_bar: 4,
             metronome: false,
             sequence: true,
             sequence_pattern: pattern,
@@ -652,6 +670,7 @@ mod tests {
             sample_rate: 8_000,
             master: 0.8,
             bpm: 120.0,
+            beats_per_bar: 4,
             metronome: false,
             sequence: true,
             sequence_pattern: DEFAULT_SEQUENCE,
@@ -713,6 +732,7 @@ mod tests {
                 sample_rate: 48_000,
                 master: 0.8,
                 bpm: 92.0,
+                beats_per_bar: 4,
                 metronome: false,
                 sequence: false,
                 sequence_pattern: DEFAULT_SEQUENCE,
@@ -748,6 +768,7 @@ mod tests {
                 sample_rate: 48_000,
                 master: 0.8,
                 bpm: 92.0,
+                beats_per_bar: 4,
                 metronome: false,
                 sequence: false,
                 sequence_pattern: DEFAULT_SEQUENCE,

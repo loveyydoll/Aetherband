@@ -42,6 +42,7 @@ pub struct AudioProcessor {
     synth_muted: bool,
     synth_solo: bool,
     bpm: f32,
+    beats_per_bar: u8,
     metronome: bool,
     sequence: bool,
     sequence_note: Option<u8>,
@@ -49,6 +50,7 @@ pub struct AudioProcessor {
     sequence_regions: [Option<SequenceRegionState>; MAX_SEQUENCE_REGIONS],
     beat_phase: f64,
     click_remaining: usize,
+    click_gain: f32,
 
     // State
     sample_rate: f32,
@@ -85,6 +87,7 @@ impl AudioProcessor {
             synth_muted: false,
             synth_solo: false,
             bpm: 92.0,
+            beats_per_bar: 4,
             metronome: false,
             sequence: false,
             sequence_note: None,
@@ -92,6 +95,7 @@ impl AudioProcessor {
             sequence_regions: [None; MAX_SEQUENCE_REGIONS],
             beat_phase: 0.0,
             click_remaining: 0,
+            click_gain: 1.0,
             sample_rate,
             playhead_frame: 0,
             is_playing: false,
@@ -200,10 +204,12 @@ impl AudioProcessor {
                 },
                 ConfigureTransport {
                     bpm,
+                    beats_per_bar,
                     metronome,
                     sequence,
                 } => {
                     self.bpm = bpm;
+                    self.beats_per_bar = beats_per_bar.clamp(2, 7);
                     self.metronome = metronome;
                     self.sequence = sequence;
                     if !sequence {
@@ -464,6 +470,13 @@ impl AudioProcessor {
                     && self.metronome
                 {
                     self.click_remaining = (self.sample_rate * 0.025) as usize;
+                    self.click_gain = if (self.beat_phase.floor() as u64)
+                        .is_multiple_of(self.beats_per_bar as u64)
+                    {
+                        1.5
+                    } else {
+                        1.0
+                    };
                 }
                 if self.sequence
                     && (previous == 0.0
@@ -519,7 +532,8 @@ impl AudioProcessor {
             }
             if self.is_playing && self.metronome && self.click_remaining > 0 {
                 let time = self.click_remaining as f32 / self.sample_rate;
-                let click = (time * 1500.0 * std::f32::consts::TAU).sin() * time * 3.0;
+                let click =
+                    (time * 1500.0 * std::f32::consts::TAU).sin() * time * 3.0 * self.click_gain;
                 self.scratch_left[f] += click;
                 self.scratch_right[f] += click;
                 self.click_remaining -= 1;
@@ -881,6 +895,7 @@ mod tests {
         ui.cmd_producer
             .push(EngineCommand::ConfigureTransport {
                 bpm: 300.0,
+                beats_per_bar: 4,
                 metronome: false,
                 sequence: true,
             })
@@ -900,6 +915,7 @@ mod tests {
         ui.cmd_producer
             .push(EngineCommand::ConfigureTransport {
                 bpm: 300.0,
+                beats_per_bar: 4,
                 metronome: false,
                 sequence: false,
             })
@@ -919,6 +935,40 @@ mod tests {
         processor.process_interleaved(&mut output, 2);
         assert!(output[..800 * 2].iter().all(|sample| *sample == 0.0));
         assert!(output[800 * 2..].iter().any(|sample| sample.abs() > 0.0001));
+    }
+
+    #[test]
+    fn metronome_accent_follows_three_four_measure_boundaries() {
+        let (mut ui, audio) = create_engine_queues(32, 32);
+        let mut processor = AudioProcessor::new(8_000.0, audio);
+        ui.cmd_producer
+            .push(EngineCommand::ConfigureTransport {
+                bpm: 120.0,
+                beats_per_bar: 3,
+                metronome: true,
+                sequence: false,
+            })
+            .unwrap();
+        ui.cmd_producer.push(EngineCommand::Play).unwrap();
+
+        let mut output = vec![0.0_f32; 16_000 * 2];
+        processor.process_interleaved(&mut output, 2);
+        let peak = |beat: usize| {
+            let start = beat * 4_000 * 2;
+            output[start..start + 512 * 2]
+                .iter()
+                .fold(0.0_f32, |current, sample| current.max(sample.abs()))
+        };
+        let downbeat = peak(0);
+        let second_beat = peak(1);
+        let third_beat = peak(2);
+        let following_downbeat = peak(3);
+        assert!(
+            downbeat > second_beat * 1.4,
+            "expected a downbeat accent, got {downbeat} vs {second_beat}"
+        );
+        assert!((second_beat - third_beat).abs() < 0.00001);
+        assert!(following_downbeat > third_beat * 1.4);
     }
 
     #[test]

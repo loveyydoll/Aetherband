@@ -142,6 +142,7 @@ pub struct DAWEngine {
     tracks: Vec<TrackInfo>,
     master_gain: f32,
     bpm: f32,
+    beats_per_bar: u8,
     metronome: bool,
     sequence: bool,
     sequence_pattern: [Option<u8>; 16],
@@ -177,6 +178,7 @@ impl DAWEngine {
             tracks: Vec::new(),
             master_gain: 0.8,
             bpm: 92.0,
+            beats_per_bar: 4,
             metronome: false,
             sequence: false,
             sequence_pattern: DEFAULT_SEQUENCE,
@@ -249,6 +251,7 @@ impl DAWEngine {
         commands
             .push(EngineCommand::ConfigureTransport {
                 bpm: self.bpm,
+                beats_per_bar: self.beats_per_bar,
                 metronome: self.metronome,
                 sequence: self.sequence,
             })
@@ -615,20 +618,29 @@ impl DAWEngine {
         accepted
     }
 
-    pub fn configure_transport(&mut self, bpm: f32, metronome: bool, sequence: bool) -> bool {
+    pub fn configure_transport(
+        &mut self,
+        bpm: f32,
+        beats_per_bar: u8,
+        metronome: bool,
+        sequence: bool,
+    ) -> bool {
         let accepted = bpm.is_finite()
             && (30.0..=300.0).contains(&bpm)
+            && (2..=7).contains(&beats_per_bar)
             && self
                 .ui_endpoints
                 .cmd_producer
                 .push(EngineCommand::ConfigureTransport {
                     bpm,
+                    beats_per_bar,
                     metronome,
                     sequence,
                 })
                 .is_ok();
         if accepted {
             self.bpm = bpm;
+            self.beats_per_bar = beats_per_bar;
             self.metronome = metronome;
             self.sequence = sequence;
         }
@@ -721,6 +733,7 @@ impl DAWEngine {
                 sample_rate: self.output_sample_rate,
                 master: self.master_gain,
                 bpm: self.bpm,
+                beats_per_bar: self.beats_per_bar,
                 metronome: self.metronome,
                 sequence: self.sequence,
                 sequence_pattern: self.sequence_pattern,
@@ -1091,6 +1104,7 @@ mod engine_tests {
             }],
             master_gain: 0.8,
             bpm: 92.0,
+            beats_per_bar: 4,
             metronome: false,
             sequence: false,
             sequence_pattern: DEFAULT_SEQUENCE,

@@ -37,7 +37,7 @@ fn default_device_renders_hypnosynth_and_shuts_down() {
     // Leave the live note's release tail before checking the arrangement
     // scheduler, so the signal must come from the pattern region.
     thread::sleep(Duration::from_millis(300));
-    engine.configure_transport(120.0, false, false);
+    engine.configure_transport(120.0, 4, false, false);
     let mut notes = [None; 16];
     notes[0] = Some(67);
     assert!(engine.set_sequence_region(1, 0.2, notes));

@@ -143,7 +143,7 @@ void main() {
     await tester.tap(find.text('Toggle Metronome'));
     await tester.pumpAndSettle();
 
-    expect(engine.calls, contains('transport:92.0:true:false'));
+    expect(engine.calls, contains('transport:92.0:4:true:false'));
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

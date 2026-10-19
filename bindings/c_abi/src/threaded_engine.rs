@@ -119,7 +119,7 @@ impl EngineHandle {
             .unwrap_or(false)
     }
     command!(remove_sequence_region, id: u32);
-    command!(configure_transport, bpm: f32, metronome: bool, sequence: bool);
+    command!(configure_transport, bpm: f32, beats_per_bar: u8, metronome: bool, sequence: bool);
     command!(set_master_volume, gain: f32);
     pub fn export_wav(&self, path: &Path) -> Result<(), ()> {
         let path = path.to_owned();
