@@ -85,7 +85,7 @@ You don't need to be all three. The point is to make room for different ways of 
 
 The foundations are taking shape: a Rust audio-engine workspace, native playback/mixing capabilities, a versioned C ABI, and a Flutter desktop application communicating with the engine through Dart FFI. This is real development work, but it is **not** the same as a complete recording-to-export workflow.
 
-**Current target: Windows.** Rust audio playback, imported-track mixing, and the original HypnoSynth instrument are now connected to the Flutter workspace. Physical listening and the full app test/build path still need confirmation.
+**Current target: Windows.** Rust audio playback, imported-track mixing, and the original HypnoSynth instrument are connected to the Flutter workspace. A local WASAPI smoke test observed nonzero HypnoSynth samples and clean stream shutdown; listening through speakers/headphones and the full app test/build path still need confirmation.
 
 | Now | Next | Later |
 | --- | --- | --- |
@@ -124,12 +124,12 @@ Aetherband is in an early stage. The distinction between existing code, verified
 - Native multi-track playback and mixing, master gain, per-track gain/pan/mute/solo, native device sample formats, and full-buffer callback processing.
 - HypnoSynth, an original polyphonic software instrument with three original atmospheric and post-punk presets, a live keyboard, performance macros, tempo, metronome, phrase playback and panic.
 - Versioned C ABI 0.4.0 and Dart FFI routes for engine, audio, mixer, synth and session settings.
-- Windows is the only current target. Rust signal, transport, callback and FFI tests pass; Dart analysis passes.
+- Windows is the only current target. Rust signal, transport, callback and FFI tests pass; the opt-in WASAPI callback smoke test passes; Dart analysis passed during implementation.
 
 ### Known gaps
 
 - Recording, stereo export, MIDI editing, effects, automation, plugin hosting, clip editing and undo/redo remain unimplemented.
-- Flutter widget tests and Windows app packaging were not run in this environment because Flutter's installed SDK requires a writable lockfile outside the project workspace. Physical output also remains unverified.
+- Flutter widget tests and Windows app packaging were not run locally because Flutter's installed SDK requires a writable lockfile outside the project workspace. Physical listening/loopback capture also remains unverified.
 - Synced `sources/` references and the pre-existing Desktop checkout remain untouched.
 - The current CI checks need to pass before the migration can be described as stable.
 

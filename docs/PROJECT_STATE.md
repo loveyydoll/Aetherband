@@ -1,7 +1,7 @@
 # Aetherband — Project State Handoff
 
 **Snapshot date:** 2026-10-19
-**Evidence level:** Windows Rust tests, C ABI build, core Clippy and Dart analysis pass for the current branch. Flutter test execution is blocked by SDK lockfile access outside the writable workspace; real hardware output is not independently verified.
+**Evidence level:** Windows Rust tests, C ABI build, core Clippy and Dart analysis pass for the current branch. An opt-in WASAPI smoke test produced nonzero HypnoSynth callback samples and shut down cleanly. Flutter test execution is blocked locally by SDK lockfile access; speaker listening/loopback capture is not independently verified.
 
 ## Product identity
 
@@ -40,14 +40,14 @@ Do not reintroduce C#/.NET/Avalonia as a second desktop frontend. Verify current
 ## Current priorities
 
 See [Feature Tracker](FEATURE_TRACKER.md) for the living backlog. Initial order:
-1. Run Flutter tests and Windows packaging with a writable Flutter SDK, then check the single PR's CI.
+1. Check the single PR's Windows CI for Flutter tests and packaging.
 2. Listen to HypnoSynth and imported audio through actual Windows output hardware.
 3. Add real stereo export and input recording as separately tested vertical slices.
 4. Add waveform/clip editing, undo/redo and MIDI data persistence.
 
 ## Known uncertainty
 
-The current local Rust workspace tests pass (38 core, one callback safety and six ABI tests), as do Rust formatting, Windows C ABI build, core Clippy and Dart analysis. The Flutter test runner could not start because its SDK attempts to create a lockfile under `C:\src\flutter`, outside the writable workspace. Flutter widget execution, full Flutter packaging and physical audio output remain unverified for this branch.
+The current local Rust workspace tests pass (38 core, one callback safety and six ABI tests), as do Rust formatting, Windows C ABI build and core Clippy. An opt-in default-device test confirms nonzero HypnoSynth samples reach the WASAPI callback and stream shutdown succeeds. Dart analysis passed earlier in this implementation; later local analyzer invocation stalled without output. Flutter widget execution, full Flutter packaging and physical listening remain unverified for this branch.
 
 This document is not a runtime test report. It does not independently prove current CI status, device behaviour, audio output, persistence, export or platform packaging. Use current GitHub Actions logs and local results. Update this snapshot when evidence changes, and date it when a new status review is performed.
 
