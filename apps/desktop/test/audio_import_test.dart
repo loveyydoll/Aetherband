@@ -230,6 +230,27 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('Ctrl+Alt+E exports a stereo WAV', (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(
+      tester,
+      engine,
+      exportSavePicker: () async => 'C:/exports/Keyboard Mix',
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyE);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+
+    expect(engine.calls, contains('export:C:/exports/Keyboard Mix.wav'));
+    expect(find.textContaining('Stereo WAV exported to'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   test('source rate determines duration; absent frame counts stay unknown', () {
     expect(
         const LoadedAudioTrack(
