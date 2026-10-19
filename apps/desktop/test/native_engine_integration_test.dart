@@ -36,11 +36,13 @@ void main() {
       await engine.configureTransport(124, false, true);
       await engine.synthEvent(2, 1, 0);
       await engine.synthEvent(3, 0, 0.9);
+      await engine.synthEvent(5, 0, -1); // Rest on step 1.
+      await engine.synthEvent(5, 1, 60); // C4 on step 2.
       await engine.setMasterVolume(0.3);
       await engine.selectOutputDevice(defaultOutput.index);
       expect(defaultOutput.sampleRateHz, greaterThan(0));
 
-      // The replacement processor must retain the sequence, preset, macro,
+      // The replacement processor must retain the edited sequence, preset, macro,
       // tempo, and master configuration instead of coming up with defaults.
       await engine.play();
       final synthAfterSwitch = await engine.telemetry

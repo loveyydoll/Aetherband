@@ -22,7 +22,11 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use audio::AudioProcessor;
 use decoder::{probe_file, AudioFileInfo, DecoderError, StreamDecoder};
-use device::{ActiveStream, AudioBackend, CpalBackend, DeviceError, DeviceInfo};
+use device::{
+    ActiveRecording, ActiveStream, AudioBackend, CpalBackend, DeviceError, DeviceInfo,
+    RecordingStats,
+};
+use hypnosynth::DEFAULT_SEQUENCE;
 use ringbuf::{create_engine_queues, EngineCommand, TelemetryFrame, TrackId, UIEndpoints};
 use track::TrackPlayer;
 
@@ -40,6 +44,7 @@ pub enum EngineError {
     Decoder(DecoderError),
     TrackLimitReached,
     TrackNotFound(TrackId),
+    Recording(String),
 }
 
 impl From<DeviceError> for EngineError {
@@ -61,6 +66,7 @@ impl std::fmt::Display for EngineError {
             EngineError::Decoder(e) => write!(f, "Decode error: {}", e),
             EngineError::TrackLimitReached => write!(f, "Maximum track count reached"),
             EngineError::TrackNotFound(id) => write!(f, "Track {:?} not found", id),
+            EngineError::Recording(message) => write!(f, "Recording error: {message}"),
         }
     }
 }
@@ -110,6 +116,7 @@ fn rescale_frame(frame: i64, from_rate: u32, to_rate: u32) -> i64 {
 pub struct DAWEngine {
     backend: CpalBackend,
     active_stream: Option<ActiveStream>,
+    recording: Option<ActiveRecording>,
     ui_endpoints: UIEndpoints,
     current_device_index: Option<usize>,
     output_sample_rate: u32,
@@ -124,6 +131,7 @@ pub struct DAWEngine {
     bpm: f32,
     metronome: bool,
     sequence: bool,
+    sequence_pattern: [Option<u8>; 16],
     preset: u8,
     macros: [f32; 5],
 }
@@ -142,6 +150,7 @@ impl DAWEngine {
         Ok(Self {
             backend,
             active_stream: Some(active_stream),
+            recording: None,
             ui_endpoints,
             current_device_index: None,
             output_sample_rate,
@@ -151,6 +160,7 @@ impl DAWEngine {
             bpm: 92.0,
             metronome: false,
             sequence: false,
+            sequence_pattern: DEFAULT_SEQUENCE,
             preset: 0,
             macros: [0.42, 0.38, 0.55, 0.36, 0.7],
         })
@@ -227,6 +237,15 @@ impl DAWEngine {
                 })
                 .expect("fresh device command queue has capacity");
         }
+        for (key, note) in self.sequence_pattern.iter().copied().enumerate() {
+            commands
+                .push(EngineCommand::SynthEvent {
+                    event: 5,
+                    key: key as u32,
+                    value: note.map_or(-1.0, f32::from),
+                })
+                .expect("fresh device command queue has capacity");
+        }
         commands
             .push(EngineCommand::SetMasterVolume {
                 target_gain: self.master_gain,
@@ -272,6 +291,28 @@ impl DAWEngine {
     /// Returns the active output stream's sample rate in Hz.
     pub fn output_sample_rate(&self) -> u32 {
         self.output_sample_rate
+    }
+
+    /// Starts stereo recording from the default Windows input to a new WAV file.
+    pub fn start_recording(&mut self, path: &Path) -> Result<u32, EngineError> {
+        if self.recording.is_some() {
+            return Err(EngineError::Recording(
+                "a recording is already active".into(),
+            ));
+        }
+        let recording = self.backend.start_recording(path)?;
+        let sample_rate = recording.sample_rate();
+        self.recording = Some(recording);
+        Ok(sample_rate)
+    }
+
+    /// Stops capture, drains the writer queue and finalizes the WAV header.
+    pub fn stop_recording(&mut self) -> Result<RecordingStats, EngineError> {
+        self.recording
+            .take()
+            .ok_or_else(|| EngineError::Recording("no recording is active".into()))?
+            .finish()
+            .map_err(EngineError::Recording)
     }
 
     /// Returns the active audio device name, if any.
@@ -404,6 +445,11 @@ impl DAWEngine {
                 2 => key < 3,
                 3 => key < 5 && (0.0..=1.0).contains(&value),
                 4 => true,
+                5 => {
+                    key < 16
+                        && (value == -1.0
+                            || ((0.0..=127.0).contains(&value) && value.fract() == 0.0))
+                }
                 _ => false,
             };
         if !valid {
@@ -418,6 +464,7 @@ impl DAWEngine {
             match event {
                 2 => self.preset = key as u8,
                 3 => self.macros[key as usize] = value,
+                5 => self.sequence_pattern[key as usize] = (value >= 0.0).then_some(value as u8),
                 _ => {}
             }
         }
@@ -468,6 +515,7 @@ impl DAWEngine {
                 bpm: self.bpm,
                 metronome: self.metronome,
                 sequence: self.sequence,
+                sequence_pattern: self.sequence_pattern,
                 preset: self.preset,
                 macros: self.macros,
             },
@@ -720,6 +768,7 @@ mod engine_tests {
         let mut engine = DAWEngine {
             backend: CpalBackend::new().unwrap(),
             active_stream: None,
+            recording: None,
             ui_endpoints,
             current_device_index: None,
             output_sample_rate: 48000,
@@ -744,6 +793,7 @@ mod engine_tests {
             bpm: 92.0,
             metronome: false,
             sequence: false,
+            sequence_pattern: DEFAULT_SEQUENCE,
             preset: 0,
             macros: [0.42, 0.38, 0.55, 0.36, 0.7],
         };

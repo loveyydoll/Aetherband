@@ -1,3 +1,22 @@
+const defaultHypnoSequence = <int?>[
+  50,
+  57,
+  60,
+  57,
+  53,
+  60,
+  65,
+  60,
+  48,
+  55,
+  60,
+  62,
+  45,
+  52,
+  57,
+  64,
+];
+
 class PerformanceSettings {
   const PerformanceSettings(
       {this.preset = 0,
@@ -5,6 +24,7 @@ class PerformanceSettings {
       this.tempo = 92,
       this.metronome = false,
       this.sequence = false,
+      this.sequenceNotes = defaultHypnoSequence,
       this.master = 0.8});
 
   static const presets = ['Morning Haze', 'Nervous Current', 'Submerged'];
@@ -19,6 +39,7 @@ class PerformanceSettings {
   final double tempo;
   final bool metronome;
   final bool sequence;
+  final List<int?> sequenceNotes;
   final double master;
 
   PerformanceSettings copyWith(
@@ -27,6 +48,7 @@ class PerformanceSettings {
           double? tempo,
           bool? metronome,
           bool? sequence,
+          List<int?>? sequenceNotes,
           double? master}) =>
       PerformanceSettings(
           preset: preset ?? this.preset,
@@ -34,6 +56,7 @@ class PerformanceSettings {
           tempo: tempo ?? this.tempo,
           metronome: metronome ?? this.metronome,
           sequence: sequence ?? this.sequence,
+          sequenceNotes: sequenceNotes ?? this.sequenceNotes,
           master: master ?? this.master);
 
   Map<String, Object> toJson() => {
@@ -42,6 +65,7 @@ class PerformanceSettings {
         'tempo': tempo,
         'metronome': metronome,
         'sequence': sequence,
+        'sequenceNotes': sequenceNotes,
         'master': master
       };
 
@@ -53,6 +77,7 @@ class PerformanceSettings {
     final macros = value['macros'];
     final tempo = value['tempo'];
     final master = value['master'];
+    final sequenceNotes = value['sequenceNotes'] ?? defaultHypnoSequence;
     if (preset is! int ||
         preset < 0 ||
         preset >= presets.length ||
@@ -68,7 +93,11 @@ class PerformanceSettings {
         master < 0 ||
         master > 1 ||
         value['metronome'] is! bool ||
-        value['sequence'] is! bool) {
+        value['sequence'] is! bool ||
+        sequenceNotes is! List ||
+        sequenceNotes.length != 16 ||
+        sequenceNotes.any((note) =>
+            note != null && (note is! int || note < 0 || note > 127))) {
       throw const FormatException(
           'Invalid instrument or transport parameters.');
     }
@@ -79,6 +108,8 @@ class PerformanceSettings {
         tempo: tempo.toDouble(),
         master: master.toDouble(),
         metronome: value['metronome'] as bool,
-        sequence: value['sequence'] as bool);
+        sequence: value['sequence'] as bool,
+        sequenceNotes:
+            List<int?>.unmodifiable(sequenceNotes.map((note) => note as int?)));
   }
 }

@@ -55,6 +55,7 @@ pub struct ExportSettings {
     pub bpm: f32,
     pub metronome: bool,
     pub sequence: bool,
+    pub sequence_pattern: [Option<u8>; 16],
     pub preset: u8,
     pub macros: [f32; 5],
 }
@@ -295,15 +296,14 @@ fn render_to_temporary(
                 && (previous_beat == 0.0
                     || (previous_beat * 2.0).floor() != (beat_phase * 2.0).floor())
             {
-                const NOTES: [u8; 16] = [
-                    50, 57, 60, 57, 53, 60, 65, 60, 48, 55, 60, 62, 45, 52, 57, 64,
-                ];
                 if let Some(note) = sequence_note.take() {
                     synth.note_off(note);
                 }
-                let note = NOTES[(beat_phase * 2.0) as usize % NOTES.len()];
-                synth.note_on(note, 0.72);
-                sequence_note = Some(note);
+                let step = (beat_phase * 2.0) as usize % settings.sequence_pattern.len();
+                if let Some(note) = settings.sequence_pattern[step] {
+                    synth.note_on(note, 0.72);
+                    sequence_note = Some(note);
+                }
             }
             if settings.metronome && timeline_frame < musical_end_frame {
                 if previous_beat == 0.0 || previous_beat.floor() != beat_phase.floor() {
@@ -392,6 +392,7 @@ fn replace_destination(temporary: &Path, destination: &Path) -> Result<(), Expor
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hypnosynth::DEFAULT_SEQUENCE;
     use std::io::Read;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -430,6 +431,7 @@ mod tests {
             bpm: 92.0,
             metronome: false,
             sequence: false,
+            sequence_pattern: DEFAULT_SEQUENCE,
             preset: 0,
             macros: [0.42, 0.38, 0.55, 0.36, 0.7],
         };
@@ -477,6 +479,7 @@ mod tests {
             bpm: 120.0,
             metronome: true,
             sequence: true,
+            sequence_pattern: DEFAULT_SEQUENCE,
             preset: 0,
             macros: [0.42, 0.38, 0.55, 0.36, 0.7],
         };
@@ -485,6 +488,29 @@ mod tests {
         assert_eq!(u16::from_le_bytes([data[22], data[23]]), 2);
         assert_eq!(u32::from_le_bytes(data[24..28].try_into().unwrap()), 8_000);
         assert!(data[44..].iter().any(|sample| *sample != 0));
+        let _ = fs::remove_file(output);
+    }
+
+    #[test]
+    fn editable_sequence_honors_initial_rest_and_note_on_export() {
+        let output = temp_path("editable-sequence");
+        let mut pattern = DEFAULT_SEQUENCE;
+        pattern[0] = None;
+        pattern[1] = Some(60);
+        let settings = ExportSettings {
+            sample_rate: 8_000,
+            master: 0.8,
+            bpm: 300.0,
+            metronome: false,
+            sequence: true,
+            sequence_pattern: pattern,
+            preset: 0,
+            macros: [0.42, 0.38, 0.55, 0.36, 0.7],
+        };
+        render_stereo_wav(&output, &[], settings).unwrap();
+        let data = fs::read(&output).unwrap();
+        assert!(data[44..44 + 800 * 4].iter().all(|sample| *sample == 0));
+        assert!(data[44 + 800 * 4..].iter().any(|sample| *sample != 0));
         let _ = fs::remove_file(output);
     }
 
@@ -508,6 +534,7 @@ mod tests {
                 bpm: 92.0,
                 metronome: false,
                 sequence: false,
+                sequence_pattern: DEFAULT_SEQUENCE,
                 preset: 0,
                 macros: [0.42, 0.38, 0.55, 0.36, 0.7],
             },
@@ -536,6 +563,7 @@ mod tests {
                 bpm: 92.0,
                 metronome: false,
                 sequence: false,
+                sequence_pattern: DEFAULT_SEQUENCE,
                 preset: 0,
                 macros: [0.42, 0.38, 0.55, 0.36, 0.7],
             },

@@ -1,38 +1,27 @@
-# Audio and HypnoSynth implementation
+# Aetherband Windows audio and DAW foundations
 
-Requested outcome: one PR restoring audible music creation in the existing Flutter workspace, with HypnoSynth and the essential DAW controls that currently remain presentation-only.
+Implement the user's Windows-only audio repair, original HypnoSynth, and core DAW workflows in one PR. Preserve the existing UI and conflicting Desktop checkout; `sources/` is read-only. Soundcraft reuse is limited to its MIT-licensed ADSR envelope, with attribution and licence in `third_party/soundcraft/`. Rust remains the real-time engine and Flutter/Dart the desktop UI.
 
-Working branch: `feat/hypnosynth-daw-foundations`, based on main `caa70b5`.
-Checkout: this `overnight/` directory. The Desktop checkout has pre-existing merge conflicts and must not be modified.
+Branch: `feat/hypnosynth-daw-foundations`. PR: [#33](https://github.com/loveyydoll/Aetherband/pull/33), open and unmerged. GitHub currently reports head `6fe45319de278508bf46dcd5398f5698cecaabfb`; local branch has later commits through `380d85d` and a larger uncommitted implementation/update. Keep all work in this one PR and refresh remote CI after publishing.
 
-## Acceptance plan
+## Implemented in the current working tree
 
-1. Audio: device sample formats, full callback buffers, surfaced device errors, Stop/Pause/restart, deferred resource reclamation, and decoded-file signal tests.
-2. HypnoSynth: native polyphonic oscillator/filter/envelope/modulation/delay instrument, original atmospheric and tense post-punk presets, playable keyboard, panic, and persistence. Musical references are inspiration, not sampled recordings or a claim to reproduce a specific patch.
-3. DAW essentials: real empty session, master gain, solo, tempo/metronome, project safety, useful MIDI/sequence creation and stereo export as coherent vertical slices. Audit remaining defaults explicitly rather than claiming commercial DAW parity.
-4. Verification: Rust format/check/test/Clippy, Flutter analysis/tests, Windows build and native signal testing; CI on the single PR. Physical listening needs separate evidence. Windows is the only current target; other platforms are deferred by owner direction.
+- Windows output uses native CPAL formats, processes complete callback buffers, reports stream errors, and releases stream resources safely. Output-device changes restore synth, transport and mixer configuration, rescale clip positions for the new sample rate, and restart stopped at the beginning.
+- HypnoSynth is an original polyphonic instrument with three authored presets, live keyboard, performance controls, panic, tempo/metronome, and an editable, persisted 16-step note/rest pattern that plays through the callback and offline render. The musical references informed original sound design; no recordings or patches were copied.
+- Sessions start empty and connect imported audio, timeline movement/snapping, mixer controls, session save/reopen, Windows input recording, stereo WAV export and Space/R transport shortcuts to the Rust engine through ABI 0.8.0 and the Dart worker isolate.
+- PCM and IEEE-float WAV files render measured peak waveforms loaded off the UI isolate; unsupported formats show an explicit unavailable state.
+- Only the Soundcraft ADSR code was reused. No other language showed a concrete subsystem advantage for this change.
 
-## Initial evidence
+## Local verification on 2026-10-19
 
-- Main opens six visual demo tracks with no native audio sources. Instrument knobs and presets are presentation-only.
-- Device backend always requests f32 despite reading the device's default format.
-- Callbacks over 2048 frames discard the tail while advancing the full transport duration.
-- Stream restart and decoded-block replacement free heap resources in the audio callback.
-- CPAL 0.15.3 could open the local WASAPI default output, but the process crashed with Windows `STATUS_INVALID_HANDLE` during stream teardown.
-- Baseline Windows `cargo test --workspace --all-targets`: 33 core tests, one callback allocation test and six FFI tests passed. Existing allocation test does not exercise real stream turnover/restart.
+- Windows `cargo test --workspace --jobs 1`: 47 core tests, 8 C ABI tests, callback-allocation test and WASAPI smoke target pass. The C ABI crate disables irrelevant doctests to avoid duplicate `daw_core` crate candidates.
+- Windows workspace Clippy passes with existing C ABI missing-`# Safety` documentation warnings; optimized C ABI DLL build passes.
+- Flutter analysis is clean; 39 Flutter tests pass and the optional native test is skipped in the default suite. The focused Windows FFI integration test passes against the freshly built release DLL and default output device, covering device selection, synth/sequence state restoration, transport, import, mixer, stereo export and shutdown.
+- A separate opt-in WASAPI smoke test reaches nonzero HypnoSynth samples and shuts down cleanly. This confirms callback output, not speaker audibility.
+- The Windows runner is now checked into the desktop project; its local debug build passes. Remote CI still needs to rerun after publishing the current changes.
 
-SoundCraft reuse is authorized; only its ADSR envelope was adapted, and upstream attribution plus MIT license text are tracked in `third_party/soundcraft/`. Rust and Dart/Flutter are retained because audio DSP/CPAL has a concrete fit in Rust and the UI already uses Flutter; no extra language offered a clear advantage for this vertical slice.
+## Remaining limits and next work
 
-## Current implementation status
+Physical speaker/headphone listening and real microphone/line-in capture remain unverified. The recorder writes to a background stereo PCM16 WAV writer and imports the finalized take, but hardware capture and sustained queue-drop behavior need a real input device. Waveform display currently supports PCM and IEEE-float WAV; compressed WAV and other containers have an honest unavailable state. Full MIDI regions and file interchange, clip split/trim/resize, undo/redo, automation, effects and plugin hosting remain future work.
 
-- Fixed output conversion for common Windows CPAL default sample formats, callback overflow tail loss, stream-error telemetry, and callback-thread decoder/player destruction.
-- Added Rust HypnoSynth with three authored presets, real note events/macros/phrase/metronome/master controls, a 13-note pointer/computer keyboard, and persisted settings.
-- Replaced the initial fake arrangement with an empty session; connected mixer solo and v3 audio session persistence for imported tracks, clip positions and synth settings. Imported clips can move on a quarter-note grid while stopped at the start; v1 and v2 sessions default clip position to zero.
-- Upgraded CPAL to 0.18.2 and adapted its stream/device API. On this Windows machine, a real default-device stream remained active, played a quiet HypnoSynth note with nonzero callback peaks (L 0.0058, R 0.0048; no reported device error), paused, and shut down cleanly. This verifies nonzero audio reached the active WASAPI callback; physical listening/loopback capture remains unverified.
-- Preserved that hardware check as an opt-in Windows integration test: set `AETHERBAND_AUDIO_SMOKE=1` and run `cargo test -p daw_core --test windows_audio_smoke -- --nocapture`. It passed locally; default CI skips device access.
-- Stereo export is now implemented as offline 16-bit PCM WAV, with imported-track mixing and an eight-bar HypnoSynth-only phrase option. It honors clip starts, track gain/pan/mute/solo, master gain, tempo and metronome without seeking or pausing live playback; it rejects unknown-duration sources and refuses to overwrite a source recording. The native worker, C ABI 0.6.0, Dart FFI and File menu are connected.
-- The Windows Audio menu now lists available output devices and switches the native stream using the existing C ABI; the Dart adapter refreshes its sample rate after switching. The status bar identifies a selected device and describes this build as Windows only.
-- Current local checks: Rust format, 43 core tests, one real-time allocation test, 7 ABI tests, core Clippy and Windows release C ABI build pass. Flutter analysis reports no issues; all 30 Flutter tests pass with the freshly built native DLL and local default output device enabled. That end-to-end integration test enumerated and selected the default WASAPI device, then verified track playback telemetry and stereo WAV export through Dart FFI. The Windows desktop debug executable builds. Nonzero samples reached the WASAPI callback, but physical listening/loopback capture remains unverified.
-- Device-switch state restoration was added after the output-selector release: it reapplies tempo, metronome, sequence, synth preset/macros, and master gain to the new processor, and rescales clip start positions and cached metadata when the output sample rate changes. Switching stops playback and returns the playhead to the start; the Audio menu now tells the user. The Dart/native integration test plays a sequence after switching to verify restored synth/transport state.
-- Latest local verification: `cargo fmt --all -- --check`, `cargo test --workspace --all-targets` (44 core, 7 ABI, realtime safety), `AETHERBAND_AUDIO_SMOKE=1 cargo test -p daw_core --test windows_audio_smoke -- --nocapture`, `cargo clippy --workspace --all-targets`, release C ABI build, full Flutter suite (30 tests), and the focused native FFI integration test all passed. Clippy emits existing missing-`# Safety` documentation warnings in the C ABI; `-D warnings` therefore fails. The native integration test enumerated and selected the default WASAPI device, played the restored sequence, exercised imported audio/export, and shut down cleanly.
-- Remote Rust and Windows Flutter CI passed on follow-up commit `dc18fc9`, including the focused sample-rate timeline conversion test. The local WASAPI smoke test passed again in this pass. Physical listening/loopback remains unverified. Recording, editable MIDI, waveform display, split/trim/resize and undo/redo remain incomplete and must be labeled that way.
+Before the overnight window ends, review the full diff, finish formatting/analyze/tests and Windows desktop build, publish these changes to PR #33 without merging, refresh one PR body with current evidence and wait for its latest Windows CI runs. Report physical audio and recording limits accurately.

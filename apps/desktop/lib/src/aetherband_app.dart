@@ -14,6 +14,7 @@ import 'widgets/hypnosynth_panel.dart';
 import 'theme.dart';
 import 'widgets/timeline_view.dart';
 import 'widgets/workspace_panels.dart';
+import 'waveform_loader.dart';
 
 class AetherbandApp extends StatelessWidget {
   const AetherbandApp({
@@ -22,6 +23,7 @@ class AetherbandApp extends StatelessWidget {
     this.pickSessionFile,
     this.pickSessionSavePath,
     this.pickExportSavePath,
+    this.pickRecordingSavePath,
     super.key,
   });
 
@@ -30,6 +32,7 @@ class AetherbandApp extends StatelessWidget {
   final Future<XFile?> Function()? pickSessionFile;
   final Future<String?> Function()? pickSessionSavePath;
   final Future<String?> Function()? pickExportSavePath;
+  final Future<String?> Function()? pickRecordingSavePath;
 
   @override
   Widget build(BuildContext context) {
@@ -43,6 +46,7 @@ class AetherbandApp extends StatelessWidget {
         pickSessionFile: pickSessionFile,
         pickSessionSavePath: pickSessionSavePath,
         pickExportSavePath: pickExportSavePath,
+        pickRecordingSavePath: pickRecordingSavePath,
       ),
     );
   }
@@ -55,6 +59,7 @@ class AetherbandWorkspace extends StatefulWidget {
     this.pickSessionFile,
     this.pickSessionSavePath,
     this.pickExportSavePath,
+    this.pickRecordingSavePath,
     super.key,
   });
 
@@ -63,6 +68,7 @@ class AetherbandWorkspace extends StatefulWidget {
   final Future<XFile?> Function()? pickSessionFile;
   final Future<String?> Function()? pickSessionSavePath;
   final Future<String?> Function()? pickExportSavePath;
+  final Future<String?> Function()? pickRecordingSavePath;
 
   @override
   State<AetherbandWorkspace> createState() => _AetherbandWorkspaceState();
@@ -112,6 +118,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   bool _initializingEngine = false;
   bool _trackOperationPending = false;
   bool _importingAudio = false;
+  bool _isRecording = false;
+  String? _recordingPath;
+  double _recordingStartSeconds = 0;
   double _zoom = 1;
   int? _selectedOutputDeviceIndex;
   String? _selectedOutputDeviceName;
@@ -134,6 +143,10 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   Future<void> _initializeEngine() async {
+    if (_isRecording) {
+      _showRecordingSessionGuard();
+      return;
+    }
     if (_initializingEngine || _trackOperationPending) return;
     _initializingEngine = true;
 
@@ -241,6 +254,21 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     }
   }
 
+  bool _rejectSessionChangeDuringRecording() {
+    if (!_isRecording) return false;
+    _showRecordingSessionGuard();
+    return true;
+  }
+
+  void _showRecordingSessionGuard() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Stop recording before changing or saving this session.'),
+      ),
+    );
+  }
+
   void _showEngineUnavailable() {
     final message =
         _engineError?.toString() ?? 'Native audio engine is not ready.';
@@ -256,6 +284,25 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         duration: const Duration(seconds: 3),
       ),
     );
+  }
+
+  Future<void> _loadClipWaveform(
+      TrackModel track, ClipModel clip, String path) async {
+    List<double>? peaks;
+    try {
+      peaks = await loadWaveformPeaks(path);
+    } on Object {
+      // A worker-isolate failure must not surface as an unhandled UI error.
+    }
+    if (!mounted) return;
+    if (!_tracks.any(
+        (active) => active.id == track.id && active.clips.contains(clip))) {
+      return;
+    }
+    setState(() {
+      clip.waveformPeaks = peaks;
+      clip.waveformLoaded = true;
+    });
   }
 
   Future<void> _importAudio() async {
@@ -286,34 +333,35 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       final nativeId = loaded.id;
       final name = file.name;
       final id = _createPersistentTrackId();
+      final clip = ClipModel(
+        id: '$id-clip',
+        title: name,
+        start: 0,
+        width: 0,
+        color: AetherColors.sage,
+        isDemo: false,
+        durationSeconds: loaded.durationSeconds,
+      );
+      final track = TrackModel(
+        id: id,
+        name: name,
+        kind: 'AUDIO',
+        color: AetherColors.sage,
+        volume: 0.8,
+        pan: 0.5,
+        clips: <ClipModel>[clip],
+      );
       setState(() {
         _nativeTrackIds[id] = nativeId;
         _nativeTrackSources[id] = file.path;
         _showMixer = true;
         _markSessionChanged();
-        _tracks.add(TrackModel(
-          id: id,
-          name: name,
-          kind: 'AUDIO',
-          color: AetherColors.sage,
-          volume: 0.8,
-          pan: 0.5,
-          clips: <ClipModel>[
-            ClipModel(
-              id: '$id-clip',
-              title: name,
-              start: 0,
-              width: 0,
-              color: AetherColors.sage,
-              isDemo: false,
-              durationSeconds: loaded.durationSeconds,
-            ),
-          ],
-        ));
+        _tracks.add(track);
         _selectedTrackId = id;
         _selectedClipId = '$id-clip';
         _engineError = null;
       });
+      unawaited(_loadClipWaveform(track, clip, file.path));
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -328,6 +376,136 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         });
       }
     }
+  }
+
+  Future<void> _toggleRecording() async {
+    if (_trackOperationPending || _initializingEngine) return;
+    final engine = _engine;
+    if (engine == null || engine is! AudioRecordingEngine) {
+      _showFeatureUnavailable('Windows audio input recording');
+      return;
+    }
+    final recordingEngine = engine as AudioRecordingEngine;
+
+    if (!_isRecording) {
+      final selectedPath = widget.pickRecordingSavePath != null
+          ? await widget.pickRecordingSavePath!()
+          : (await getSaveLocation(
+              suggestedName: '$_sessionTitle take.wav',
+              acceptedTypeGroups: const <XTypeGroup>[
+                XTypeGroup(label: 'WAV recording', extensions: ['wav']),
+              ],
+            ))
+              ?.path;
+      if (selectedPath == null || !mounted) return;
+      final path = selectedPath.toLowerCase().endsWith('.wav')
+          ? selectedPath
+          : '$selectedPath.wav';
+      final startSeconds = _telemetry.playheadSeconds;
+      setState(() => _trackOperationPending = true);
+      try {
+        await recordingEngine.startRecording(path);
+        if (!mounted) return;
+        setState(() {
+          _isRecording = true;
+          _recordingPath = path;
+          _recordingStartSeconds = startSeconds;
+          _engineError = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Recording input to $path')),
+        );
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not start recording: $error')),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _trackOperationPending = false);
+      }
+      return;
+    }
+
+    final path = _recordingPath;
+    if (path == null) {
+      setState(() => _isRecording = false);
+      return;
+    }
+    setState(() => _trackOperationPending = true);
+    try {
+      final stats = await recordingEngine.stopRecording();
+      if (mounted) {
+        setState(() {
+          _isRecording = false;
+          _recordingPath = null;
+        });
+      }
+      final loaded = await engine.loadTrack(path);
+      await engine.setTrackStartSeconds(loaded.id, _recordingStartSeconds);
+      if (!mounted) return;
+      _registerRecordedTrack(path, loaded, _recordingStartSeconds);
+      final dropped = stats.framesDropped;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            dropped == 0
+                ? 'Recording added as a ${stats.sampleRateHz} Hz audio track.'
+                : 'Recording added; $dropped input frames were dropped.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _isRecording = false;
+          _recordingPath = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not finish recording: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _trackOperationPending = false);
+    }
+  }
+
+  void _registerRecordedTrack(
+    String path,
+    LoadedAudioTrack loaded,
+    double startSeconds,
+  ) {
+    final name = File(path).uri.pathSegments.last;
+    final id = _createPersistentTrackId();
+    final clip = ClipModel(
+      id: '$id-clip',
+      title: name,
+      start: 0,
+      width: 0,
+      color: AetherColors.sage,
+      isDemo: false,
+      durationSeconds: loaded.durationSeconds,
+      startSeconds: startSeconds,
+    );
+    final track = TrackModel(
+      id: id,
+      name: name,
+      kind: 'AUDIO',
+      color: AetherColors.sage,
+      volume: 0.8,
+      pan: 0.5,
+      clips: <ClipModel>[clip],
+    );
+    setState(() {
+      _nativeTrackIds[id] = loaded.id;
+      _nativeTrackSources[id] = path;
+      _showMixer = true;
+      _markSessionChanged();
+      _tracks.add(track);
+      _selectedTrackId = id;
+      _selectedClipId = '$id-clip';
+    });
+    unawaited(_loadClipWaveform(track, clip, path));
   }
 
   Future<void> _removeSelectedTrack() async {
@@ -445,6 +623,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   Future<void> _saveSession({bool saveAs = false}) async {
+    if (_rejectSessionChangeDuringRecording()) return;
     if (_trackOperationPending || _initializingEngine) return;
     var path = saveAs ? null : _sessionPath;
     if (path == null) {
@@ -628,6 +807,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   Future<void> _openSession() async {
+    if (_rejectSessionChangeDuringRecording()) return;
     if (_trackOperationPending || _initializingEngine) return;
     if (!await _confirmDiscardChanges() || !mounted) return;
     final file = await (widget.pickSessionFile?.call() ??
@@ -666,6 +846,16 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         await staged.setTrackStartSeconds(loaded.id, saved.startSeconds);
         ids[saved.id] = loaded.id;
         sources[saved.id] = source;
+        final clip = ClipModel(
+          id: '${saved.id}-clip',
+          title: saved.name,
+          start: 0,
+          width: 0,
+          color: AetherColors.sage,
+          isDemo: false,
+          durationSeconds: loaded.durationSeconds,
+          startSeconds: saved.startSeconds,
+        );
         tracks.add(TrackModel(
           id: saved.id,
           name: saved.name,
@@ -675,18 +865,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
           pan: saved.pan,
           muted: saved.muted,
           solo: saved.solo,
-          clips: [
-            ClipModel(
-              id: '${saved.id}-clip',
-              title: saved.name,
-              start: 0,
-              width: 0,
-              color: AetherColors.sage,
-              isDemo: false,
-              durationSeconds: loaded.durationSeconds,
-              startSeconds: saved.startSeconds,
-            ),
-          ],
+          clips: [clip],
         ));
       }
       if (!mounted) return;
@@ -700,6 +879,13 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         performance: document.performance,
       );
       staged = null; // Ownership now belongs to the workspace.
+      for (final track in tracks) {
+        final source = sources[track.id];
+        final clip = track.clips.firstOrNull;
+        if (source != null && clip != null) {
+          unawaited(_loadClipWaveform(track, clip, source));
+        }
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Opened ${tracks.length} audio tracks.')),
@@ -721,6 +907,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   Future<void> _newSession() async {
+    if (_rejectSessionChangeDuringRecording()) return;
     if (_trackOperationPending || _initializingEngine) return;
     if (!await _confirmDiscardChanges() || !mounted) return;
     setState(() => _trackOperationPending = true);
@@ -756,14 +943,38 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   Future<void> _applyPerformance(
-      PerformanceEngine engine, PerformanceSettings settings) async {
-    await engine.synthEvent(2, settings.preset, 0);
-    for (var i = 0; i < 5; i++) {
-      await engine.synthEvent(3, i, settings.macros[i]);
+    PerformanceEngine engine,
+    PerformanceSettings settings, {
+    PerformanceSettings? previous,
+  }) async {
+    if (previous == null || previous.preset != settings.preset) {
+      await engine.synthEvent(2, settings.preset, 0);
     }
-    await engine.configureTransport(
-        settings.tempo, settings.metronome, settings.sequence);
-    await engine.setMasterVolume(settings.master);
+    for (var i = 0; i < 5; i++) {
+      if (previous == null || previous.macros[i] != settings.macros[i]) {
+        await engine.synthEvent(3, i, settings.macros[i]);
+      }
+    }
+    for (var i = 0; i < settings.sequenceNotes.length; i++) {
+      if (previous == null ||
+          previous.sequenceNotes[i] != settings.sequenceNotes[i]) {
+        await engine.synthEvent(
+          5,
+          i,
+          settings.sequenceNotes[i]?.toDouble() ?? -1,
+        );
+      }
+    }
+    if (previous == null ||
+        previous.tempo != settings.tempo ||
+        previous.metronome != settings.metronome ||
+        previous.sequence != settings.sequence) {
+      await engine.configureTransport(
+          settings.tempo, settings.metronome, settings.sequence);
+    }
+    if (previous == null || previous.master != settings.master) {
+      await engine.setMasterVolume(settings.master);
+    }
   }
 
   void _changePerformance(PerformanceSettings settings) {
@@ -781,7 +992,11 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       _markSessionChanged();
     });
     final action = _performanceChain
-        .then((_) => _applyPerformance(performance, settings))
+        .then((_) => _applyPerformance(
+              performance,
+              settings,
+              previous: previous,
+            ))
         .catchError((Object error) {
       if (mounted && identical(_performance, settings)) {
         setState(() => _performance = previous);
@@ -856,7 +1071,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         unawaited(_stop());
         return;
       case 'transport.record':
-        _showFeatureUnavailable('Audio recording');
+        unawaited(_toggleRecording());
         return;
       case 'record.metronome':
         _changePerformance(
@@ -1170,6 +1385,10 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   Widget build(BuildContext context) {
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.space): () =>
+            unawaited(_togglePlay()),
+        const SingleActivator(LogicalKeyboardKey.keyR): () =>
+            unawaited(_toggleRecording()),
         const SingleActivator(LogicalKeyboardKey.keyS, control: true): () =>
             unawaited(_saveSession()),
         const SingleActivator(LogicalKeyboardKey.keyS, meta: true): () =>
@@ -1221,13 +1440,12 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                     ),
                     _TopBar(
                       isPlaying: _telemetry.isPlaying,
-                      isRecording: false,
+                      isRecording: _isRecording,
                       browserOpen: _browserOpen,
                       mixerOpen: _showMixer,
                       onPlay: _togglePlay,
                       onStop: _stop,
-                      onRecord: () =>
-                          _showFeatureUnavailable('Audio recording'),
+                      onRecord: () => unawaited(_toggleRecording()),
                       onBrowser: () =>
                           setState(() => _browserOpen = !_browserOpen),
                       onMixer: () => setState(() => _showMixer = !_showMixer),
@@ -1597,7 +1815,8 @@ class _TopBar extends StatelessWidget {
           const SizedBox(width: 4),
           _TransportButton(
             icon: Icons.fiber_manual_record,
-            tooltip: isRecording ? 'Stop recording' : 'Recording unavailable',
+            tooltip:
+                isRecording ? 'Stop recording' : 'Record from Windows input',
             onTap: onRecord,
             color:
                 isRecording ? AetherColors.magenta : AetherColors.secondaryText,

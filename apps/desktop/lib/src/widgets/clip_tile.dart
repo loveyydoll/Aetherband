@@ -23,10 +23,16 @@ class ClipTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final base = clip.color;
     final duration = clip.durationSeconds;
+    final peaks = clip.waveformPeaks;
+    final waveformStatus = !clip.waveformLoaded
+        ? 'Analyzing waveform'
+        : peaks == null
+            ? 'Waveform unavailable for this audio format'
+            : 'Decoded PCM waveform';
     return Tooltip(
       message: clip.isDemo
           ? 'Demo clip'
-          : '${clip.title} · ${duration == null ? 'Duration unknown' : '${duration.toStringAsFixed(2)} s'} · Waveform not generated',
+          : '${clip.title} · ${duration == null ? 'Duration unknown' : '${duration.toStringAsFixed(2)} s'} · $waveformStatus',
       child: GestureDetector(
         onTap: onTap,
         onHorizontalDragUpdate: (details) => onMove(details.delta.dx),
@@ -51,6 +57,42 @@ class ClipTile extends StatelessWidget {
                     painter: WaveformPainter(
                         color: base.withValues(alpha: 0.86),
                         seed: clip.id.hashCode),
+                  ),
+                ),
+              if (!clip.isDemo && peaks != null)
+                Positioned.fill(
+                  child: CustomPaint(
+                    key: ValueKey('audio-waveform-${clip.id}'),
+                    painter: AudioWaveformPainter(
+                      color: base.withValues(alpha: 0.88),
+                      peaks: peaks,
+                    ),
+                  ),
+                ),
+              if (!clip.isDemo && !clip.waveformLoaded)
+                const Positioned(
+                  left: 8,
+                  right: 6,
+                  top: 24,
+                  child: Text(
+                    'Analyzing waveform…',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: AetherColors.secondaryText, fontSize: 8),
+                  ),
+                ),
+              if (!clip.isDemo && clip.waveformLoaded && peaks == null)
+                const Positioned(
+                  left: 8,
+                  right: 6,
+                  top: 24,
+                  child: Text(
+                    'Waveform unavailable',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: AetherColors.secondaryText, fontSize: 8),
                   ),
                 ),
               if (!clip.isDemo)
@@ -124,4 +166,33 @@ class WaveformPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant WaveformPainter oldDelegate) =>
       oldDelegate.color != color || oldDelegate.seed != seed;
+}
+
+class AudioWaveformPainter extends CustomPainter {
+  const AudioWaveformPainter({required this.color, required this.peaks});
+
+  final Color color;
+  final List<double> peaks;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (peaks.isEmpty || size.isEmpty) return;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.4
+      ..strokeCap = StrokeCap.round;
+    final centerY = size.height * 0.62;
+    final scaleY = size.height * 0.30;
+    final scaleX = size.width / peaks.length;
+    for (var i = 0; i < peaks.length; i++) {
+      final amplitude = peaks[i].clamp(0.025, 1.0) * scaleY;
+      final x = (i + 0.5) * scaleX;
+      canvas.drawLine(Offset(x, centerY - amplitude),
+          Offset(x, centerY + amplitude), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant AudioWaveformPainter oldDelegate) =>
+      oldDelegate.color != color || !identical(oldDelegate.peaks, peaks);
 }

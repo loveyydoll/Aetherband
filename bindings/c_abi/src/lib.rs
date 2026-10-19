@@ -15,6 +15,7 @@ pub const DAW_ERROR_INVALID_ARGUMENT: i32 = -1;
 pub const DAW_ERROR_COMMAND_REJECTED: i32 = -3;
 pub const DAW_ERROR_TRACK_NOT_FOUND: i32 = -4;
 pub const DAW_ERROR_EXPORT_FAILED: i32 = -5;
+pub const DAW_ERROR_RECORDING_FAILED: i32 = -6;
 
 /// Opaque handle representing a DAW engine instance.
 #[repr(C)]
@@ -59,6 +60,25 @@ pub struct DAWTrackInfo {
     pub total_frames: u64,
     pub sample_rate: u32,
     pub channels: u32,
+}
+
+/// Summary of a finalized input recording.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DAWRecordingStats {
+    pub sample_rate: u32,
+    pub frames_written: u64,
+    pub frames_dropped: u64,
+}
+
+impl From<daw_core::device::RecordingStats> for DAWRecordingStats {
+    fn from(stats: daw_core::device::RecordingStats) -> Self {
+        Self {
+            sample_rate: stats.sample_rate,
+            frames_written: stats.frames_written,
+            frames_dropped: stats.frames_dropped,
+        }
+    }
 }
 
 impl From<&daw_core::TrackInfo> for DAWTrackInfo {
@@ -111,7 +131,58 @@ impl Default for DAWDeviceInfo {
 /// Returns the API version (major << 16 | minor << 8 | patch).
 #[no_mangle]
 pub extern "C" fn daw_get_api_version() -> u32 {
-    6 << 8
+    8 << 8
+}
+
+/// Starts recording from the default Windows input device to a new WAV path.
+/// Existing files are never overwritten.
+///
+/// # Safety
+/// `engine` must be a live engine handle with serialized calls; `path` must
+/// point to a NUL-terminated UTF-8 path for the duration of this call.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_start_recording(
+    engine: *mut DAWEngine,
+    path: *const c_char,
+) -> i32 {
+    if engine.is_null() || path.is_null() {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    }
+    let Some(eng) = to_core_mut(engine) else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    let Ok(path) = CStr::from_ptr(path).to_str() else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    match eng.start_recording(std::path::Path::new(path)) {
+        Ok(_) => DAW_OK,
+        Err(_) => DAW_ERROR_RECORDING_FAILED,
+    }
+}
+
+/// Stops input recording, drains the writer and finalizes the WAV header.
+///
+/// # Safety
+/// `engine` must be a live engine handle; `out_stats` must be writable for one
+/// `DAWRecordingStats`. Calls must be serialized and not race with destroy.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_stop_recording(
+    engine: *mut DAWEngine,
+    out_stats: *mut DAWRecordingStats,
+) -> i32 {
+    if engine.is_null() || out_stats.is_null() {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    }
+    let Some(eng) = to_core_mut(engine) else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    match eng.stop_recording() {
+        Ok(stats) => {
+            out_stats.write(stats.into());
+            DAW_OK
+        }
+        Err(_) => DAW_ERROR_RECORDING_FAILED,
+    }
 }
 
 /// Render the loaded audio session to stereo 16-bit PCM WAV without changing playback.
@@ -138,7 +209,8 @@ pub unsafe extern "C" fn daw_engine_export_wav(engine: *mut DAWEngine, path: *co
 }
 
 /// HypnoSynth events: 0 note-on (key 0..127, velocity 0..1), 1 note-off,
-/// 2 preset (0..2), 3 macro (key 0..4, value 0..1), 4 all-sounds-off.
+/// 2 preset (0..2), 3 macro (key 0..4, value 0..1), 4 all-sounds-off,
+/// 5 set an eight-note-per-bar sequencer step (step 0..15, note 0..127 or -1 for rest).
 ///
 /// # Safety
 /// `engine` must be a live handle returned by `daw_engine_create`, with calls
@@ -604,7 +676,7 @@ mod ffi_contract_tests {
 
     #[test]
     fn api_version_matches_dart_ffi_contract() {
-        assert_eq!(daw_get_api_version(), 0x0000_0600);
+        assert_eq!(daw_get_api_version(), 0x0000_0800);
     }
 
     #[test]
@@ -613,6 +685,22 @@ mod ffi_contract_tests {
             unsafe { daw_engine_export_wav(ptr::null_mut(), ptr::null()) },
             DAW_ERROR_INVALID_ARGUMENT
         );
+    }
+
+    #[test]
+    fn recording_exports_reject_null_arguments() {
+        assert_eq!(
+            unsafe { daw_engine_start_recording(ptr::null_mut(), ptr::null()) },
+            DAW_ERROR_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            unsafe { daw_engine_stop_recording(ptr::null_mut(), ptr::null_mut()) },
+            DAW_ERROR_INVALID_ARGUMENT
+        );
+        assert_eq!(std::mem::size_of::<DAWRecordingStats>(), 24);
+        assert_eq!(std::mem::offset_of!(DAWRecordingStats, sample_rate), 0);
+        assert_eq!(std::mem::offset_of!(DAWRecordingStats, frames_written), 8);
+        assert_eq!(std::mem::offset_of!(DAWRecordingStats, frames_dropped), 16);
     }
 
     #[test]

@@ -60,7 +60,7 @@ void main() {
         File(path).readAsString(), completion(contains('"schemaVersion": 3')));
   });
 
-  test('session restores instrument macros tempo click and original phrase',
+  test('session restores instrument macros tempo click and editable sequence',
       () async {
     final settings = const PerformanceSettings().copyWith(
         preset: 1,
@@ -68,6 +68,26 @@ void main() {
         tempo: 137,
         metronome: true,
         sequence: true,
+        sequenceNotes: const [
+          60,
+          null,
+          64,
+          67,
+          ...<int?>[
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        ],
         master: 0.55);
     final path = '${directory.path}/instrument.aetherband.json';
     await store.save(
@@ -80,7 +100,21 @@ void main() {
     expect(restored.performance.tempo, 137);
     expect(restored.performance.metronome, isTrue);
     expect(restored.performance.sequence, isTrue);
+    expect(restored.performance.sequenceNotes, settings.sequenceNotes);
     expect(restored.performance.master, 0.55);
+  });
+
+  test('older performance settings default to the original 16-step phrase', () {
+    final old = const PerformanceSettings().toJson()..remove('sequenceNotes');
+    expect(
+        PerformanceSettings.fromJson(old).sequenceNotes, defaultHypnoSequence);
+    expect(
+      () => PerformanceSettings.fromJson({
+        ...old,
+        'sequenceNotes': [60, null],
+      }),
+      throwsFormatException,
+    );
   });
 
   test('version one sessions retain compatible default instrument settings',

@@ -1,6 +1,6 @@
 # C ABI Contract — Aetherband
 
-**Current ABI version:** `0.6.0` (`daw_get_api_version() == 0x00000600`)
+**Current ABI version:** `0.8.0` (`daw_get_api_version() == 0x00000800`)
 **Source of truth:** `bindings/c_abi/src/lib.rs`. If this document disagrees with the Rust exports, fix the documentation or deliberately update the ABI and version together.
 
 This contract is for the Flutter/Dart desktop app using `dart:ffi`. The former C# / Avalonia frontend and its `csbindgen` P/Invoke generation have been removed from the desktop architecture.
@@ -19,7 +19,7 @@ This contract is for the Flutter/Dart desktop app using `dart:ffi`. The former C
 
 ## ABI version
 
-`daw_get_api_version()` returns `(major << 16) | (minor << 8) | patch`. Version 0.6.0 adds `daw_engine_export_wav` for offline stereo PCM export. Version 0.5.0 adds `daw_engine_set_track_start_seconds` for scheduling imported clips in the arrangement. Version 0.4.0 adds HypnoSynth event and transport configuration calls plus per-track solo. Version 0.3.0 added `daw_engine_get_track_info`, preserves engine OS-thread ownership behind the opaque handle, and returns -3 for queue-rejected removal without deleting track metadata. Version 0.2.0 introduced the active sample-rate query. Rebuild the native library and Dart app together; the Dart adapter requires an exact version match.
+`daw_get_api_version()` returns `(major << 16) | (minor << 8) | patch`. Version 0.8.0 adds editable 16-step HypnoSynth sequence events and keeps their session/export state synchronized. Version 0.7.0 adds default Windows input recording and final statistics. Version 0.6.0 adds `daw_engine_export_wav` for offline stereo PCM export. Version 0.5.0 adds `daw_engine_set_track_start_seconds` for scheduling imported clips in the arrangement. Version 0.4.0 adds HypnoSynth event and transport configuration calls plus per-track solo. Version 0.3.0 added `daw_engine_get_track_info`, preserves engine OS-thread ownership behind the opaque handle, and returns -3 for queue-rejected removal without deleting track metadata. Version 0.2.0 introduced the active sample-rate query. Rebuild the native library and Dart app together; the Dart adapter requires an exact version match.
 
 Any incompatible layout/signature/ownership change requires a version change and synchronized Rust/Dart updates. Additive exports should still be documented and versioned deliberately.
 
@@ -46,6 +46,16 @@ Size is 16 bytes; field offsets are 0, 8 and 12. Compute seconds as `total_frame
 | `is_playing` | `uint8_t` | 1 when playing, otherwise 0 |
 | `device_error_flag` | `uint8_t` | 1 when the engine reports a device error |
 
+### `DAWRecordingStats`
+
+| Field | C type | Meaning |
+|---|---|---|
+| `sample_rate` | `uint32_t` | Captured input sample rate |
+| `frames_written` | `uint64_t` | Finalized stereo frames |
+| `frames_dropped` | `uint64_t` | Frames dropped when the bounded writer queue was full |
+
+Size is 24 bytes; field offsets are 0, 8 and 16.
+
 ### `DAWDeviceInfo`
 
 | Field | C type | Meaning |
@@ -71,8 +81,10 @@ Do not substitute a different field order or widths in Dart. The Dart `Struct` d
 | `daw_engine_poll_telemetry(engine, out_frame)` | Read telemetry | 0 frame read; 1 no new frame; negative error |
 | `daw_engine_get_sample_rate(engine, out_rate)` | Get active output rate in Hz | 0 success; negative error |
 | `daw_engine_set_master_volume(engine, gain)` | Set master linear gain | 0 accepted; negative error |
-| `daw_engine_synth_event(engine, event, key, value)` | Send HypnoSynth note, preset, macro or panic event | 0 accepted; negative error |
+| `daw_engine_synth_event(engine, event, key, value)` | Send HypnoSynth note, preset, macro, panic or sequencer-step edit (event 5: step 0–15, note 0–127 or -1 for rest) | 0 accepted; negative error |
 | `daw_engine_configure_transport(engine, bpm, metronome, sequence)` | Configure tempo, click and original synth phrase | 0 accepted; negative error |
+| `daw_engine_start_recording(engine, path)` | Start default Windows input capture into a new stereo PCM16 WAV; existing files are never overwritten | 0 started; -1 invalid input; -6 recording/input initialization failed |
+| `daw_engine_stop_recording(engine, out_stats)` | Stop input capture, finalize WAV, return sample rate, frames written and dropped | 0 finalized; -1 invalid argument; -6 recording/writer failure |
 | `daw_engine_export_wav(engine, path)` | Render loaded clips and performance to stereo PCM16 WAV | 0 success; -1 invalid argument; -5 export failed |
 | `daw_engine_solo_track(engine, track_id, solo)` | Enable implicit solo for one imported track | 0 accepted; negative error |
 | `daw_engine_set_track_start_seconds(engine, track_id, seconds)` | Set imported clip start position in the arrangement | 0 accepted; negative error |
@@ -100,6 +112,8 @@ The implementation currently uses these values in different functions:
 - `-2`: engine/device initialization, enumeration or track-load failure (function-dependent).
 - `-3`: engine rejected a transport or parameter command (function-dependent).
 - `-4`: device index or track identifier was not found (function-dependent).
+- `-5`: offline WAV export failed.
+- `-6`: input recording setup, stream or writer failed.
 
 Named Rust constants for these boundaries are `DAW_OK`, `DAW_ERROR_INVALID_ARGUMENT`, `DAW_ERROR_COMMAND_REJECTED`, and `DAW_ERROR_TRACK_NOT_FOUND`. Removal returns -3 if its command cannot be accepted, keeping the track inventory and decoder intact for retry.
 
