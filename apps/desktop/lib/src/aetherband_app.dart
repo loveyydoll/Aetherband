@@ -560,6 +560,98 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     }
   }
 
+  Future<void> _duplicateSelectedTrack() async {
+    if (_trackOperationPending || _initializingEngine) return;
+    final engine = _engine;
+    final selected = _selectedTrack;
+    final source = selected == null ? null : _nativeTrackSources[selected.id];
+    final clip = selected?.clips.firstOrNull;
+    if (engine == null || selected == null || source == null || clip == null) {
+      _showFeatureUnavailable('Duplicating demo or instrument tracks');
+      return;
+    }
+
+    setState(() => _trackOperationPending = true);
+    int? uncommittedNativeId;
+    var adopted = false;
+    try {
+      if (await engine.getTrackCount() >= AudioSessionDocument.maxTracks) {
+        throw StateError(
+            'A session can contain at most ${AudioSessionDocument.maxTracks} audio tracks.');
+      }
+      final loaded = await engine.loadTrack(source);
+      uncommittedNativeId = loaded.id;
+      await engine.setTrackVolume(loaded.id, selected.volume);
+      await engine.setTrackPan(loaded.id, selected.pan);
+      await engine.muteTrack(loaded.id, selected.muted);
+      await engine.soloTrack(loaded.id, selected.solo);
+      await engine.setTrackStartSeconds(loaded.id, clip.startSeconds);
+
+      final id = _createPersistentTrackId();
+      final suffix = ' copy';
+      final name = selected.name.length + suffix.length <= 120
+          ? '${selected.name}$suffix'
+          : '${selected.name.substring(0, 120 - suffix.length)}$suffix';
+      final duplicateClip = ClipModel(
+        id: '$id-clip',
+        title: clip.title,
+        start: 0,
+        width: 0,
+        color: selected.color,
+        isDemo: false,
+        durationSeconds: loaded.durationSeconds,
+        startSeconds: clip.startSeconds,
+        waveformPeaks: clip.waveformPeaks == null
+            ? null
+            : List<double>.of(clip.waveformPeaks!),
+        waveformLoaded: clip.waveformLoaded,
+      );
+      final duplicate = TrackModel(
+        id: id,
+        name: name,
+        kind: selected.kind,
+        color: selected.color,
+        clips: <ClipModel>[duplicateClip],
+        muted: selected.muted,
+        solo: selected.solo,
+        volume: selected.volume,
+        pan: selected.pan,
+      );
+      if (!mounted) return;
+      setState(() {
+        _nativeTrackIds[id] = loaded.id;
+        _nativeTrackSources[id] = source;
+        _tracks.add(duplicate);
+        _selectedTrackId = id;
+        _selectedClipId = duplicateClip.id;
+        _markSessionChanged();
+      });
+      adopted = true;
+      uncommittedNativeId = null;
+      unawaited(_loadClipWaveform(duplicate, duplicateClip, source));
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Track duplication failed: $error')),
+        );
+      }
+    } finally {
+      if (!adopted && uncommittedNativeId != null) {
+        try {
+          await engine.removeTrack(uncommittedNativeId);
+        } catch (_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text(
+                  'The duplicate could not be added, and its temporary audio track could not be removed.'),
+            ));
+          }
+        }
+      }
+      if (mounted) setState(() => _trackOperationPending = false);
+    }
+  }
+
   AudioSessionDocument _captureAudioSession(String title) {
     final tracks = <SavedAudioTrack>[];
     for (final track in _tracks) {
@@ -1083,6 +1175,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       case 'track.delete':
         unawaited(_removeSelectedTrack());
         return;
+      case 'track.duplicate':
+        unawaited(_duplicateSelectedTrack());
+        return;
       case 'transport.play':
         unawaited(_togglePlay());
         return;
@@ -1213,9 +1308,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     final positioned = _snapToBeat
         ? (unsnapped / beatSeconds).round() * beatSeconds
         : unsnapped;
-    final next = positioned
-        .clamp(0.0, 3600.0)
-        .toDouble();
+    final next = positioned.clamp(0.0, 3600.0).toDouble();
     setState(() {
       clip.startSeconds = next;
       _selectedTrackId = track.id;

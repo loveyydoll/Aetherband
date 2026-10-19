@@ -128,8 +128,8 @@ Aetherband is in an early stage. The distinction between existing code, verified
 
 ### Known gaps
 
-- Windows input recording writes a WAV and adds it as a real audio track; its hardware path remains unverified. PCM and IEEE-float WAV clips render measured peaks; other waveform formats are clearly marked unavailable. Undo/redo covers clip moves; editable MIDI, effects, automation, plugin hosting, split/trim/resize and general editing history remain future work. Imported audio clips snap to quarter-note beats by default, with a toolbar toggle for free placement; positions persist in session files.
-- Local Windows checks pass: 47 Rust core tests, 8 ABI tests, callback-allocation and WASAPI smoke targets, Clippy, release DLL, Flutter analysis, 41 Flutter tests, native FFI integration against the default output device, and a Windows debug build. Remote CI still needs to run on the updated PR head. Physical listening/loopback capture remains unverified.
+- Windows input recording writes a WAV and adds it as a real audio track; its hardware path remains unverified. PCM and IEEE-float WAV clips render measured peaks; other waveform formats are clearly marked unavailable. Imported audio tracks can be duplicated with their mixer and timeline state. Undo/redo covers clip moves; editable MIDI, effects, automation, plugin hosting, split/trim/resize and general editing history remain future work. Imported audio clips snap to quarter-note beats by default, with a toolbar toggle for free placement; positions persist in session files.
+- Local Windows checks pass: 47 Rust core tests, 8 ABI tests, callback-allocation and WASAPI smoke targets, Clippy, release DLL, Flutter analysis, 43 Flutter tests, native FFI integration against the default output device, and a Windows debug build. Remote Rust and Flutter workflows pass on the latest published head. Physical listening/loopback capture remains unverified.
 - Synced `sources/` references and the pre-existing Desktop checkout remain untouched.
 - The current CI checks need to pass before the migration can be described as stable.
 

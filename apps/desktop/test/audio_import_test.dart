@@ -60,6 +60,7 @@ class FakeEngine implements EngineController, PerformanceEngine, ExportEngine {
   Future<void> removeTrack(int trackId) async {
     calls.add('remove:$trackId');
     await removalResult?.future;
+    count--;
   }
 
   @override
@@ -351,6 +352,46 @@ void main() {
       isNot(closeTo(clip.startSeconds, 1e-6)),
     );
     expect(engine.calls.last, startsWith('start:1:'));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('duplicate selected audio track preserves engine state',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    await tester.tap(find.byTooltip('Track menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Duplicate Selected Track'));
+    await tester.pumpAndSettle();
+
+    expect(engine.calls, contains('load:C:/audio/take.wav'));
+    expect(engine.calls, contains('volume:2:0.8'));
+    expect(engine.calls, contains('pan:2:0.5'));
+    expect(engine.calls, contains('mute:2:false'));
+    expect(engine.calls, contains('solo:2:false'));
+    expect(engine.calls, contains('start:2:0.0'));
+    expect(await engine.getTrackCount(), 2);
+    expect(find.textContaining('take.wav copy'), findsWidgets);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('failed duplicate rolls back the native audio track',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    engine.mixerError = StateError('mixer rejected duplicate state');
+    await tester.tap(find.byTooltip('Track menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Duplicate Selected Track'));
+    await tester.pumpAndSettle();
+
+    expect(engine.calls, contains('remove:2'));
+    expect(await engine.getTrackCount(), 1);
+    expect(find.textContaining('Track duplication failed'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
