@@ -453,7 +453,6 @@ void main() {
           'mute:1:true',
           'solo:1:true',
           'start:1:0.0',
-          'start:1:0.0',
         ]));
     final reopened = tester
         .widget<InstrumentDock>(find.byType(InstrumentDock))

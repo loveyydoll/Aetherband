@@ -431,7 +431,7 @@ class InstrumentDock extends StatelessWidget {
                   width: 156,
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 4),
-                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+                    padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
                     decoration: BoxDecoration(
                       color: AetherColors.background,
                       borderRadius: BorderRadius.circular(6),
