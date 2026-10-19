@@ -268,6 +268,22 @@ void main() {
     timeline = tester.widget<TimelineView>(find.byType(TimelineView));
     expect(timeline.tracks.map((track) => track.name).toList(),
         containsAllInOrder(<String>['second.wav', 'first.wav']));
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    timeline = tester.widget<TimelineView>(find.byType(TimelineView));
+    expect(timeline.tracks.map((track) => track.name).toList(),
+        containsAllInOrder(<String>['first.wav', 'second.wav']));
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyY);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    timeline = tester.widget<TimelineView>(find.byType(TimelineView));
+    expect(timeline.tracks.map((track) => track.name).toList(),
+        containsAllInOrder(<String>['second.wav', 'first.wav']));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
