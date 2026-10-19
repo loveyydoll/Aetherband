@@ -27,6 +27,7 @@ class TimelineView extends StatelessWidget {
     required this.onMuteChanged,
     required this.onSoloChanged,
     required this.onVolumeChanged,
+    required this.onMoveTrack,
     super.key,
   });
 
@@ -52,6 +53,7 @@ class TimelineView extends StatelessWidget {
   final void Function(TrackModel, bool) onMuteChanged;
   final void Function(TrackModel, bool) onSoloChanged;
   final void Function(TrackModel, double) onVolumeChanged;
+  final void Function(TrackModel, int) onMoveTrack;
 
   static const double _headerWidth = 196;
   static const double _rulerHeight = 38;
@@ -122,16 +124,24 @@ class TimelineView extends StatelessWidget {
                           ),
                         ),
                       ),
-                      for (final track in tracks)
+                      for (var trackIndex = 0;
+                          trackIndex < tracks.length;
+                          trackIndex++)
                         _TrackHeader(
-                          key: ValueKey(track.id),
-                          track: track,
-                          selected: track.id == selectedTrackId,
-                          onTap: () => onTrackSelected(track),
-                          onMute: () => onMuteChanged(track, !track.muted),
-                          onSolo: () => onSoloChanged(track, !track.solo),
+                          key: ValueKey(tracks[trackIndex].id),
+                          track: tracks[trackIndex],
+                          selected: tracks[trackIndex].id == selectedTrackId,
+                          onTap: () => onTrackSelected(tracks[trackIndex]),
+                          onMute: () => onMuteChanged(
+                              tracks[trackIndex], !tracks[trackIndex].muted),
+                          onSolo: () => onSoloChanged(
+                              tracks[trackIndex], !tracks[trackIndex].solo),
                           onVolumeChanged: (value) =>
-                              onVolumeChanged(track, value),
+                              onVolumeChanged(tracks[trackIndex], value),
+                          onMoveTrack: (delta) =>
+                              onMoveTrack(tracks[trackIndex], delta),
+                          canMoveUp: trackIndex > 0,
+                          canMoveDown: trackIndex < tracks.length - 1,
                           height: laneHeight,
                         ),
                     ],
@@ -217,6 +227,9 @@ class _TrackHeader extends StatelessWidget {
     required this.onMute,
     required this.onSolo,
     required this.onVolumeChanged,
+    required this.onMoveTrack,
+    required this.canMoveUp,
+    required this.canMoveDown,
     required this.height,
     super.key,
   });
@@ -227,6 +240,9 @@ class _TrackHeader extends StatelessWidget {
   final VoidCallback onMute;
   final VoidCallback onSolo;
   final ValueChanged<double> onVolumeChanged;
+  final ValueChanged<int> onMoveTrack;
+  final bool canMoveUp;
+  final bool canMoveDown;
   final double height;
 
   @override
@@ -269,6 +285,27 @@ class _TrackHeader extends StatelessWidget {
                           color: AetherColors.secondaryText,
                           fontSize: 8,
                           letterSpacing: 0.6)),
+                  PopupMenuButton<int>(
+                    tooltip: 'Track actions',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 32),
+                    iconSize: 15,
+                    icon: const Icon(Icons.more_horiz,
+                        color: AetherColors.secondaryText),
+                    onSelected: onMoveTrack,
+                    itemBuilder: (context) => [
+                      PopupMenuItem<int>(
+                        value: -1,
+                        enabled: canMoveUp,
+                        child: const Text('Move track up'),
+                      ),
+                      PopupMenuItem<int>(
+                        value: 1,
+                        enabled: canMoveDown,
+                        child: const Text('Move track down'),
+                      ),
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 4),
