@@ -477,6 +477,12 @@ void main() {
       await tester.pump();
     }
     expect(stagedEngine.isCompleted, isTrue);
+    for (var i = 0; i < 100 && first.disposeCount == 0; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
     await tester.pumpAndSettle();
     expect(first.disposeCount, 1);
     expect(
