@@ -190,7 +190,7 @@ impl CpalBackend {
             .map_err(|e| DeviceError::FormatNotSupported(e.to_string()))
     }
 
-    /// Starts recording the default Windows input device to a stereo PCM16 WAV.
+    /// Starts recording the default Windows input device to a stereo PCM24 WAV.
     /// The input callback only converts and pushes samples into a bounded ring;
     /// the writer thread performs all filesystem work.
     pub fn start_recording(&self, path: &Path) -> Result<ActiveRecording, DeviceError> {
@@ -422,7 +422,7 @@ fn write_recording(
 ) -> io::Result<u64> {
     file.write_all(&wav_header(sample_rate, 0))?;
     let mut samples = [0.0_f32; 4096];
-    let mut bytes = [0_u8; 8192];
+    let mut bytes = [0_u8; 4096 * 3];
     let mut total_samples = 0_u64;
     loop {
         let mut count = 0;
@@ -442,13 +442,14 @@ fn write_recording(
             thread::sleep(Duration::from_millis(2));
             continue;
         }
-        let max_samples = ((u32::MAX as u64 - 36) / 2) as usize;
+        let max_samples = ((u32::MAX as u64 - 36) / 3) as usize;
         let writable = count.min(max_samples.saturating_sub(total_samples as usize));
         for index in 0..writable {
-            let pcm = (samples[index].clamp(-1.0, 1.0) * 32767.0).round() as i16;
-            bytes[index * 2..index * 2 + 2].copy_from_slice(&pcm.to_le_bytes());
+            const PCM24_MAX: f32 = 8_388_607.0;
+            let pcm = (samples[index].clamp(-1.0, 1.0) * PCM24_MAX).round() as i32;
+            bytes[index * 3..index * 3 + 3].copy_from_slice(&pcm.to_le_bytes()[..3]);
         }
-        file.write_all(&bytes[..writable * 2])?;
+        file.write_all(&bytes[..writable * 3])?;
         total_samples += writable as u64;
         if writable < count {
             running.store(false, Ordering::Release);
@@ -456,7 +457,7 @@ fn write_recording(
         }
     }
     file.seek(SeekFrom::Start(0))?;
-    file.write_all(&wav_header(sample_rate, total_samples as u32 * 2))?;
+    file.write_all(&wav_header(sample_rate, total_samples as u32 * 3))?;
     file.sync_all()?;
     Ok(total_samples / 2)
 }
@@ -470,9 +471,9 @@ fn wav_header(sample_rate: u32, data_bytes: u32) -> [u8; 44] {
     header[20..22].copy_from_slice(&1_u16.to_le_bytes());
     header[22..24].copy_from_slice(&2_u16.to_le_bytes());
     header[24..28].copy_from_slice(&sample_rate.to_le_bytes());
-    header[28..32].copy_from_slice(&sample_rate.saturating_mul(4).to_le_bytes());
-    header[32..34].copy_from_slice(&4_u16.to_le_bytes());
-    header[34..36].copy_from_slice(&16_u16.to_le_bytes());
+    header[28..32].copy_from_slice(&sample_rate.saturating_mul(6).to_le_bytes());
+    header[32..34].copy_from_slice(&6_u16.to_le_bytes());
+    header[34..36].copy_from_slice(&24_u16.to_le_bytes());
     header[36..40].copy_from_slice(b"data");
     header[40..44].copy_from_slice(&data_bytes.to_le_bytes());
     header
@@ -622,7 +623,7 @@ mod tests {
     }
 
     #[test]
-    fn recorder_writes_stereo_pcm_and_finalizes_wav_header() {
+    fn recorder_writes_stereo_pcm24_and_finalizes_wav_header() {
         let path = std::env::temp_dir().join(format!(
             "aetherband-recorder-{}.wav",
             std::time::SystemTime::now()
@@ -649,15 +650,20 @@ mod tests {
             .unwrap();
         assert_eq!(&recorded[0..4], b"RIFF");
         assert_eq!(&recorded[8..12], b"WAVE");
-        assert_eq!(u32::from_le_bytes(recorded[40..44].try_into().unwrap()), 8);
         assert_eq!(
-            i16::from_le_bytes(recorded[44..46].try_into().unwrap()),
-            16_384
+            u32::from_le_bytes(recorded[28..32].try_into().unwrap()),
+            288_000
         );
-        assert_eq!(
-            i16::from_le_bytes(recorded[46..48].try_into().unwrap()),
-            -16_384
-        );
+        assert_eq!(u16::from_le_bytes(recorded[32..34].try_into().unwrap()), 6);
+        assert_eq!(u16::from_le_bytes(recorded[34..36].try_into().unwrap()), 24);
+        assert_eq!(u32::from_le_bytes(recorded[40..44].try_into().unwrap()), 12);
+        assert_eq!(decode_pcm24(&recorded[44..47]), 4_194_304);
+        assert_eq!(decode_pcm24(&recorded[47..50]), -4_194_304);
         std::fs::remove_file(path).unwrap();
+    }
+
+    fn decode_pcm24(bytes: &[u8]) -> i32 {
+        let sign = if bytes[2] & 0x80 == 0 { 0 } else { 0xff };
+        i32::from_le_bytes([bytes[0], bytes[1], bytes[2], sign])
     }
 }

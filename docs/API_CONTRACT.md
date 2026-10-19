@@ -86,7 +86,7 @@ Do not substitute a different field order or widths in Dart. The Dart `Struct` d
 | `daw_engine_configure_transport(engine, bpm, beats_per_bar, metronome, sequence)` | Configure BPM, 2–7 quarter-note beats per bar, accented click and original synth phrase | 0 accepted; negative error |
 | `daw_engine_set_sequence_region(engine, region_id, start_seconds, notes)` | Add/update a 16-step HypnoSynth arrangement region; `notes` points to 16 `int32_t` values, each -1 for a rest or 0–127 for a MIDI note | 0 accepted; -1 invalid input; -3 command rejected |
 | `daw_engine_remove_sequence_region(engine, region_id)` | Remove a nonzero HypnoSynth arrangement-region ID | 0 accepted; -1 invalid argument; -3 unknown region or command rejected |
-| `daw_engine_start_recording(engine, path)` | Start default Windows input capture into a new stereo PCM16 WAV; existing files are never overwritten | 0 started; -1 invalid input; -6 recording/input initialization failed |
+| `daw_engine_start_recording(engine, path)` | Start default Windows input capture into a new stereo signed PCM24 WAV; existing files are never overwritten | 0 started; -1 invalid input; -6 recording/input initialization failed |
 | `daw_engine_stop_recording(engine, out_stats)` | Stop input capture, finalize WAV, return sample rate, frames written and dropped | 0 finalized; -1 invalid argument; -6 recording/writer failure |
 | `daw_engine_export_wav(engine, path)` | Render loaded clips and performance to stereo signed PCM24 WAV at the active engine sample rate | 0 success; -1 invalid argument; -5 export failed |
 | `daw_engine_solo_track(engine, track_id, solo)` | Enable implicit solo for one imported track | 0 accepted; negative error |

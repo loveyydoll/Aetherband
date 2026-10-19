@@ -25,6 +25,6 @@ Branch: `feat/hypnosynth-daw-foundations`. PR: [#33](https://github.com/loveyydo
 
 ## Remaining limits and next work
 
-Physical speaker/headphone listening and real microphone/line-in capture remain unverified. The recorder writes to a background stereo PCM16 WAV writer and imports the finalized take, but hardware capture and sustained queue-drop behavior need a real input device. Waveform display currently supports PCM and IEEE-float WAV; compressed WAV and other containers have an honest unavailable state. Independent MIDI tracks and file interchange, automation, effects, bounce-in-place and plugin hosting remain future work.
+Physical speaker/headphone listening and real microphone/line-in capture remain unverified. The recorder writes to a background stereo signed PCM24 WAV writer and imports the finalized take, but hardware capture and sustained queue-drop behavior need a real input device. Waveform display currently supports PCM and IEEE-float WAV; compressed WAV and other containers have an honest unavailable state. Independent MIDI tracks and file interchange, automation, effects, bounce-in-place and plugin hosting remain future work.
 
 Before the overnight window ends, review the full diff, publish any final changes to PR #33 without merging, refresh the PR body with current evidence and verify CI on its latest head. Report physical audio and recording limits accurately.
