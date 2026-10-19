@@ -1,68 +1,56 @@
 # Aetherband Architecture
 
-## Status
+## Status and authority
 
-This document describes the target architecture and migration direction, not a claim that the complete system is already implemented. The new native C++ foundation is at an early stage.
+This document describes the target architecture, not a claim that every layer exists. The binding framework decision is ADR-008 in DECISIONS.md: native C++ and JUCE. Conflicting old documents describe historical architecture and must not override that decision.
 
-## Target stack
+## Committed stack
 
-- **Language:** C++20 or newer where supported.
-- **Build:** CMake.
-- **Desktop framework:** not finalized; JUCE is a leading candidate to validate on Windows and macOS.
-- **Audio runtime:** Aetherband-owned C++ modules for device lifecycle, callback processing, transport, scheduling and command/telemetry flow.
-- **DSP:** an executing graph with processor lifecycle, routing, parameters and automation contracts.
-- **Project model:** versioned sessions, stable identifiers, undo/redo commands and explicit media references.
-- **Media:** import/decode, resampling, recording and offline rendering behind testable interfaces.
-- **Instruments:** independent processors, including a planned C++ port of HypnoSynth.
-- **Optional integrations:** C# or other language components only when a concrete use case justifies a stable boundary and dependency.
+- Language: C++20 or newer.
+- Desktop framework: JUCE.
+- Build: CMake.
+- Required platforms: Windows and macOS.
+- Engine: Aetherband-owned runtime and DSP semantics.
+- Legacy reference: Rust engine, C ABI/Dart FFI, Flutter, and Dart.
 
-Windows and macOS are required target platforms. The existing Rust/Flutter implementation remains available as a reference during migration; it is not the target architecture.
+JUCE provides framework, UI, audio-device, and platform infrastructure. It does not replace the need to design Aetherband's processor graph, transport, project model, session semantics, or rendering rules.
 
-## Module boundaries
+## Logical modules
 
-1. **Application and UI:** presentation, user interaction, keyboard workflows and view state. UI widgets must not own the audio engine's source of truth.
-2. **Project/session model:** tracks, clips, media references, commands, undo/redo and versioned serialization.
-3. **Audio runtime:** device lifecycle, transport, real-time callback, scheduling, bounded command queues and telemetry.
-4. **DSP:** processors, connections, routing, parameter changes, automation and graph lifecycle.
-5. **Media:** background decoding, resampling, recording and offline render/export.
-6. **Instruments:** instrument state and processing behind a stable processor contract.
-7. **Platform layer:** OS-specific device, file-dialog, packaging and lifecycle code isolated behind interfaces.
+1. **Application shell and UI:** JUCE windows, menus, keyboard interaction, panels, arrangement/mixer presentation, accessibility, and view state.
+2. **Project/session model:** tracks, clips, media references, stable IDs, commands, undo/redo, schema versioning, and dirty-state tracking.
+3. **Audio runtime:** device lifecycle, callback processing, transport clock, scheduling, bounded command/telemetry exchange, and error reporting.
+4. **DSP graph:** processor interfaces, graph validation/execution, channel layouts, routing, parameters, automation, and safe graph changes.
+5. **Media pipeline:** import, background decoding, resampling, recording, waveform analysis, and offline render/export.
+6. **Instruments and effects:** independent processors with explicit state, parameter, event/MIDI, and lifecycle contracts. HypnoSynth is planned, not yet a C++ feature.
+7. **Platform integration:** OS-specific dialogs, paths, device details, packaging, and lifecycle isolated behind interfaces where useful.
+8. **Tests and diagnostics:** deterministic unit/offline tests, integration tests, and logging outside the callback.
 
-The UI framework must not become the application model. Keep the core testable without rendering widgets or requiring a live audio device.
+The UI must not be the source of truth for project or engine state. Core tests should run without constructing the UI or requiring a physical device.
 
-## Real-time safety contract
+## Real-time callback contract
 
-- Never perform file/network I/O, allocate unpredictably, wait on a contended lock or make blocking calls on the audio callback.
-- Prepare and retire processors away from the callback.
-- Use bounded, real-time-safe command and telemetry channels.
-- Define ownership and lifecycle rules for engine, device and processor objects.
-- Specify sample rate, block size, channel layout, latency and error behavior.
-- Test DSP deterministically offline, then verify actual device playback and shutdown on each supported platform.
+The callback must have bounded, predictable work. It must not read/write files, access the network, allocate/deallocate unpredictably, wait on locks/futures/threads, decode media, resample assets, compile graphs, or create/destroy complex processors. Prepare data, buffers, processors, and graph snapshots away from the callback. Define ownership, safe transfer, overflow behavior, and retirement.
 
-## DSP graph requirements
+Specify sample rate, block size, channel layout, latency, transport timing, error behavior, and device-change behavior. Test deterministic DSP offline before verifying actual hardware.
 
-A node/connection data structure is not sufficient. The graph must execute processing over audio buffers. Its contract should cover:
-- node preparation, processing and teardown;
-- channel layouts and buffer ownership;
-- graph validation and cycle/feedback policy;
-- parameter changes and automation timing;
-- routing and summing semantics;
-- safe graph changes while playback is running;
-- deterministic offline rendering and fault handling.
+## DSP graph contract
 
-Aetherband should own the graph semantics and processor lifecycle. Reusing compatible, license-appropriate DSP algorithms or infrastructure is acceptable.
+A graph is functional only when it processes audio buffers. Define processor prepare/process/release lifecycle; channel layouts and buffer ownership; validation, ordering, cycles and feedback policy; routing and summing; parameter and automation timing; safe graph replacement during playback; deterministic offline rendering; and fault handling.
 
-## Framework selection
+Aetherband owns graph semantics and processor lifecycle. Reuse compatible, license-appropriate DSP algorithms when that avoids needless reinvention.
 
-JUCE is a leading candidate because it provides desktop UI and audio-related abstractions in C++, but it is not finalized solely by this document. Before adoption, prove:
-- Windows and macOS configure/build/package paths;
-- basic device open/close and audio callback behavior;
-- keyboard, DPI, window and file-dialog integration;
-- dependency licensing compatibility with the project's GPL-3.0-or-later license;
-- that application and DSP modules can remain testable and reasonably framework-independent.
+## JUCE integration rules
 
-## Migration rule
+- JUCE is committed; do not reopen framework selection without explicit owner direction.
+- Keep domain logic and DSP testable without UI widgets.
+- Do not assume JUCE abstractions automatically make code real-time safe.
+- Record exact JUCE version, modules, build configuration, and licence/distribution implications.
+- Verify Windows and macOS separately: configure/build, launch, device enumeration, known-signal playback, repeated start/stop/close, packaging, and clean shutdown.
+- Update build instructions only after commands have been verified.
 
-Port behavior, not code mechanically. Audit the Rust implementation and classify every subsystem as implemented, tested, partially implemented or planned. Keep the old implementation until the C++ replacement passes the acceptance criteria in [CPP_MIGRATION_PLAN.md](CPP_MIGRATION_PLAN.md).
+## Migration policy
 
-See also [Project State](PROJECT_STATE.md), [Feature Tracker](FEATURE_TRACKER.md), and [Engine Foundation Audit](ENGINE_FOUNDATION_AUDIT.md).
+Port behavior and validated requirements, not source line-for-line. Inventory the legacy implementation and label each behavior implemented, tested, partial, or unknown. Preserve the old implementation until the C++/JUCE replacement passes acceptance criteria. Preserve Git history after retirement.
+
+See PROJECT_STATE.md, FEATURE_TRACKER.md, AUDIO_ENGINE.md, and CPP_MIGRATION_PLAN.md.
