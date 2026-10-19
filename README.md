@@ -128,7 +128,7 @@ Aetherband is in an early stage. The distinction between existing code, verified
 
 ### Known gaps
 
-- Recording, stereo export, MIDI editing, effects, automation, plugin hosting, clip split/trim/resize and undo/redo remain unimplemented. Imported audio clips can be moved while stopped at the start and their positions persist in session files.
+- Recording, stereo export, MIDI editing, effects, automation, plugin hosting, clip split/trim/resize and undo/redo remain unimplemented. Imported audio clips snap to quarter-note beats when moved while stopped at the start, and their positions persist in session files.
 - Flutter widget tests and Windows app packaging were not run locally because Flutter's installed SDK requires a writable lockfile outside the project workspace. Physical listening/loopback capture also remains unverified.
 - Synced `sources/` references and the pre-existing Desktop checkout remain untouched.
 - The current CI checks need to pass before the migration can be described as stable.

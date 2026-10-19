@@ -49,7 +49,7 @@ The app validates schema version, object fields, unique IDs, parameter ranges, t
 ## Explicit non-features
 
 * Local audio files are **referenced, not embedded or copied**. Do not move them after saving; cross-computer portability and relinking are not implemented.
-* The existing demo clips remain visualization-only and are not saved. Imported audio clips can be moved while the transport is stopped at its start; native playback scheduling and the clip start position are saved together.
+* The existing demo clips remain visualization-only and are not saved. Imported audio clips snap to quarter-note beats while moved with the transport stopped at its start; native playback scheduling and the clip start position are saved together.
 * This format does **not** save recorded audio, instrument/MIDI regions, automation, plugins, device configuration, undo history, or mastered output. HypnoSynth performance settings are saved, but its generated phrase is a performance option rather than editable MIDI.
 * This is still an early-alpha audio-session save/open workflow, not a stable project-compatibility commitment. MIDI and instrument regions are not saved.
 * Atomic replacement semantics depend on filesystem behavior; especially after power loss, manual recovery from `.bak` may be necessary. Project writes are not a substitute for versioned backups.

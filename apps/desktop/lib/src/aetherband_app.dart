@@ -847,7 +847,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     final engine = _engine;
     if (nativeId == null || engine == null || _trackOperationPending) return;
     final pixelsPerSecond = timelinePixelsPerSecond(_performance.tempo);
-    final next = (clip.startSeconds + deltaPx / _zoom / pixelsPerSecond)
+    final beatSeconds = 60 / _performance.tempo;
+    final unsnapped = clip.startSeconds + deltaPx / _zoom / pixelsPerSecond;
+    final next = ((unsnapped / beatSeconds).round() * beatSeconds)
         .clamp(0.0, 3600.0)
         .toDouble();
     setState(() {

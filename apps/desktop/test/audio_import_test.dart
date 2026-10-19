@@ -199,6 +199,11 @@ void main() {
         const Offset(150, 0));
     await tester.pump(const Duration(milliseconds: 100));
     expect(clip.startSeconds, greaterThan(0));
+    final beatSeconds = 60 / 92;
+    expect(
+      clip.startSeconds,
+      closeTo((clip.startSeconds / beatSeconds).round() * beatSeconds, 1e-9),
+    );
     expect(engine.calls.last, startsWith('start:1:'));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
