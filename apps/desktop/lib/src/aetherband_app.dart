@@ -3285,9 +3285,13 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   void _moveTrack(TrackModel track, int delta) {
     if (_trackOperationPending ||
         _historyOperationPending ||
-        _initializingEngine ||
-        _isRecording ||
-        _telemetry.isPlaying) {
+        _initializingEngine) {
+      return;
+    }
+    if (_isRecording || _telemetry.isPlaying) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Stop playback and recording before reordering tracks.'),
+      ));
       return;
     }
     final currentIndex = _tracks.indexWhere((item) => item.id == track.id);
