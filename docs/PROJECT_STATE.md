@@ -21,8 +21,8 @@ Do not reintroduce C#/.NET/Avalonia as a second desktop frontend. Verify current
 
 - The launch arrangement is a real empty session rather than six visual demo tracks. Imported audio remains duration-aware and native playback is routed to the default Windows device using its native sample format.
 - The real-time Rust callback now renders imported tracks and HypnoSynth, supports full oversized buffers, and defers decoder/player reclamation to the control thread. Device stream errors are surfaced through telemetry.
-- HypnoSynth is an original polyphonic instrument with three original presets, live keyboard input, tempo/metronome, and a generated phrase. Its musical references do not use copied recordings or claim to recreate a specific patch.
-- ABI 0.7.0, Dart FFI and session schema v3 carry synth, transport, master gain, track solo state, imported-audio clip positions, offline stereo WAV export and Windows input recording. Sessions stage media in a fresh engine before replacing active state; schema v1 and v2 remain readable.
+- HypnoSynth is an original polyphonic instrument with three original presets, live keyboard input and a persisted, editable 16-step sequence with tempo/metronome playback. Its musical references do not use copied recordings or claim to recreate a specific patch.
+- ABI 0.8.0, Dart FFI and session schema v3 carry synth, transport, master gain, track solo state, imported-audio clip positions, the editable 16-step synth sequence, offline stereo WAV export and Windows input recording. Sessions stage media in a fresh engine before replacing active state; schema v1 and v2 remain readable.
 - Rust callback tests confirm audible generated and decoded signals; physical speaker or loopback listening still requires a user machine with an audio output.
 - Windows recording uses the default input device and a background stereo PCM16 WAV writer; stopping finalizes and imports the take at the transport position. Input hardware behavior remains unverified.
 - Live meters must use actual engine telemetry, not invented animation.

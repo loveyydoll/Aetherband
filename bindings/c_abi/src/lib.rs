@@ -131,7 +131,7 @@ impl Default for DAWDeviceInfo {
 /// Returns the API version (major << 16 | minor << 8 | patch).
 #[no_mangle]
 pub extern "C" fn daw_get_api_version() -> u32 {
-    7 << 8
+    8 << 8
 }
 
 /// Starts recording from the default Windows input device to a new WAV path.
@@ -209,7 +209,8 @@ pub unsafe extern "C" fn daw_engine_export_wav(engine: *mut DAWEngine, path: *co
 }
 
 /// HypnoSynth events: 0 note-on (key 0..127, velocity 0..1), 1 note-off,
-/// 2 preset (0..2), 3 macro (key 0..4, value 0..1), 4 all-sounds-off.
+/// 2 preset (0..2), 3 macro (key 0..4, value 0..1), 4 all-sounds-off,
+/// 5 set an eight-note-per-bar sequencer step (step 0..15, note 0..127 or -1 for rest).
 ///
 /// # Safety
 /// `engine` must be a live handle returned by `daw_engine_create`, with calls
@@ -675,7 +676,7 @@ mod ffi_contract_tests {
 
     #[test]
     fn api_version_matches_dart_ffi_contract() {
-        assert_eq!(daw_get_api_version(), 0x0000_0700);
+        assert_eq!(daw_get_api_version(), 0x0000_0800);
     }
 
     #[test]

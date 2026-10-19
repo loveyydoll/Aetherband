@@ -57,6 +57,35 @@ class _HypnoSynthPanelState extends State<HypnoSynthPanel> {
     'B',
     'C'
   ];
+  static const _pitchLabels = [
+    'C',
+    'C♯',
+    'D',
+    'D♯',
+    'E',
+    'F',
+    'F♯',
+    'G',
+    'G♯',
+    'A',
+    'A♯',
+    'B',
+  ];
+
+  String _noteName(int? note) =>
+      note == null ? 'Rest' : '${_pitchLabels[note % 12]}${note ~/ 12 - 1}';
+
+  void _setStep(int index, int? note) {
+    if (!widget.enabled) return;
+    final notes = [...widget.settings.sequenceNotes];
+    notes[index] = note;
+    widget.onSettings(widget.settings.copyWith(sequenceNotes: notes));
+  }
+
+  void _toggleStep(int index) {
+    final current = widget.settings.sequenceNotes[index];
+    _setStep(index, current == null ? defaultHypnoSequence[index] : null);
+  }
 
   void _note(int note, bool down) {
     if (!widget.enabled) return;
@@ -83,7 +112,7 @@ class _HypnoSynthPanelState extends State<HypnoSynthPanel> {
   Widget build(BuildContext context) {
     final s = widget.settings;
     return Container(
-      height: 238,
+      height: 292,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: const BoxDecoration(
           color: AetherColors.panel,
@@ -261,12 +290,80 @@ class _HypnoSynthPanelState extends State<HypnoSynthPanel> {
                               ? null
                               : (v) =>
                                   widget.onSettings(s.copyWith(sequence: v))),
-                      const Text('Phrase'),
+                      const Text('Sequence'),
                     ]),
                     const SizedBox(height: 8),
+                    Row(children: [
+                      const SizedBox(
+                        width: 92,
+                        child: Text('16 STEPS',
+                            style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1)),
+                      ),
+                      for (var i = 0; i < s.sequenceNotes.length; i++)
+                        SizedBox(
+                          width: 54,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('${i + 1}'.padLeft(2, '0'),
+                                  style: const TextStyle(
+                                      fontSize: 9,
+                                      color: AetherColors.secondaryText)),
+                              IconButton(
+                                tooltip: s.sequenceNotes[i] == null
+                                    ? 'Enable step ${i + 1}'
+                                    : 'Rest on step ${i + 1}',
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints.tightFor(
+                                    width: 24, height: 24),
+                                iconSize: 16,
+                                onPressed: widget.enabled
+                                    ? () => _toggleStep(i)
+                                    : null,
+                                icon: Icon(
+                                  s.sequenceNotes[i] == null
+                                      ? Icons.add_circle_outline
+                                      : Icons.remove_circle,
+                                  color: s.sequenceNotes[i] == null
+                                      ? AetherColors.secondaryText
+                                      : AetherColors.magenta,
+                                ),
+                              ),
+                              PopupMenuButton<int>(
+                                tooltip: 'Set step ${i + 1} note',
+                                padding: EdgeInsets.zero,
+                                enabled: widget.enabled,
+                                onSelected: (note) => _setStep(i, note),
+                                itemBuilder: (_) => [
+                                  for (var note = 36; note <= 84; note++)
+                                    PopupMenuItem(
+                                        value: note,
+                                        child: Text(_noteName(note))),
+                                ],
+                                child: Text(
+                                  s.sequenceNotes[i] == null
+                                      ? '—'
+                                      : _noteName(s.sequenceNotes[i]),
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    color: s.sequenceNotes[i] == null
+                                        ? AetherColors.secondaryText
+                                        : AetherColors.paper,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ]),
+                    const SizedBox(height: 3),
                     Text(
                         widget.enabled
-                            ? 'Click the keys, then play A W S E D F T G Y H U J K · Original sounds · Stop silences all voices'
+                            ? 'Edit the 16-step synth sequence · Tap +/− to add rests · Choose a note · Keys A W S E D F T G Y H U J K'
                             : 'Connect the native audio engine to play HypnoSynth',
                         style: const TextStyle(
                             fontSize: 10, color: AetherColors.secondaryText)),

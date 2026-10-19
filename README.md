@@ -123,13 +123,13 @@ Aetherband is in an early stage. The distinction between existing code, verified
 - A Rust audio-engine workspace and a C ABI for communication with the desktop UI.
 - Native multi-track playback and mixing, master gain, per-track gain/pan/mute/solo, native device sample formats, and full-buffer callback processing.
 - HypnoSynth, an original polyphonic software instrument with three original atmospheric and post-punk presets, a live keyboard, performance macros, tempo, metronome, phrase playback and panic.
-- Versioned C ABI 0.7.0 and Dart FFI routes for engine, audio, mixer, clip positioning, synth and session settings, Windows output-device selection, stereo WAV export and Windows input recording.
+- Versioned C ABI 0.8.0 and Dart FFI routes for engine, audio, mixer, clip positioning, synth, editable 16-step sequence and session settings, Windows output-device selection, stereo WAV export and Windows input recording.
 - Windows is the only current target. Rust signal, transport, callback and FFI tests pass; the opt-in WASAPI callback smoke test passes; Dart analysis passed during implementation.
 
 ### Known gaps
 
 - Windows input recording writes a WAV and adds it as a real audio track; its hardware path remains unverified. Editable MIDI, waveform display, effects, automation, plugin hosting, clip split/trim/resize and undo/redo remain unimplemented. Imported audio clips snap to quarter-note beats when moved while stopped at the start, and their positions persist in session files.
-- Local Rust and Flutter checks pass, including 30 Flutter tests with the native DLL, default WASAPI output selection/playback and stereo WAV export; a Windows debug build succeeds. Rust and Windows Flutter CI passed on output-selector commit `49e3111`. Physical listening/loopback capture remains unverified.
+- Local Rust and Flutter checks pass, including 32 Flutter tests (the device test runs separately with the native DLL), a focused native FFI integration test with default WASAPI output selection/playback and stereo WAV export, and a Windows debug build. CI for the editable-sequence changes is pending. Physical listening/loopback capture remains unverified.
 - Synced `sources/` references and the pre-existing Desktop checkout remain untouched.
 - The current CI checks need to pass before the migration can be described as stable.
 
@@ -185,7 +185,7 @@ Aetherband separates the creative interface from the work that must run close to
 | Technology | Role | Current status |
 |---|---|---|
 | **Rust** | Native audio engine, decoding, mixing, DSP and real-time callback | Core implementation exists; correctness and platform behavior still require regression testing |
-| **C ABI** | Versioned boundary between native engine and desktop UI | ABI 0.7.0; includes audio, mixer, clip positions, transport, HypnoSynth, device selection, stereo export, and Windows input recording; see [API_CONTRACT.md](docs/API_CONTRACT.md) |
+| **C ABI** | Versioned boundary between native engine and desktop UI | ABI 0.8.0; includes audio, mixer, clip positions, transport, editable HypnoSynth sequence, device selection, stereo export, and Windows input recording; see [API_CONTRACT.md](docs/API_CONTRACT.md) |
 | **Dart FFI** | Native library loading, ABI validation, engine lifecycle and telemetry | Windows worker-isolate path connects audio and performance controls |
 | **Flutter / Dart** | Windows desktop UI and creative workspace | Main interface; the initial session opens empty with HypnoSynth ready |
 | **CPAL / Symphonia / rtrb** | Audio device I/O, media decoding and bounded cross-thread communication | Used by the Rust engine; exact supported formats and runtime behavior must be verified per platform |
@@ -268,3 +268,4 @@ Aetherband is not finished—and it is not trying to pretend otherwise. It is an
 [Explore the repository](https://github.com/loveyydoll/Aetherband) · [Report a bug or propose an idea](https://github.com/loveyydoll/Aetherband/issues)
 
 Aetherband is licensed under **GPL-3.0**. Contributions are welcome.
+

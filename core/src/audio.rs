@@ -6,7 +6,7 @@
 //! - Zero blocking filesystem / network I/O
 
 use crate::dsp::{GainRamp, LevelMeter, SineOscillator};
-use crate::hypnosynth::HypnoSynth;
+use crate::hypnosynth::{HypnoSynth, DEFAULT_SEQUENCE};
 use crate::ringbuf::{AudioEndpoints, DecodedBlock, EngineCommand, TelemetryFrame};
 use crate::track::{TrackPlayer, TrackSlots, MAX_TRACKS};
 use rtrb::{Consumer, Producer};
@@ -32,6 +32,7 @@ pub struct AudioProcessor {
     metronome: bool,
     sequence: bool,
     sequence_note: Option<u8>,
+    sequence_pattern: [Option<u8>; 16],
     beat_phase: f64,
     click_remaining: usize,
 
@@ -69,6 +70,7 @@ impl AudioProcessor {
             metronome: false,
             sequence: false,
             sequence_note: None,
+            sequence_pattern: DEFAULT_SEQUENCE,
             beat_phase: 0.0,
             click_remaining: 0,
             sample_rate,
@@ -168,6 +170,9 @@ impl AudioProcessor {
                     2 => self.synth.preset(key as u8),
                     3 => self.synth.parameter(key as u8, value),
                     4 => self.synth.panic(),
+                    5 if (key as usize) < self.sequence_pattern.len() => {
+                        self.sequence_pattern[key as usize] = (value >= 0.0).then_some(value as u8);
+                    }
                     _ => (),
                 },
                 ConfigureTransport {
@@ -379,15 +384,14 @@ impl AudioProcessor {
                     && (previous == 0.0
                         || (previous * 2.0).floor() != (self.beat_phase * 2.0).floor())
                 {
-                    const NOTES: [u8; 16] = [
-                        50, 57, 60, 57, 53, 60, 65, 60, 48, 55, 60, 62, 45, 52, 57, 64,
-                    ];
                     if let Some(note) = self.sequence_note.take() {
                         self.synth.note_off(note);
                     }
-                    let note = NOTES[(self.beat_phase * 2.0) as usize % NOTES.len()];
-                    self.synth.note_on(note, 0.72);
-                    self.sequence_note = Some(note);
+                    let step = (self.beat_phase * 2.0) as usize % self.sequence_pattern.len();
+                    if let Some(note) = self.sequence_pattern[step] {
+                        self.synth.note_on(note, 0.72);
+                        self.sequence_note = Some(note);
+                    }
                 }
             }
             let synth = self.synth.next_frame();
@@ -678,6 +682,39 @@ mod tests {
         let mut output = vec![0.0f32; 1024 * 2];
         processor.process_interleaved(&mut output, 2);
         assert!(output.iter().any(|sample| sample.abs() > 0.0001));
+    }
+
+    #[test]
+    fn editable_sequence_rest_and_note_reach_realtime_output() {
+        let (mut ui, audio) = create_engine_queues(32, 32);
+        let mut processor = AudioProcessor::new(8_000.0, audio);
+        ui.cmd_producer
+            .push(EngineCommand::SynthEvent {
+                event: 5,
+                key: 0,
+                value: -1.0,
+            })
+            .unwrap();
+        ui.cmd_producer
+            .push(EngineCommand::SynthEvent {
+                event: 5,
+                key: 1,
+                value: 60.0,
+            })
+            .unwrap();
+        ui.cmd_producer
+            .push(EngineCommand::ConfigureTransport {
+                bpm: 300.0,
+                metronome: false,
+                sequence: true,
+            })
+            .unwrap();
+        ui.cmd_producer.push(EngineCommand::Play).unwrap();
+
+        let mut output = vec![0.0_f32; 1600 * 2];
+        processor.process_interleaved(&mut output, 2);
+        assert!(output[..800 * 2].iter().all(|sample| *sample == 0.0));
+        assert!(output[800 * 2..].iter().any(|sample| sample.abs() > 0.0001));
     }
 
     #[test]

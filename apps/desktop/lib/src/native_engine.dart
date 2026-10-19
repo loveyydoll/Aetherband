@@ -60,7 +60,7 @@ typedef _StopRecordingN = Int32 Function(
     Pointer<Void>, Pointer<_RecordingStats>);
 typedef _StopRecordingD = int Function(Pointer<Void>, Pointer<_RecordingStats>);
 
-const int _expectedApiVersion = 0x00000700;
+const int _expectedApiVersion = 0x00000800;
 
 final class _TrackInfo extends Struct {
   @Uint64()

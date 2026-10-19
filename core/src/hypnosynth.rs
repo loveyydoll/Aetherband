@@ -5,6 +5,26 @@ use std::f32::consts::TAU;
 
 const VOICES: usize = 16;
 
+/// Original 16-step HypnoSynth phrase. `None` represents a rest when edited.
+pub const DEFAULT_SEQUENCE: [Option<u8>; 16] = [
+    Some(50),
+    Some(57),
+    Some(60),
+    Some(57),
+    Some(53),
+    Some(60),
+    Some(65),
+    Some(60),
+    Some(48),
+    Some(55),
+    Some(60),
+    Some(62),
+    Some(45),
+    Some(52),
+    Some(57),
+    Some(64),
+];
+
 #[derive(Clone, Copy)]
 struct Voice {
     note: u8,

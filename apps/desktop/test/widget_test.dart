@@ -70,6 +70,25 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('HypnoSynth sequence edits send a rest to the native engine',
+      (tester) async {
+    tester.view.physicalSize = const Size(1440, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final engine = FakeEngine();
+
+    await tester.pumpWidget(AetherbandApp(createEngine: () async => engine));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Rest on step 1'));
+    await tester.pumpAndSettle();
+
+    expect(engine.calls, contains('synth:5:0:-1.0'));
+    expect(find.byTooltip('Enable step 1'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('Record menu metronome configures the audio transport',
       (tester) async {
     tester.view.physicalSize = const Size(1440, 1000);

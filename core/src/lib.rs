@@ -26,6 +26,7 @@ use device::{
     ActiveRecording, ActiveStream, AudioBackend, CpalBackend, DeviceError, DeviceInfo,
     RecordingStats,
 };
+use hypnosynth::DEFAULT_SEQUENCE;
 use ringbuf::{create_engine_queues, EngineCommand, TelemetryFrame, TrackId, UIEndpoints};
 use track::TrackPlayer;
 
@@ -130,6 +131,7 @@ pub struct DAWEngine {
     bpm: f32,
     metronome: bool,
     sequence: bool,
+    sequence_pattern: [Option<u8>; 16],
     preset: u8,
     macros: [f32; 5],
 }
@@ -158,6 +160,7 @@ impl DAWEngine {
             bpm: 92.0,
             metronome: false,
             sequence: false,
+            sequence_pattern: DEFAULT_SEQUENCE,
             preset: 0,
             macros: [0.42, 0.38, 0.55, 0.36, 0.7],
         })
@@ -231,6 +234,15 @@ impl DAWEngine {
                     event: 3,
                     key: key as u32,
                     value,
+                })
+                .expect("fresh device command queue has capacity");
+        }
+        for (key, note) in self.sequence_pattern.iter().copied().enumerate() {
+            commands
+                .push(EngineCommand::SynthEvent {
+                    event: 5,
+                    key: key as u32,
+                    value: note.map_or(-1.0, f32::from),
                 })
                 .expect("fresh device command queue has capacity");
         }
@@ -433,6 +445,11 @@ impl DAWEngine {
                 2 => key < 3,
                 3 => key < 5 && (0.0..=1.0).contains(&value),
                 4 => true,
+                5 => {
+                    key < 16
+                        && (value == -1.0
+                            || ((0.0..=127.0).contains(&value) && value.fract() == 0.0))
+                }
                 _ => false,
             };
         if !valid {
@@ -447,6 +464,7 @@ impl DAWEngine {
             match event {
                 2 => self.preset = key as u8,
                 3 => self.macros[key as usize] = value,
+                5 => self.sequence_pattern[key as usize] = (value >= 0.0).then_some(value as u8),
                 _ => {}
             }
         }
@@ -497,6 +515,7 @@ impl DAWEngine {
                 bpm: self.bpm,
                 metronome: self.metronome,
                 sequence: self.sequence,
+                sequence_pattern: self.sequence_pattern,
                 preset: self.preset,
                 macros: self.macros,
             },
@@ -774,6 +793,7 @@ mod engine_tests {
             bpm: 92.0,
             metronome: false,
             sequence: false,
+            sequence_pattern: DEFAULT_SEQUENCE,
             preset: 0,
             macros: [0.42, 0.38, 0.55, 0.36, 0.7],
         };
