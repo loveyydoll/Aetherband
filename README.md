@@ -89,7 +89,7 @@ The foundations are taking shape: a Rust audio-engine workspace, native playback
 
 | Now | Next | Later |
 | --- | --- | --- |
-| Verify Windows playback and HypnoSynth on real output | Real MIDI editing, clip trim/resize and broader undo/redo | Effects, automation and plugin ecosystem |
+| Verify Windows playback and HypnoSynth on real output | Real MIDI regions/file interchange, stretch resizing and broader undo/redo | Bounce in Place, effects, automation and plugin ecosystem |
 
 For the precise implementation status, read [What works today?](#what-works-today) and the [development roadmap](#roadmap).
 
@@ -128,10 +128,10 @@ Aetherband is in an early stage. The distinction between existing code, verified
 
 ### Known gaps
 
-- Windows input recording writes a WAV and adds it as a real audio track; its hardware path remains unverified. PCM and IEEE-float WAV clips render measured peaks; other waveform formats are clearly marked unavailable. Imported audio tracks support rename, duplicate, copy, cut, and paste at the transport position, including Ctrl+X/C/V/D. The Region menu splits selected audio at the stopped playhead into source-bounded native regions that save and reopen; split tracks retain their regions through copy/paste and duplication. Home/Go to Start rewinds transport outside recording. Zoom to Fit scales the arrangement to its content. Undo/redo covers clip moves; split history, editable MIDI, effects, automation, plugin hosting and trim/resize remain future work. Imported audio clips snap to quarter-note beats by default, with a toolbar toggle for free placement; positions persist in session files.
-- Current PR head `8aff2f4` passes Rust CI run 308 and Flutter desktop CI run 105, including 49 core tests, 10 ABI tests, callback-allocation and WASAPI smoke targets, Dart analysis, all 55 Flutter tests (one optional device test skipped), native C ABI build and Windows desktop build. Local Rust, Clippy, release DLL, Dart analysis and diff checks also pass; the local Flutter launcher could not acquire its SDK lockfile. Earlier local FFI integration verified seek during playback, import, mixer, export and shutdown against the default output device. Physical listening/loopback capture remains unverified.
+- Windows input recording writes a WAV and adds it as a real audio track; its hardware path remains unverified. PCM and IEEE-float WAV clips render measured peaks; other waveform formats are clearly marked unavailable. Imported audio tracks support rename, duplicate, copy, cut, and paste at the transport position, including Ctrl+X/C/V/D. The Region menu splits and joins adjacent contiguous source regions, or trims a selected region's start/end to the stopped playhead; edits persist in schema-v4 sessions and participate in chronological undo/redo with clip moves. Split tracks retain their regions through copy/paste and duplication. Home/Go to Start rewinds transport outside recording. Zoom to Fit scales the arrangement to its content. Editable MIDI regions, stretch resizing, Bounce in Place, effects, automation and plugin hosting remain future work. Imported audio clips snap to quarter-note beats by default, with a toolbar toggle for free placement; positions persist in session files.
+- Current PR head `aa13944` passes Rust CI run 312 and Flutter desktop CI run 110, including 49 core tests, 10 ABI tests, callback-allocation and WASAPI smoke targets, Dart analysis, all 57 Flutter tests (one optional device test skipped), native C ABI build and Windows desktop build. Local Rust, Clippy, release DLL, Dart analysis and diff checks also pass; the local Flutter launcher could not acquire its SDK lockfile. Earlier local FFI integration verified seek during playback, import, mixer, export and shutdown against the default output device. Physical listening/loopback capture remains unverified.
 - Synced `sources/` references and the pre-existing Desktop checkout remain untouched.
-- The current CI checks need to pass before the migration can be described as stable.
+- Keep current-head Windows CI green before the PR is ready to merge.
 
 **Please treat the current build as experimental.** Do not use it as the only copy of important sessions or irreplaceable recordings.
 
