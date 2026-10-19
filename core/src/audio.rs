@@ -234,6 +234,14 @@ impl AudioProcessor {
                         track.pan = pan.clamp(0.0, 1.0);
                     }
                 }
+                SetTrackStartFrame {
+                    track_id,
+                    start_frame,
+                } => {
+                    if let Some(track) = self.tracks.get_mut(track_id) {
+                        track.start_frame = start_frame.max(0);
+                    }
+                }
                 MuteTrack { track_id, muted } => {
                     if let Some(track) = self.tracks.get_mut(track_id) {
                         track.muted = muted;
@@ -334,6 +342,7 @@ impl AudioProcessor {
         // 3. Mix all active tracks into the scratch bus
         if self.is_playing {
             let solo_active = self.tracks.has_solo();
+            let playhead_frame = self.playhead_frame;
             self.tracks.iter_mut().for_each(|track| {
                 track.mix_into(
                     &mut self.scratch_left[..meter_frames],
@@ -341,6 +350,7 @@ impl AudioProcessor {
                     meter_frames,
                     &mut self.retired_blocks,
                     solo_active,
+                    playhead_frame,
                 );
             });
         }

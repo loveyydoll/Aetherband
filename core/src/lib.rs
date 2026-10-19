@@ -76,6 +76,8 @@ pub struct TrackInfo {
     pub info: AudioFileInfo,
     /// Duration converted to output sample-rate frames.
     pub output_frames: i64,
+    /// Arrangement start position in output-rate frames.
+    pub start_frame: i64,
     pub gain: f32,
     pub pan: f32,
     pub muted: bool,
@@ -164,6 +166,7 @@ impl DAWEngine {
             let mut player = TrackPlayer::new(track.id, consumer, track.gain, output_frames);
             player.pan = track.pan;
             player.muted = track.muted;
+            player.start_frame = track.start_frame;
             player.solo = track.solo;
             new_players.push(player);
             new_decoders.insert(track.id.0, decoder);
@@ -399,6 +402,7 @@ impl DAWEngine {
             file_path: path.display().to_string(),
             info,
             output_frames,
+            start_frame: 0,
             gain: 0.8,
             pan: 0.5,
             muted: false,
@@ -500,6 +504,30 @@ impl DAWEngine {
         true
     }
 
+    /// Moves a track's clip to an absolute session time in seconds.
+    pub fn set_track_start_seconds(&mut self, track_id: TrackId, seconds: f64) -> bool {
+        if !seconds.is_finite() || !(0.0..=86_400.0).contains(&seconds) {
+            return false;
+        }
+        let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) else {
+            return false;
+        };
+        let start_frame = (seconds * self.output_sample_rate as f64).round() as i64;
+        if self
+            .ui_endpoints
+            .cmd_producer
+            .push(EngineCommand::SetTrackStartFrame {
+                track_id,
+                start_frame,
+            })
+            .is_err()
+        {
+            return false;
+        }
+        track.start_frame = start_frame;
+        true
+    }
+
     pub fn mute_track(&mut self, track_id: TrackId, muted: bool) -> bool {
         let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) else {
             return false;
@@ -588,6 +616,7 @@ mod engine_tests {
                     duration_secs: 1.0,
                 },
                 output_frames: 48000,
+                start_frame: 0,
                 gain: 0.8,
                 pan: 0.5,
                 muted: false,

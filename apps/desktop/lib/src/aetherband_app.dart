@@ -71,6 +71,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   Future<void> _performanceChain = Future.value();
   final Map<String, int> _nativeTrackIds = <String, int>{};
   final Map<String, String> _nativeTrackSources = <String, String>{};
+  final Map<String, Timer> _clipPositionTimers = <String, Timer>{};
+  final Map<String, double> _confirmedClipStarts = <String, double>{};
+  bool _positionMoveDeniedShown = false;
   final AudioSessionStore _sessionStore = const AudioSessionStore();
   final Set<Future<void>> _mixerActions = <Future<void>>{};
   String _sessionTitle = 'Untitled Session';
@@ -138,6 +141,11 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         _tracks.removeWhere((track) => _nativeTrackIds.containsKey(track.id));
         _nativeTrackIds.clear();
         _nativeTrackSources.clear();
+        for (final timer in _clipPositionTimers.values) {
+          timer.cancel();
+        }
+        _clipPositionTimers.clear();
+        _confirmedClipStarts.clear();
         // The replacement engine has no imported media inventory. Never keep
         // showing a previously loaded project as if it were still available.
         _sessionPath = null;
@@ -186,6 +194,10 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   @override
   void dispose() {
     _telemetrySubscription?.cancel();
+    for (final timer in _clipPositionTimers.values) {
+      timer.cancel();
+    }
+    _clipPositionTimers.clear();
     final engine = _engine;
     if (engine != null) unawaited(engine.dispose());
     super.dispose();
@@ -325,9 +337,17 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       await engine.removeTrack(nativeId);
       if (!mounted) return;
       setState(() {
+        final removedTrack =
+            _tracks.where((track) => track.id == selectedId).firstOrNull;
         _tracks.removeWhere((track) => track.id == selectedId);
         _nativeTrackIds.remove(selectedId);
         _nativeTrackSources.remove(selectedId);
+        if (removedTrack != null) {
+          for (final clip in removedTrack.clips) {
+            _clipPositionTimers.remove(clip.id)?.cancel();
+            _confirmedClipStarts.remove(clip.id);
+          }
+        }
         _markSessionChanged();
         if (_selectedTrackId == selectedId) {
           _selectedTrackId = _tracks.isEmpty ? '' : _tracks.first.id;
@@ -358,6 +378,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         pan: track.pan,
         muted: track.muted,
         solo: track.solo,
+        startSeconds: track.clips.firstOrNull?.startSeconds ?? 0,
       ));
     }
     return AudioSessionDocument(
@@ -399,6 +420,30 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     }
     setState(() => _trackOperationPending = true);
     try {
+      // A drag is visually immediate and its native command is debounced.
+      // Flush those commands before capturing the session so saved positions
+      // and the engine cannot diverge when Save is clicked immediately.
+      for (final entry in _clipPositionTimers.entries.toList()) {
+        entry.value.cancel();
+        final clip = _tracks
+            .expand((track) => track.clips)
+            .where((clip) => clip.id == entry.key)
+            .firstOrNull;
+        final track = clip == null
+            ? null
+            : _tracks.where((track) => track.clips.contains(clip)).firstOrNull;
+        final nativeId = track == null ? null : _nativeTrackIds[track.id];
+        final engine = _engine;
+        if (clip != null &&
+            track != null &&
+            nativeId != null &&
+            engine != null) {
+          _queueMixerAction(
+            _commitClipStart(engine, track, clip, nativeId, clip.startSeconds),
+          );
+        }
+      }
+      _clipPositionTimers.clear();
       // Do not write optimistic fader values while a native rejection is
       // still possible. No further mixer edits are admitted during the save.
       if (_mixerActions.isNotEmpty) {
@@ -494,6 +539,15 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       _nativeTrackSources
         ..clear()
         ..addAll(preparedSources);
+      for (final timer in _clipPositionTimers.values) {
+        timer.cancel();
+      }
+      _clipPositionTimers.clear();
+      _confirmedClipStarts
+        ..clear()
+        ..addEntries(preparedTracks.expand((track) => track.clips.map(
+              (clip) => MapEntry(clip.id, clip.startSeconds),
+            )));
       _selectedTrackId = preparedTracks.isEmpty ? '' : preparedTracks.first.id;
       _selectedClipId =
           preparedTracks.isEmpty ? null : preparedTracks.first.clips.first.id;
@@ -559,6 +613,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         await staged.setTrackPan(loaded.id, saved.pan);
         await staged.muteTrack(loaded.id, saved.muted);
         await staged.soloTrack(loaded.id, saved.solo);
+        await staged.setTrackStartSeconds(loaded.id, saved.startSeconds);
         ids[saved.id] = loaded.id;
         sources[saved.id] = source;
         tracks.add(TrackModel(
@@ -579,6 +634,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
               color: AetherColors.sage,
               isDemo: false,
               durationSeconds: loaded.durationSeconds,
+              startSeconds: saved.startSeconds,
             ),
           ],
         ));
@@ -765,12 +821,67 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   void _moveClip(TrackModel track, ClipModel clip, double deltaPx) {
-    if (!clip.isDemo) return;
+    if (clip.isDemo) {
+      setState(() {
+        clip.start =
+            (clip.start + deltaPx / _zoom).clamp(0.0, 2200.0).toDouble();
+        _selectedTrackId = track.id;
+        _selectedClipId = clip.id;
+      });
+      return;
+    }
+    if (_telemetry.isPlaying || _telemetry.playheadSeconds > 0) {
+      if (!_positionMoveDeniedShown) {
+        _positionMoveDeniedShown = true;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Stop playback before moving an audio clip.'),
+        ));
+        Timer(
+          const Duration(seconds: 2),
+          () => _positionMoveDeniedShown = false,
+        );
+      }
+      return;
+    }
+    final nativeId = _nativeTrackIds[track.id];
+    final engine = _engine;
+    if (nativeId == null || engine == null || _trackOperationPending) return;
+    final pixelsPerSecond = timelinePixelsPerSecond(_performance.tempo);
+    final next = (clip.startSeconds + deltaPx / _zoom / pixelsPerSecond)
+        .clamp(0.0, 3600.0)
+        .toDouble();
     setState(() {
-      clip.start = (clip.start + deltaPx / _zoom).clamp(0.0, 2200.0).toDouble();
+      clip.startSeconds = next;
       _selectedTrackId = track.id;
       _selectedClipId = clip.id;
+      _markSessionChanged();
     });
+    _clipPositionTimers.remove(clip.id)?.cancel();
+    _clipPositionTimers[clip.id] = Timer(const Duration(milliseconds: 60), () {
+      _clipPositionTimers.remove(clip.id);
+      _queueMixerAction(_commitClipStart(engine, track, clip, nativeId, next));
+    });
+  }
+
+  Future<void> _commitClipStart(
+    EngineController engine,
+    TrackModel track,
+    ClipModel clip,
+    int nativeId,
+    double seconds,
+  ) async {
+    final previous = _confirmedClipStarts[clip.id] ?? 0;
+    try {
+      await engine.setTrackStartSeconds(nativeId, seconds);
+      _confirmedClipStarts[clip.id] = seconds;
+    } catch (error) {
+      if (!mounted) return;
+      if (_nativeTrackIds[track.id] == nativeId &&
+          (clip.startSeconds - seconds).abs() < 0.000001) {
+        setState(() => clip.startSeconds = previous);
+      }
+      _reportMixerFailure('Clip position', error);
+    }
   }
 
   void _selectClip(TrackModel track, ClipModel clip) {

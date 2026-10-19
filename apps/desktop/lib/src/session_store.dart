@@ -3,8 +3,8 @@ import 'performance_settings.dart';
 import 'dart:io';
 import 'dart:isolate';
 
-/// The first persistent Aetherband session format stores *real imported audio*.
-/// Demo clips, unsupported timeline edits, plugins and recording are excluded.
+/// Aetherband sessions store real imported audio, clip positions and performance
+/// settings. Demo clips, plugins and recording are excluded.
 /// Native engine track IDs are never serialized.
 class SavedAudioTrack {
   const SavedAudioTrack({
@@ -15,6 +15,7 @@ class SavedAudioTrack {
     required this.pan,
     required this.muted,
     this.solo = false,
+    this.startSeconds = 0,
   });
 
   final String id;
@@ -24,6 +25,7 @@ class SavedAudioTrack {
   final double pan;
   final bool muted;
   final bool solo;
+  final double startSeconds;
 
   String get sourcePath => File.fromUri(_sourceFileUri(sourceUri)).path;
 
@@ -35,6 +37,7 @@ class SavedAudioTrack {
         'pan': pan,
         'muted': muted,
         'solo': solo,
+        'startSeconds': startSeconds,
       };
 
   factory SavedAudioTrack.fromJson(Object? value) {
@@ -50,8 +53,15 @@ class SavedAudioTrack {
     final pan = _unitNumber(value['pan'], 'pan');
     final muted = value['muted'];
     final solo = value['solo'] ?? false;
-    if (muted is! bool || solo is! bool) {
-      throw const FormatException('Track muted must be a boolean.');
+    final startSeconds = value['startSeconds'] ?? 0;
+    if (muted is! bool ||
+        solo is! bool ||
+        startSeconds is! num ||
+        !startSeconds.isFinite ||
+        startSeconds < 0 ||
+        startSeconds > 86400) {
+      throw const FormatException(
+          'Track mute/solo flags or clip start time are invalid.');
     }
     return SavedAudioTrack(
       id: id,
@@ -61,6 +71,7 @@ class SavedAudioTrack {
       pan: pan,
       muted: muted,
       solo: solo,
+      startSeconds: startSeconds.toDouble(),
     );
   }
 }
@@ -72,7 +83,7 @@ class AudioSessionDocument {
       this.performance = const PerformanceSettings()});
 
   static const String format = 'aetherband-session';
-  static const int schemaVersion = 2;
+  static const int schemaVersion = 3;
   static const int maxTracks = 64;
 
   final String title;
@@ -95,6 +106,7 @@ class AudioSessionDocument {
       throw const FormatException('Not an Aetherband audio session.');
     }
     if (value['schemaVersion'] != 1 &&
+        value['schemaVersion'] != 2 &&
         value['schemaVersion'] != schemaVersion) {
       throw FormatException(
         'Unsupported session version: ${value['schemaVersion']}.',

@@ -49,7 +49,7 @@ class TimelineView extends StatelessWidget {
         final clipEnd = tracks.expand((track) => track.clips).fold<double>(
               0,
               (end, clip) =>
-                  math.max(end, clip.start + clip.timelineWidth(tempo)),
+              math.max(end, clip.timelineLeft(tempo) + clip.timelineWidth(tempo)),
             );
         final contentWidth = math.max(baseWidth, clipEnd + 84) * zoom;
         final availableHeight = constraints.hasBoundedHeight
@@ -378,7 +378,7 @@ class _TimelineLane extends StatelessWidget {
               child: CustomPaint(painter: TimelineGridPainter(zoom: zoom))),
           for (final clip in track.clips)
             Positioned(
-              left: clip.start * zoom,
+              left: clip.timelineLeft(tempo) * zoom,
               top: (laneHeight - math.min(50.0, laneHeight - 14)) / 2,
               width: math.max(1.0, clip.timelineWidth(tempo) * zoom).toDouble(),
               height: math.min(50.0, laneHeight - 14),

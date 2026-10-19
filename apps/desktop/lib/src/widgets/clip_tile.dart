@@ -29,8 +29,7 @@ class ClipTile extends StatelessWidget {
           : '${clip.title} · ${duration == null ? 'Duration unknown' : '${duration.toStringAsFixed(2)} s'} · Waveform not generated',
       child: GestureDetector(
         onTap: onTap,
-        onHorizontalDragUpdate:
-            clip.isDemo ? (details) => onMove(details.delta.dx) : null,
+        onHorizontalDragUpdate: (details) => onMove(details.delta.dx),
         child: Container(
           height: 50,
           decoration: BoxDecoration(

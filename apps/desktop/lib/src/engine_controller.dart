@@ -42,6 +42,7 @@ abstract class EngineController {
   Future<void> removeTrack(int trackId);
   Future<void> setTrackVolume(int trackId, double gain);
   Future<void> setTrackPan(int trackId, double pan);
+  Future<void> setTrackStartSeconds(int trackId, double seconds);
   Future<void> muteTrack(int trackId, bool muted);
   Future<void> soloTrack(int trackId, bool solo);
   Future<int> getTrackCount();

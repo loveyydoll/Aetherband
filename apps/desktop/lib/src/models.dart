@@ -13,6 +13,7 @@ class ClipModel {
     required this.color,
     this.isDemo = true,
     this.durationSeconds,
+    this.startSeconds = 0,
   });
 
   final String id;
@@ -22,6 +23,10 @@ class ClipModel {
   final Color color;
   final bool isDemo;
   final double? durationSeconds;
+  double startSeconds;
+
+  double timelineLeft(int tempo) =>
+      isDemo ? start : startSeconds * timelinePixelsPerSecond(tempo);
 
   double timelineWidth(int tempo) => isDemo
       ? width

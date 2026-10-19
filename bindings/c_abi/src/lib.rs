@@ -110,7 +110,7 @@ impl Default for DAWDeviceInfo {
 /// Returns the API version (major << 16 | minor << 8 | patch).
 #[no_mangle]
 pub extern "C" fn daw_get_api_version() -> u32 {
-    4 << 8
+    5 << 8
 }
 
 /// HypnoSynth events: 0 note-on (key 0..127, velocity 0..1), 1 note-off,
@@ -525,6 +525,24 @@ pub unsafe extern "C" fn daw_engine_set_track_pan(
     }
 }
 
+/// Sets an audio clip's absolute start time in session seconds.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_set_track_start_seconds(
+    engine: *mut DAWEngine,
+    track_id: u32,
+    seconds: f64,
+) -> i32 {
+    if let Some(eng) = to_core_mut(engine) {
+        if eng.set_track_start_seconds(daw_core::ringbuf::TrackId(track_id), seconds) {
+            0
+        } else {
+            -3
+        }
+    } else {
+        -1
+    }
+}
+
 /// Mutes or unmutes a track.
 #[no_mangle]
 pub unsafe extern "C" fn daw_engine_mute_track(
@@ -562,7 +580,7 @@ mod ffi_contract_tests {
 
     #[test]
     fn api_version_matches_dart_ffi_contract() {
-        assert_eq!(daw_get_api_version(), 0x0000_0400);
+        assert_eq!(daw_get_api_version(), 0x0000_0500);
     }
 
     #[test]
@@ -577,6 +595,7 @@ mod ffi_contract_tests {
                 duration_secs: 0.0,
             },
             output_frames: 48000,
+            start_frame: 0,
             gain: 0.8,
             pan: 0.5,
             muted: false,

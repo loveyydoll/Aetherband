@@ -34,6 +34,8 @@ pub struct TrackPlayer {
     pub finished: bool,
     /// Total duration in output-rate frames (for UI scrubber).
     pub total_frames: i64,
+    /// Arrangement start position in output-rate frames.
+    pub start_frame: i64,
 }
 
 impl TrackPlayer {
@@ -57,6 +59,7 @@ impl TrackPlayer {
             solo: false,
             finished: false,
             total_frames,
+            start_frame: 0,
         }
     }
 
@@ -76,6 +79,7 @@ impl TrackPlayer {
         frames: usize,
         retired: &mut Producer<DecodedBlock>,
         solo_active: bool,
+        playhead_frame: i64,
     ) {
         let frames = frames.min(out_left.len()).min(out_right.len());
         if self.finished {
@@ -87,7 +91,8 @@ impl TrackPlayer {
         let pan_l = pan_angle.cos();
         let pan_r = pan_angle.sin();
 
-        let mut written = 0;
+        let mut written = self.start_frame.saturating_sub(playhead_frame).max(0) as usize;
+        written = written.min(frames);
 
         let mut transitions = 0;
         while written < frames && transitions < 128 {
@@ -276,7 +281,7 @@ impl TrackSlots {
         self.slots
             .iter()
             .filter_map(|s| s.as_ref())
-            .map(|p| p.total_frames)
+            .map(|p| p.start_frame.saturating_add(p.total_frames))
             .max()
             .unwrap_or(0)
     }
@@ -321,7 +326,7 @@ mod tests {
         let mut right = vec![0.0f32; 128];
         // No blocks in buffer → output remains silence
         let (mut retired, _reclaimed) = rtrb::RingBuffer::new(64);
-        player.mix_into(&mut left, &mut right, 128, &mut retired, false);
+        player.mix_into(&mut left, &mut right, 128, &mut retired, false, 0);
         assert!(left.iter().all(|&s| s == 0.0));
     }
 
@@ -335,7 +340,7 @@ mod tests {
         let mut left = vec![0.0f32; 64];
         let mut right = vec![0.0f32; 64];
         let (mut retired, _reclaimed) = rtrb::RingBuffer::new(64);
-        player.mix_into(&mut left, &mut right, 64, &mut retired, false);
+        player.mix_into(&mut left, &mut right, 64, &mut retired, false, 0);
 
         assert!(player.finished);
         assert!(left.iter().all(|sample| *sample == 0.0));
@@ -358,13 +363,13 @@ mod tests {
         let mut left = [0.0f32; 64];
         let mut right = [0.0f32; 64];
         let (mut retired, _reclaimed) = rtrb::RingBuffer::new(64);
-        player.mix_into(&mut left, &mut right, 64, &mut retired, false);
+        player.mix_into(&mut left, &mut right, 64, &mut retired, false, 0);
         assert!(left.iter().all(|sample| *sample == 0.0));
         assert!(right.iter().all(|sample| *sample == 0.0));
 
         player.muted = false;
         let (mut retired, _reclaimed) = rtrb::RingBuffer::new(64);
-        player.mix_into(&mut left, &mut right, 64, &mut retired, false);
+        player.mix_into(&mut left, &mut right, 64, &mut retired, false, 64);
         // With equal-power center pan, the second half is around 0.566;
         // replaying the first half instead would yield roughly 0.071.
         assert!(left.iter().all(|sample| *sample > 0.5));
@@ -388,11 +393,33 @@ mod tests {
         let mut left = vec![0.0f32; 128];
         let mut right = vec![0.0f32; 128];
         let (mut retired, _reclaimed) = rtrb::RingBuffer::new(64);
-        player.mix_into(&mut left, &mut right, 128, &mut retired, false);
+        player.mix_into(&mut left, &mut right, 128, &mut retired, false, 0);
 
         // All samples should be non-zero (panning + gain applied)
         assert!(left.iter().any(|&s| s > 0.0));
         assert!(right.iter().any(|&s| s > 0.0));
+    }
+
+    #[test]
+    fn arranged_track_waits_until_its_start_frame() {
+        let (mut player, mut producer) = make_track(11, 128);
+        player.start_frame = 32;
+        let mut block = DecodedBlock::silent(64);
+        for frame in 0..64 {
+            block.samples[frame * 2] = 0.5;
+            block.samples[frame * 2 + 1] = 0.5;
+        }
+        producer.push(block).unwrap();
+
+        let mut left = [0.0; 64];
+        let mut right = [0.0; 64];
+        let (mut retired, _reclaimed) = rtrb::RingBuffer::new(64);
+        player.mix_into(&mut left, &mut right, 64, &mut retired, false, 0);
+
+        assert!(left[..32].iter().all(|sample| *sample == 0.0));
+        assert!(right[..32].iter().all(|sample| *sample == 0.0));
+        assert!(left[32..].iter().all(|sample| *sample > 0.0));
+        assert!(right[32..].iter().all(|sample| *sample > 0.0));
     }
 
     #[test]
@@ -421,7 +448,7 @@ mod tests {
         let mut left = vec![0.0f32; 64];
         let mut right = vec![0.0f32; 64];
         let (mut retired, _reclaimed) = rtrb::RingBuffer::new(64);
-        player.mix_into(&mut left, &mut right, 64, &mut retired, false);
+        player.mix_into(&mut left, &mut right, 64, &mut retired, false, 0);
 
         // Should play the *new* stream data, not the old one
         assert!(left.iter().any(|&s| (s - 0.25).abs() < 0.01 || s > 0.0));

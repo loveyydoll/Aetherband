@@ -25,6 +25,8 @@ typedef _RemoveTrackN = Int32 Function(Pointer<Void>, Uint32);
 typedef _RemoveTrackD = int Function(Pointer<Void>, int);
 typedef _TrackFloatN = Int32 Function(Pointer<Void>, Uint32, Float);
 typedef _TrackFloatD = int Function(Pointer<Void>, int, double);
+typedef _TrackStartN = Int32 Function(Pointer<Void>, Uint32, Double);
+typedef _TrackStartD = int Function(Pointer<Void>, int, double);
 typedef _TrackMuteN = Int32 Function(Pointer<Void>, Uint32, Uint8);
 typedef _TrackMuteD = int Function(Pointer<Void>, int, int);
 typedef _SoloN = Int32 Function(Pointer<Void>, Uint32, Uint8);
@@ -42,7 +44,7 @@ typedef _TransportD = int Function(Pointer<Void>, double, int, int);
 typedef _MasterN = Int32 Function(Pointer<Void>, Float);
 typedef _MasterD = int Function(Pointer<Void>, double);
 
-const int _expectedApiVersion = 0x00000400;
+const int _expectedApiVersion = 0x00000500;
 
 final class _TrackInfo extends Struct {
   @Uint64()
@@ -213,6 +215,14 @@ class NativeEngineController implements EngineController, PerformanceEngine {
   }
 
   @override
+  Future<void> setTrackStartSeconds(int trackId, double seconds) {
+    if (!seconds.isFinite || seconds < 0 || seconds > 86400) {
+      return Future.error(ArgumentError.value(seconds, 'seconds'));
+    }
+    return _request<void>('start', (trackId, seconds));
+  }
+
+  @override
   Future<void> muteTrack(int trackId, bool muted) =>
       _request<void>('mute', (trackId, muted));
 
@@ -283,6 +293,9 @@ Future<void> _runNativeEngine((SendPort, String?) configuration) async {
           case 'pan':
             final (trackId, pan) = argument as (int, double);
             await session.setTrackPan(trackId, pan);
+          case 'start':
+            final (trackId, seconds) = argument as (int, double);
+            await session.setTrackStartSeconds(trackId, seconds);
           case 'mute':
             final (trackId, muted) = argument as (int, bool);
             await session.muteTrack(trackId, muted);
@@ -333,6 +346,7 @@ class _NativeEngineSession implements EngineController, PerformanceEngine {
     required _TrackInfoD trackInfoNative,
     required _TrackFloatD trackVolumeNative,
     required _TrackFloatD trackPanNative,
+    required _TrackStartD trackStartNative,
     required _TrackMuteD muteTrackNative,
     required _SoloD soloTrackNative,
   })  : _library = library,
@@ -348,6 +362,7 @@ class _NativeEngineSession implements EngineController, PerformanceEngine {
         _trackInfoNative = trackInfoNative,
         _trackVolumeNative = trackVolumeNative,
         _trackPanNative = trackPanNative,
+        _trackStartNative = trackStartNative,
         _muteTrackNative = muteTrackNative,
         _soloTrackNative = soloTrackNative {
     _pollTimer =
@@ -369,6 +384,7 @@ class _NativeEngineSession implements EngineController, PerformanceEngine {
   final _TrackInfoD _trackInfoNative;
   final _TrackFloatD _trackVolumeNative;
   final _TrackFloatD _trackPanNative;
+  final _TrackStartD _trackStartNative;
   final _TrackMuteD _muteTrackNative;
   final _SoloD _soloTrackNative;
   final _SynthD synthNative;
@@ -426,6 +442,8 @@ class _NativeEngineSession implements EngineController, PerformanceEngine {
         'daw_engine_set_track_volume');
     final trackPan = library
         .lookupFunction<_TrackFloatN, _TrackFloatD>('daw_engine_set_track_pan');
+    final trackStart = library.lookupFunction<_TrackStartN, _TrackStartD>(
+        'daw_engine_set_track_start_seconds');
     final muteTrack = library
         .lookupFunction<_TrackMuteN, _TrackMuteD>('daw_engine_mute_track');
     final soloTrack =
@@ -476,6 +494,7 @@ class _NativeEngineSession implements EngineController, PerformanceEngine {
           trackInfoNative: trackInfo,
           trackVolumeNative: trackVolume,
           trackPanNative: trackPan,
+          trackStartNative: trackStart,
           muteTrackNative: muteTrack,
           soloTrackNative: soloTrack,
         );
@@ -570,6 +589,11 @@ class _NativeEngineSession implements EngineController, PerformanceEngine {
   Future<void> setTrackPan(int trackId, double pan) async {
     if (_disposed) throw StateError('Native engine has been disposed.');
     _check('track pan', _trackPanNative(_handle, trackId, pan));
+  }
+
+  Future<void> setTrackStartSeconds(int trackId, double seconds) async {
+    if (_disposed) throw StateError('Native engine has been disposed.');
+    _check('track clip position', _trackStartNative(_handle, trackId, seconds));
   }
 
   @override

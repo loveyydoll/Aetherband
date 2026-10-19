@@ -72,6 +72,11 @@ class FakeEngine implements EngineController, PerformanceEngine {
   }
 
   @override
+  Future<void> setTrackStartSeconds(int trackId, double seconds) async {
+    calls.add('start:$trackId:$seconds');
+  }
+
+  @override
   Future<void> muteTrack(int trackId, bool muted) async {
     calls.add('mute:$trackId:$muted');
   }
@@ -192,9 +197,9 @@ void main() {
     await tester.dragFrom(
         tester.getTopLeft(importedClip) + const Offset(20, 20),
         const Offset(150, 0));
-    await tester.pump();
-    expect(clip.start, 0,
-        reason: 'A visual drag must not claim to move native audio.');
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(clip.startSeconds, greaterThan(0));
+    expect(engine.calls.last, startsWith('start:1:'));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
@@ -442,6 +447,8 @@ void main() {
           'pan:1:0.8',
           'mute:1:true',
           'solo:1:true',
+          'start:1:0.0',
+          'start:1:0.0',
         ]));
     final reopened = tester
         .widget<InstrumentDock>(find.byType(InstrumentDock))

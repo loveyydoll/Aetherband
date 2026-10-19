@@ -21,8 +21,12 @@ void main() {
     await directory.delete(recursive: true);
   });
 
-  AudioSessionDocument document(
-          {double gain = 0.4, bool muted = false, bool solo = false}) =>
+  AudioSessionDocument document({
+    double gain = 0.4,
+    bool muted = false,
+    bool solo = false,
+    double startSeconds = 0,
+  }) =>
       AudioSessionDocument(title: 'Indie sketches', tracks: [
         SavedAudioTrack(
             id: 'native-stable-001',
@@ -31,13 +35,14 @@ void main() {
             gain: gain,
             pan: 0.75,
             muted: muted,
-            solo: solo),
+            solo: solo,
+            startSeconds: startSeconds),
       ]);
 
   test('saved session round-trips track identities and mixer parameters',
       () async {
     final path = '${directory.path}/sketch.aetherband.json';
-    await store.save(path, document(solo: true));
+    await store.save(path, document(solo: true, startSeconds: 2.75));
     final reopened = await store.open(path);
     expect(reopened.title, 'Indie sketches');
     expect(reopened.tracks.single.id, 'native-stable-001');
@@ -48,10 +53,11 @@ void main() {
     expect(reopened.tracks.single.pan, 0.75);
     expect(reopened.tracks.single.muted, false);
     expect(reopened.tracks.single.solo, true);
+    expect(reopened.tracks.single.startSeconds, 2.75);
     expect(reopened.performance.preset, 0);
     expect(reopened.performance.tempo, 92);
     expect(
-        File(path).readAsString(), completion(contains('"schemaVersion": 2')));
+        File(path).readAsString(), completion(contains('"schemaVersion": 3')));
   });
 
   test('session restores instrument macros tempo click and original phrase',
@@ -82,6 +88,8 @@ void main() {
     final old = document().toJson()
       ..['schemaVersion'] = 1
       ..remove('performance');
+    ((old['tracks'] as List).single as Map<String, Object?>)
+        .remove('startSeconds');
     expect(AudioSessionDocument.fromJson(old).performance.preset, 0);
     expect(
         () => AudioSessionDocument.fromJson({
@@ -89,6 +97,14 @@ void main() {
               'performance': {'preset': 99}
             }),
         throwsFormatException);
+  });
+
+  test('version two audio sessions remain readable with clips at zero', () {
+    final old = document().toJson()..['schemaVersion'] = 2;
+    final tracks = old['tracks'] as List<Map<String, Object?>>;
+    tracks.single.remove('startSeconds');
+    final opened = AudioSessionDocument.fromJson(old);
+    expect(opened.tracks.single.startSeconds, 0);
   });
 
   test('overwriting a session preserves the newest document', () async {
@@ -131,6 +147,12 @@ void main() {
         () => SavedAudioTrack.fromJson({
               ...(track as Map<String, Object?>),
               'gain': double.nan,
+            }),
+        throwsFormatException);
+    expect(
+        () => SavedAudioTrack.fromJson({
+              ...track,
+              'startSeconds': -1,
             }),
         throwsFormatException);
     expect(

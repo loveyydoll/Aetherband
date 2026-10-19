@@ -73,6 +73,11 @@ pub enum EngineCommand {
         track_id: TrackId,
         pan: f32,
     },
+    /// Schedule a track at an absolute session frame.
+    SetTrackStartFrame {
+        track_id: TrackId,
+        start_frame: i64,
+    },
     /// Mute or unmute a track.
     MuteTrack {
         track_id: TrackId,

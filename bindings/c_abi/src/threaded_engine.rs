@@ -35,8 +35,8 @@ impl<T: 'static> ControlThread<T> {
                 while let Ok(job) = jobs.recv() {
                     job(&mut engine);
                 }
-                // The non-Send engine and its stream are destroyed here, on
-                // the same OS thread that created and operated them.
+                // The engine and its stream are destroyed here, on the same
+                // OS thread that created and operated them.
             })
             .map_err(|_| ())?;
         if initialization.recv() != Ok(true) {
@@ -102,6 +102,7 @@ impl EngineHandle {
     command!(remove_track, id: TrackId);
     command!(set_track_volume, id: TrackId, gain: f32);
     command!(set_track_pan, id: TrackId, pan: f32);
+    command!(set_track_start_seconds, id: TrackId, seconds: f64);
     command!(mute_track, id: TrackId, muted: bool);
     command!(solo_track, id: TrackId, solo: bool);
 
