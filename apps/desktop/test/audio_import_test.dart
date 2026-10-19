@@ -293,6 +293,19 @@ void main() {
         findsNWidgets(2));
     expect(engine.calls.where((call) => call.startsWith('removePattern:')),
         hasLength(1));
+
+    await shortcut(LogicalKeyboardKey.keyZ);
+    expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
+        findsNWidgets(3));
+    await shortcut(LogicalKeyboardKey.keyZ);
+    expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
+        findsNWidgets(2));
+    await shortcut(LogicalKeyboardKey.keyZ);
+    expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
+        findsOneWidget);
+    await shortcut(LogicalKeyboardKey.keyY);
+    expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
+        findsNWidgets(2));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });

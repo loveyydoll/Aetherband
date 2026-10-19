@@ -1020,8 +1020,15 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       setState(() {
         track.clips.remove(clip);
         _nativeSequenceRegionIds.remove(clip.id);
+        _confirmedClipStarts.remove(clip.id);
         _selectedClipId = null;
         _markSessionChanged();
+        _pushHistory(_SequenceRegionEdit(
+          trackId: track.id,
+          clip: clip,
+          regionId: regionId,
+          presentAfterEdit: false,
+        ));
       });
     } catch (error) {
       if (mounted) _reportMixerFailure('Remove HypnoSynth pattern', error);
@@ -1062,6 +1069,10 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
           for (final clip in selected?.clips ?? const <ClipModel>[]) {
             _nativeSequenceRegionIds.remove(clip.id);
           }
+          _undoHistory
+              .removeWhere((edit) => _historyTrackId(edit) == selectedId);
+          _redoHistory
+              .removeWhere((edit) => _historyTrackId(edit) == selectedId);
           _tracks.removeWhere((track) => track.id == selectedId);
           _selectedTrackId = _tracks.isEmpty ? '' : _tracks.first.id;
           _selectedClipId = null;
@@ -1455,6 +1466,12 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         _selectedClipId = clipId;
         _showMixer = true;
         _markSessionChanged();
+        _pushHistory(_SequenceRegionEdit(
+          trackId: track.id,
+          clip: clip,
+          regionId: regionId,
+          presentAfterEdit: true,
+        ));
       });
     } catch (error) {
       if (mounted) _reportMixerFailure('Copy HypnoSynth pattern', error);
@@ -1649,6 +1666,12 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         _selectedClipId = clip.id;
         _showMixer = true;
         _markSessionChanged();
+        _pushHistory(_SequenceRegionEdit(
+          trackId: track.id,
+          clip: clip,
+          regionId: regionId,
+          presentAfterEdit: true,
+        ));
       });
     } catch (error) {
       if (mounted) _reportMixerFailure('Insert HypnoSynth pattern', error);
@@ -2571,6 +2594,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         _ClipMoveEdit(:final trackId) => trackId,
         _RegionSplitEdit(:final trackId) => trackId,
         _RegionTrimEdit(:final trackId) => trackId,
+        _SequenceRegionEdit(:final trackId) => trackId,
         _ => '',
       };
 
@@ -2603,9 +2627,65 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         await _applyRegionSplitHistory(edit, redo: redo);
       } else if (edit is _RegionTrimEdit) {
         await _applyRegionTrimHistory(edit, redo: redo);
+      } else if (edit is _SequenceRegionEdit) {
+        await _applySequenceRegionHistory(edit, redo: redo);
       }
     } finally {
       _historyOperationPending = false;
+    }
+  }
+
+  Future<void> _applySequenceRegionHistory(
+    _SequenceRegionEdit edit, {
+    required bool redo,
+  }) async {
+    final source = redo ? _redoHistory : _undoHistory;
+    final destination = redo ? _undoHistory : _redoHistory;
+    final engine = _engine;
+    final track = _tracks.where((item) => item.id == edit.trackId).firstOrNull;
+    if (engine is! SequenceRegionEngine || track == null) {
+      _showEngineUnavailable();
+      return;
+    }
+    final sequenceEngine = engine as SequenceRegionEngine;
+    final shouldBePresent =
+        redo ? edit.presentAfterEdit : !edit.presentAfterEdit;
+    if (track.clips.contains(edit.clip) == shouldBePresent) {
+      source.removeLast();
+      destination.add(edit);
+      return;
+    }
+    try {
+      if (shouldBePresent) {
+        await sequenceEngine.setSequenceRegion(
+            edit.regionId, edit.clip.startSeconds, edit.clip.sequenceNotes);
+        if (!mounted) {
+          await sequenceEngine.removeSequenceRegion(edit.regionId);
+          return;
+        }
+        setState(() {
+          track.clips.add(edit.clip);
+          _nativeSequenceRegionIds[edit.clip.id] = edit.regionId;
+          _confirmedClipStarts[edit.clip.id] = edit.clip.startSeconds;
+          _selectedTrackId = track.id;
+          _selectedClipId = edit.clip.id;
+          _markSessionChanged();
+        });
+      } else {
+        await sequenceEngine.removeSequenceRegion(edit.regionId);
+        if (!mounted) return;
+        setState(() {
+          track.clips.remove(edit.clip);
+          _nativeSequenceRegionIds.remove(edit.clip.id);
+          _confirmedClipStarts.remove(edit.clip.id);
+          if (_selectedClipId == edit.clip.id) _selectedClipId = null;
+          _markSessionChanged();
+        });
+      }
+      source.removeLast();
+      destination.add(edit);
+    } catch (error) {
+      if (mounted) _reportMixerFailure('Pattern edit history', error);
     }
   }
 
@@ -3409,6 +3489,20 @@ class _ClipMoveEdit {
   final String clipId;
   final double beforeSeconds;
   final double afterSeconds;
+}
+
+class _SequenceRegionEdit {
+  const _SequenceRegionEdit({
+    required this.trackId,
+    required this.clip,
+    required this.regionId,
+    required this.presentAfterEdit,
+  });
+
+  final String trackId;
+  final ClipModel clip;
+  final int regionId;
+  final bool presentAfterEdit;
 }
 
 class _RegionSplitEdit {
