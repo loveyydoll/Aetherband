@@ -33,8 +33,25 @@ void main() {
       expect(outputDevices.every((device) => device.name.isNotEmpty), isTrue);
       final defaultOutput =
           outputDevices.firstWhere((device) => device.isDefault);
+      await engine.configureTransport(124, false, true);
+      await engine.synthEvent(2, 1, 0);
+      await engine.synthEvent(3, 0, 0.9);
+      await engine.setMasterVolume(0.3);
       await engine.selectOutputDevice(defaultOutput.index);
       expect(defaultOutput.sampleRateHz, greaterThan(0));
+
+      // The replacement processor must retain the sequence, preset, macro,
+      // tempo, and master configuration instead of coming up with defaults.
+      await engine.play();
+      final synthAfterSwitch = await engine.telemetry
+          .firstWhere((frame) => frame.isPlaying && frame.peakLeft > 0)
+          .timeout(const Duration(seconds: 10));
+      expect(synthAfterSwitch.playheadSeconds, greaterThan(0));
+      await engine.stop();
+      await engine.configureTransport(92, false, false);
+      await engine.synthEvent(2, 0, 0);
+      await engine.synthEvent(3, 0, 0.42);
+      await engine.setMasterVolume(0.8);
 
       final track = await engine.loadTrack(file.path);
       expect(track.totalFrames, 88200);
