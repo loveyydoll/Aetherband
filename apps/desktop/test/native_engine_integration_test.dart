@@ -37,6 +37,10 @@ void main() {
       await engine.configureTransport(124, false, true);
       await engine.synthEvent(2, 1, 0);
       await engine.synthEvent(3, 0, 0.9);
+      await engine.synthEvent(6, 0, 0.6);
+      await engine.synthEvent(7, 0, 0.75);
+      await engine.synthEvent(8, 0, 0);
+      await engine.synthEvent(9, 0, 0);
       await engine.synthEvent(5, 0, -1); // Rest on step 1.
       await engine.synthEvent(5, 1, 60); // C4 on step 2.
       await engine.setMasterVolume(0.3);
@@ -51,6 +55,16 @@ void main() {
           .timeout(const Duration(seconds: 10));
       expect(synthAfterSwitch.playheadSeconds, greaterThan(0));
       await engine.stop();
+      await engine.synthEvent(7, 0, 1.0);
+      await engine.play();
+      final hardRight = await engine.telemetry
+          .firstWhere((frame) =>
+              frame.isPlaying && frame.peakRight > 0 && frame.peakLeft == 0)
+          .timeout(const Duration(seconds: 10));
+      expect(hardRight.peakLeft, 0);
+      expect(hardRight.peakRight, greaterThan(0));
+      await engine.stop();
+      await engine.synthEvent(7, 0, 0.75);
       await engine.configureTransport(92, false, false);
       await engine.synthEvent(2, 0, 0);
       await engine.synthEvent(3, 0, 0.42);

@@ -991,6 +991,32 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     final selected =
         _tracks.where((track) => track.id == selectedId).firstOrNull;
     final nativeIds = selected == null ? <int>[] : _nativeIdsForTrack(selected);
+    if (selected?.kind == 'INSTRUMENT' && nativeIds.isEmpty) {
+      if (engine is! PerformanceEngine) {
+        _showEngineUnavailable();
+        return;
+      }
+      final performanceEngine = engine as PerformanceEngine;
+      setState(() => _trackOperationPending = true);
+      try {
+        await performanceEngine.synthEvent(6, 0, 0.8);
+        await performanceEngine.synthEvent(7, 0, 0.5);
+        await performanceEngine.synthEvent(8, 0, 0.0);
+        await performanceEngine.synthEvent(9, 0, 0.0);
+        if (!mounted) return;
+        setState(() {
+          _tracks.removeWhere((track) => track.id == selectedId);
+          _selectedTrackId = _tracks.isEmpty ? '' : _tracks.first.id;
+          _selectedClipId = null;
+          _markSessionChanged();
+        });
+      } catch (error) {
+        if (mounted) _reportMixerFailure('HypnoSynth track removal', error);
+      } finally {
+        if (mounted) setState(() => _trackOperationPending = false);
+      }
+      return;
+    }
     if (engine == null || nativeIds.isEmpty) {
       _showFeatureUnavailable('Removing demo tracks');
       return;
@@ -1288,15 +1314,17 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
 
   Future<void> _renameSelectedTrack() async {
     final selected = _selectedTrack;
-    if (selected == null || !_nativeTrackSources.containsKey(selected.id)) {
-      _showFeatureUnavailable('Renaming demo or instrument tracks');
+    if (selected == null ||
+        (!_nativeTrackSources.containsKey(selected.id) &&
+            selected.kind != 'INSTRUMENT')) {
+      _showFeatureUnavailable('Renaming demo tracks');
       return;
     }
     var draft = selected.name;
     final result = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Rename audio track'),
+        title: const Text('Rename track'),
         content: TextFormField(
           key: const ValueKey('rename-track-name'),
           initialValue: selected.name,
@@ -1359,7 +1387,65 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       ));
     }
     return AudioSessionDocument(
-        title: title, tracks: tracks, performance: _performance);
+        title: title,
+        tracks: tracks,
+        instrumentTracks: _tracks
+            .where((track) => track.kind == 'INSTRUMENT')
+            .map((track) => SavedInstrumentTrack(
+                  id: track.id,
+                  name: track.name,
+                  gain: track.volume,
+                  pan: track.pan,
+                  muted: track.muted,
+                  solo: track.solo,
+                ))
+            .toList(growable: false),
+        performance: _performance);
+  }
+
+  void _addInstrumentTrack() {
+    if (_engine is! PerformanceEngine) {
+      _showEngineUnavailable();
+      return;
+    }
+    final existing = _tracks.where((track) => track.kind == 'INSTRUMENT');
+    if (existing.isNotEmpty) {
+      setState(() {
+        _selectedTrackId = existing.first.id;
+        _selectedClipId = null;
+        _showMixer = true;
+      });
+      return;
+    }
+    final engine = _engine as PerformanceEngine;
+    _queueMixerAction(() async {
+      try {
+        await engine.synthEvent(6, 0, 0.8);
+        await engine.synthEvent(7, 0, 0.5);
+        await engine.synthEvent(8, 0, 0.0);
+        await engine.synthEvent(9, 0, 0.0);
+      } catch (error) {
+        if (mounted) _reportMixerFailure('HypnoSynth track setup', error);
+      }
+    }());
+    final id = _createPersistentTrackId();
+    setState(() {
+      _tracks.add(TrackModel(
+        id: id,
+        name: 'HypnoSynth',
+        kind: 'INSTRUMENT',
+        color: AetherColors.magenta,
+        volume: 0.8,
+        pan: 0.5,
+        muted: false,
+        solo: false,
+        clips: <ClipModel>[],
+      ));
+      _selectedTrackId = id;
+      _selectedClipId = null;
+      _showMixer = true;
+      _markSessionChanged();
+    });
   }
 
   String _titleFromSessionPath(String path) {
@@ -1442,7 +1528,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
-          'Saved ${document.tracks.length} real audio tracks. '
+          'Saved ${document.tracks.length + document.instrumentTracks.length} tracks '
+          '(${document.tracks.length} audio, ${document.instrumentTracks.length} instrument). '
           'Demo clips and unsupported edits are not included.',
         ),
       ));
@@ -1552,7 +1639,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     setState(() {
       _engine = preparedEngine;
       _performance = performance;
-      _tracks.removeWhere((track) => _nativeTrackIds.containsKey(track.id));
+      _tracks.removeWhere((track) =>
+          _nativeTrackIds.containsKey(track.id) || track.kind == 'INSTRUMENT');
       _tracks.addAll(preparedTracks);
       _showMixer = preparedTracks.isNotEmpty;
       _nativeTrackIds
@@ -1578,7 +1666,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
             )));
       _selectedTrackId = preparedTracks.isEmpty ? '' : preparedTracks.first.id;
       _selectedClipId =
-          preparedTracks.isEmpty ? null : preparedTracks.first.clips.first.id;
+          preparedTracks.isEmpty || preparedTracks.first.clips.isEmpty
+              ? null
+              : preparedTracks.first.clips.first.id;
       _sessionTitle = title;
       _sessionPath = path;
       _sessionDirty = false;
@@ -1630,8 +1720,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       if (staged is! PerformanceEngine) {
         throw StateError('This engine does not support HypnoSynth settings.');
       }
-      await _applyPerformance(
-          staged as PerformanceEngine, document.performance);
+      final performanceEngine = staged as PerformanceEngine;
+      await _applyPerformance(performanceEngine, document.performance);
       final tracks = <TrackModel>[];
       final ids = <String, int>{};
       final regionIds = <String, int>{};
@@ -1686,6 +1776,23 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
           clips: clips,
         ));
       }
+      for (final saved in document.instrumentTracks) {
+        await performanceEngine.synthEvent(6, 0, saved.gain);
+        await performanceEngine.synthEvent(7, 0, saved.pan);
+        await performanceEngine.synthEvent(8, 0, saved.muted ? 1 : 0);
+        await performanceEngine.synthEvent(9, 0, saved.solo ? 1 : 0);
+        tracks.add(TrackModel(
+          id: saved.id,
+          name: saved.name,
+          kind: 'INSTRUMENT',
+          color: AetherColors.magenta,
+          clips: <ClipModel>[],
+          volume: saved.gain,
+          pan: saved.pan,
+          muted: saved.muted,
+          solo: saved.solo,
+        ));
+      }
       if (!mounted) return;
       await _adoptPreparedSession(
         preparedEngine: staged,
@@ -1708,7 +1815,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Opened ${tracks.length} audio tracks.')),
+          SnackBar(content: Text('Opened ${tracks.length} tracks.')),
         );
       }
     } catch (error) {
@@ -1913,7 +2020,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         _zoomToFit();
         return;
       case 'track.addInstrument':
-        setState(() => _showMixer = false);
+        _addInstrumentTrack();
         return;
       case 'track.addAudio':
         unawaited(_importAudio());
@@ -2425,6 +2532,10 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   void _setTrackVolume(TrackModel track, double value) {
+    if (track.kind == 'INSTRUMENT') {
+      _setInstrumentMixer(track, 6, value);
+      return;
+    }
     final ids = _nativeIdsForTrack(track);
     final engine = _engine;
     if (ids.isNotEmpty && engine == null) {
@@ -2465,6 +2576,10 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   void _setTrackPan(TrackModel track, double value) {
+    if (track.kind == 'INSTRUMENT') {
+      _setInstrumentMixer(track, 7, value);
+      return;
+    }
     final ids = _nativeIdsForTrack(track);
     final engine = _engine;
     if (ids.isNotEmpty && engine == null) {
@@ -2505,6 +2620,10 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   void _setTrackMute(TrackModel track, bool value) {
+    if (track.kind == 'INSTRUMENT') {
+      _setInstrumentMixer(track, 8, value ? 1 : 0);
+      return;
+    }
     final ids = _nativeIdsForTrack(track);
     final engine = _engine;
     if (ids.isNotEmpty && engine == null) {
@@ -2545,6 +2664,10 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   void _setTrackSolo(TrackModel track, bool value) {
+    if (track.kind == 'INSTRUMENT') {
+      _setInstrumentMixer(track, 9, value ? 1 : 0);
+      return;
+    }
     final ids = _nativeIdsForTrack(track);
     final engine = _engine;
     if (_trackOperationPending) return;
@@ -2582,6 +2705,56 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       }
       _reportMixerFailure('Track solo', error);
     }
+  }
+
+  void _setInstrumentMixer(TrackModel track, int event, double value) {
+    final engine = _engine;
+    if (engine == null || engine is! PerformanceEngine) {
+      _showEngineUnavailable();
+      return;
+    }
+    final performanceEngine = engine as PerformanceEngine;
+    if (_trackOperationPending) return;
+    final previous = switch (event) {
+      6 => track.volume,
+      7 => track.pan,
+      8 => track.muted ? 1.0 : 0.0,
+      _ => track.solo ? 1.0 : 0.0,
+    };
+    setState(() {
+      switch (event) {
+        case 6:
+          track.volume = value;
+        case 7:
+          track.pan = value;
+        case 8:
+          track.muted = value >= 0.5;
+        case 9:
+          track.solo = value >= 0.5;
+      }
+      _markSessionChanged();
+    });
+    _queueMixerAction(() async {
+      try {
+        await performanceEngine.synthEvent(event, 0, value);
+      } catch (error) {
+        if (!mounted) return;
+        setState(() {
+          switch (event) {
+            case 6:
+              track.volume = previous;
+            case 7:
+              track.pan = previous;
+            case 8:
+              track.muted = previous >= 0.5;
+            case 9:
+              track.solo = previous >= 0.5;
+          }
+          _markSessionChanged();
+        });
+        _reportMixerFailure('HypnoSynth mixer', error);
+      }
+    }());
   }
 
   @override

@@ -134,6 +134,10 @@ pub struct DAWEngine {
     metronome: bool,
     sequence: bool,
     sequence_pattern: [Option<u8>; 16],
+    synth_gain: f32,
+    synth_pan: f32,
+    synth_muted: bool,
+    synth_solo: bool,
     preset: u8,
     macros: [f32; 5],
     transport_playing: bool,
@@ -164,6 +168,10 @@ impl DAWEngine {
             metronome: false,
             sequence: false,
             sequence_pattern: DEFAULT_SEQUENCE,
+            synth_gain: 0.8,
+            synth_pan: 0.5,
+            synth_muted: false,
+            synth_solo: false,
             preset: 0,
             macros: [0.42, 0.38, 0.55, 0.36, 0.7],
             transport_playing: false,
@@ -254,6 +262,20 @@ impl DAWEngine {
                     event: 5,
                     key: key as u32,
                     value: note.map_or(-1.0, f32::from),
+                })
+                .expect("fresh device command queue has capacity");
+        }
+        for (event, value) in [
+            (6, self.synth_gain),
+            (7, self.synth_pan),
+            (8, if self.synth_muted { 1.0 } else { 0.0 }),
+            (9, if self.synth_solo { 1.0 } else { 0.0 }),
+        ] {
+            commands
+                .push(EngineCommand::SynthEvent {
+                    event,
+                    key: 0,
+                    value,
                 })
                 .expect("fresh device command queue has capacity");
         }
@@ -538,6 +560,14 @@ impl DAWEngine {
                         && (value == -1.0
                             || ((0.0..=127.0).contains(&value) && value.fract() == 0.0))
                 }
+                6..=9 => {
+                    key == 0
+                        && match event {
+                            6 | 7 => (0.0..=1.0).contains(&value),
+                            8 | 9 => value == 0.0 || value == 1.0,
+                            _ => false,
+                        }
+                }
                 _ => false,
             };
         if !valid {
@@ -553,6 +583,10 @@ impl DAWEngine {
                 2 => self.preset = key as u8,
                 3 => self.macros[key as usize] = value,
                 5 => self.sequence_pattern[key as usize] = (value >= 0.0).then_some(value as u8),
+                6 => self.synth_gain = value,
+                7 => self.synth_pan = value,
+                8 => self.synth_muted = value >= 0.5,
+                9 => self.synth_solo = value >= 0.5,
                 _ => {}
             }
         }
@@ -605,6 +639,10 @@ impl DAWEngine {
                 metronome: self.metronome,
                 sequence: self.sequence,
                 sequence_pattern: self.sequence_pattern,
+                synth_gain: self.synth_gain,
+                synth_pan: self.synth_pan,
+                synth_muted: self.synth_muted,
+                synth_solo: self.synth_solo,
                 preset: self.preset,
                 macros: self.macros,
             },
@@ -963,10 +1001,24 @@ mod engine_tests {
             metronome: false,
             sequence: false,
             sequence_pattern: DEFAULT_SEQUENCE,
+            synth_gain: 0.8,
+            synth_pan: 0.5,
+            synth_muted: false,
+            synth_solo: false,
             preset: 0,
             macros: [0.42, 0.38, 0.55, 0.36, 0.7],
             transport_playing: false,
         };
+        for (event, value) in [(6, 0.4), (7, 0.25), (8, 1.0), (9, 1.0)] {
+            assert!(engine.synth_event(event, 0, value));
+            assert!(matches!(
+                audio_endpoints.cmd_consumer.pop(),
+                Ok(EngineCommand::SynthEvent { event: queued, .. }) if queued == event
+            ));
+        }
+        assert!(!engine.synth_event(6, 0, 1.1));
+        assert!(!engine.synth_event(7, 1, 0.5));
+        assert!(!engine.synth_event(8, 0, 0.5));
         assert!(engine.play());
         assert!(!engine.remove_track(TrackId(1)));
         assert_eq!(engine.tracks().len(), 1);

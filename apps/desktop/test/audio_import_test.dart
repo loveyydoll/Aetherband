@@ -229,6 +229,41 @@ Future<void> deleteSelected(WidgetTester tester, {bool settle = true}) async {
 }
 
 void main() {
+  testWidgets('Add Instrument Track creates one session HypnoSynth track',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await tester.tap(find.byTooltip('Track menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add Instrument Track'));
+    await tester.pumpAndSettle();
+
+    var tracks =
+        tester.widget<InstrumentDock>(find.byType(InstrumentDock)).tracks;
+    expect(tracks.where((track) => track.kind == 'INSTRUMENT'), hasLength(1));
+    expect(tracks.singleWhere((track) => track.kind == 'INSTRUMENT').name,
+        'HypnoSynth');
+    await tester.tap(find.byTooltip('Mute HypnoSynth'));
+    await tester.pumpAndSettle();
+    expect(engine.calls, contains('synth:8:0:1.0'));
+    expect(
+        tester
+            .widget<InstrumentDock>(find.byType(InstrumentDock))
+            .tracks
+            .singleWhere((track) => track.kind == 'INSTRUMENT')
+            .muted,
+        isTrue);
+
+    await tester.tap(find.byTooltip('Track menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add Instrument Track'));
+    await tester.pumpAndSettle();
+    tracks = tester.widget<InstrumentDock>(find.byType(InstrumentDock)).tracks;
+    expect(tracks.where((track) => track.kind == 'INSTRUMENT'), hasLength(1));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('splits a selected audio clip into two native regions',
       (tester) async {
     final engine = FakeEngine();
@@ -982,7 +1017,8 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('session file menu saves and restores real native mixer state',
+  testWidgets(
+      'session file menu saves and restores audio and synth mixer state',
       (tester) async {
     final directory = Directory.systemTemp.createTempSync('aetherband-ui-');
     addTearDown(() => directory.deleteSync(recursive: true));
@@ -1007,16 +1043,29 @@ void main() {
       },
     );
     await importAudio(tester);
+    await tester.tap(find.byTooltip('Track menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add Instrument Track'));
+    await tester.pumpAndSettle();
     final imported = tester
         .widget<InstrumentDock>(find.byType(InstrumentDock))
         .tracks
         .singleWhere((track) => track.id.startsWith('native-'));
+    final instrument = tester
+        .widget<InstrumentDock>(find.byType(InstrumentDock))
+        .tracks
+        .singleWhere((track) => track.kind == 'INSTRUMENT');
     final stableId = imported.id;
+    final instrumentId = instrument.id;
     final mixer = tester.widget<InstrumentDock>(find.byType(InstrumentDock));
     mixer.onVolumeChanged(imported, 0.35);
     mixer.onPanChanged(imported, 0.8);
     mixer.onMuteChanged(imported, true);
     mixer.onSoloChanged(imported, true);
+    mixer.onVolumeChanged(instrument, 0.45);
+    mixer.onPanChanged(instrument, 0.7);
+    mixer.onMuteChanged(instrument, true);
+    mixer.onSoloChanged(instrument, true);
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('File menu'));
@@ -1039,11 +1088,17 @@ void main() {
     expect(saved.tracks.single.pan, 0.8);
     expect(saved.tracks.single.muted, isTrue);
     expect(saved.tracks.single.solo, isTrue);
+    expect(saved.instrumentTracks.single.id, instrumentId);
+    expect(saved.instrumentTracks.single.gain, 0.45);
+    expect(saved.instrumentTracks.single.pan, 0.7);
+    expect(saved.instrumentTracks.single.muted, isTrue);
+    expect(saved.instrumentTracks.single.solo, isTrue);
 
     // The save runs asynchronously from the menu callback. Wait for the UI
     // completion signal before issuing another session command.
     await tester.pumpAndSettle();
-    expect(find.textContaining('Saved 1 real audio tracks.'), findsOneWidget);
+    expect(find.textContaining('Saved 2 tracks (1 audio, 1 instrument).'),
+        findsOneWidget);
     // Let the save's finally block release the session-operation guard.
     await tester.pump();
     await tester.pumpAndSettle();
@@ -1083,14 +1138,28 @@ void main() {
           'solo:1:true',
           'start:1:0.0',
         ]));
-    final reopened = tester
-        .widget<InstrumentDock>(find.byType(InstrumentDock))
-        .tracks
-        .singleWhere((track) => track.id == stableId);
+    final restoredTracks =
+        tester.widget<InstrumentDock>(find.byType(InstrumentDock)).tracks;
+    final reopened =
+        restoredTracks.singleWhere((track) => track.id == stableId);
     expect(reopened.volume, 0.35);
     expect(reopened.pan, 0.8);
     expect(reopened.muted, isTrue);
     expect(reopened.solo, isTrue);
+    final restoredInstrument =
+        restoredTracks.singleWhere((track) => track.id == instrumentId);
+    expect(restoredInstrument.volume, 0.45);
+    expect(restoredInstrument.pan, 0.7);
+    expect(restoredInstrument.muted, isTrue);
+    expect(restoredInstrument.solo, isTrue);
+    expect(
+        restored.calls,
+        containsAllInOrder([
+          'synth:6:0:0.45',
+          'synth:7:0:0.7',
+          'synth:8:0:1.0',
+          'synth:9:0:1.0',
+        ]));
     expect(first.disposeCount, 1);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();

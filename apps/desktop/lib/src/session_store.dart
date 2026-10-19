@@ -3,8 +3,8 @@ import 'performance_settings.dart';
 import 'dart:io';
 import 'dart:isolate';
 
-/// Aetherband sessions store real imported audio, clip positions and performance
-/// settings. Demo clips, plugins and recording are excluded.
+/// Aetherband sessions store imported audio, HypnoSynth track state, clip
+/// positions and performance settings. Demo clips, plugins and recordings are excluded.
 /// Native engine track IDs are never serialized.
 class SavedAudioTrack {
   const SavedAudioTrack({
@@ -150,18 +150,69 @@ class SavedAudioRegion {
   }
 }
 
+/// A native HypnoSynth track. Synth performance settings and the current
+/// sequence remain session-wide until per-track MIDI routing is available.
+class SavedInstrumentTrack {
+  const SavedInstrumentTrack({
+    required this.id,
+    required this.name,
+    this.gain = 0.8,
+    this.pan = 0.5,
+    this.muted = false,
+    this.solo = false,
+  });
+
+  final String id;
+  final String name;
+  final double gain;
+  final double pan;
+  final bool muted;
+  final bool solo;
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'name': name,
+        'gain': gain,
+        'pan': pan,
+        'muted': muted,
+        'solo': solo,
+      };
+
+  factory SavedInstrumentTrack.fromJson(Object? value) {
+    if (value is! Map<String, dynamic>) {
+      throw const FormatException('Instrument track must be an object.');
+    }
+    final muted = value['muted'] ?? false;
+    final solo = value['solo'] ?? false;
+    if (muted is! bool || solo is! bool) {
+      throw const FormatException('Instrument mute/solo flags are invalid.');
+    }
+    return SavedInstrumentTrack(
+      id: _boundedText(value['id'], 'track id', 128),
+      name: _boundedText(value['name'], 'track name', 120),
+      gain:
+          value.containsKey('gain') ? _unitNumber(value['gain'], 'gain') : 0.8,
+      pan: value.containsKey('pan') ? _unitNumber(value['pan'], 'pan') : 0.5,
+      muted: muted,
+      solo: solo,
+    );
+  }
+}
+
 class AudioSessionDocument {
   const AudioSessionDocument(
       {required this.title,
       required this.tracks,
+      this.instrumentTracks = const <SavedInstrumentTrack>[],
       this.performance = const PerformanceSettings()});
 
   static const String format = 'aetherband-session';
-  static const int schemaVersion = 4;
+  static const int schemaVersion = 5;
   static const int maxTracks = 64;
 
   final String title;
   final List<SavedAudioTrack> tracks;
+  final List<SavedInstrumentTrack> instrumentTracks;
   final PerformanceSettings performance;
 
   Map<String, Object?> toJson() => {
@@ -170,6 +221,8 @@ class AudioSessionDocument {
         'title': title,
         'performance': performance.toJson(),
         'tracks': tracks.map((track) => track.toJson()).toList(),
+        'instrumentTracks':
+            instrumentTracks.map((track) => track.toJson()).toList(),
       };
 
   factory AudioSessionDocument.fromJson(Object? value) {
@@ -182,6 +235,7 @@ class AudioSessionDocument {
     if (value['schemaVersion'] != 1 &&
         value['schemaVersion'] != 2 &&
         value['schemaVersion'] != 3 &&
+        value['schemaVersion'] != 4 &&
         value['schemaVersion'] != schemaVersion) {
       throw FormatException(
         'Unsupported session version: ${value['schemaVersion']}.',
@@ -189,19 +243,30 @@ class AudioSessionDocument {
     }
     final title = _boundedText(value['title'], 'session title', 120);
     final data = value['tracks'];
-    if (data is! List || data.length > maxTracks) {
+    final instrumentsData = value['schemaVersion'] == 5
+        ? value['instrumentTracks']
+        : const <Object?>[];
+    if (data is! List ||
+        instrumentsData is! List ||
+        instrumentsData.length > 1 ||
+        data.length + instrumentsData.length > maxTracks) {
       throw const FormatException('Invalid session track list or track limit.');
     }
-    final hasRegions = value['schemaVersion'] == 4;
+    final hasRegions =
+        value['schemaVersion'] == 4 || value['schemaVersion'] == 5;
     final tracks = data
         .map((track) => SavedAudioTrack.fromJson(track, hasRegions: hasRegions))
         .toList(growable: false);
+    final instrumentTracks = instrumentsData
+        .map(SavedInstrumentTrack.fromJson)
+        .toList(growable: false);
     final ids = tracks.map((track) => track.id).toSet();
+    ids.addAll(instrumentTracks.map((track) => track.id));
     final regionIds = tracks
         .expand((track) => track.effectiveRegions)
         .map((region) => region.id)
         .toList();
-    if (ids.length != tracks.length ||
+    if (ids.length != tracks.length + instrumentTracks.length ||
         regionIds.toSet().length != regionIds.length ||
         regionIds.any(ids.contains) ||
         regionIds.length > maxTracks) {
@@ -211,6 +276,7 @@ class AudioSessionDocument {
     return AudioSessionDocument(
         title: title,
         tracks: tracks,
+        instrumentTracks: instrumentTracks,
         performance: value['schemaVersion'] == 1
             ? const PerformanceSettings()
             : PerformanceSettings.fromJson(value['performance']));

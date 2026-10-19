@@ -57,7 +57,7 @@ void main() {
     expect(reopened.performance.preset, 0);
     expect(reopened.performance.tempo, 92);
     expect(
-        File(path).readAsString(), completion(contains('"schemaVersion": 4')));
+        File(path).readAsString(), completion(contains('"schemaVersion": 5')));
   });
 
   test('split regions round-trip source ranges and timeline positions', () {
@@ -95,6 +95,41 @@ void main() {
     expect(restored.tracks.single.effectiveRegions[1].startSeconds, 2.5);
     expect(restored.tracks.single.effectiveRegions[1].sourceStartSeconds, 2.5);
     expect(restored.tracks.single.effectiveRegions[1].durationSeconds, 1.75);
+  });
+
+  test('schema four split regions still migrate without instrument tracks', () {
+    final split = document().tracks.single;
+    final schemaFour = AudioSessionDocument(
+      title: 'Legacy split',
+      tracks: [
+        SavedAudioTrack(
+          id: split.id,
+          name: split.name,
+          sourceUri: split.sourceUri,
+          gain: split.gain,
+          pan: split.pan,
+          muted: split.muted,
+          regions: const [
+            SavedAudioRegion(
+              id: 'native-stable-001-clip',
+              startSeconds: 0,
+              durationSeconds: 2.5,
+            ),
+            SavedAudioRegion(
+              id: 'native-stable-001-region-right',
+              startSeconds: 2.5,
+              sourceStartSeconds: 2.5,
+              durationSeconds: 1.75,
+            ),
+          ],
+        ),
+      ],
+    ).toJson()
+      ..['schemaVersion'] = 4
+      ..remove('instrumentTracks');
+    final restored = AudioSessionDocument.fromJson(schemaFour);
+    expect(restored.tracks.single.effectiveRegions, hasLength(2));
+    expect(restored.instrumentTracks, isEmpty);
   });
 
   test('session restores instrument macros tempo click and editable sequence',
@@ -139,6 +174,30 @@ void main() {
     expect(restored.performance.sequence, isTrue);
     expect(restored.performance.sequenceNotes, settings.sequenceNotes);
     expect(restored.performance.master, 0.55);
+  });
+
+  test('HypnoSynth track identity round-trips in schema five', () {
+    final encoded = AudioSessionDocument(
+      title: 'Synth sketch',
+      tracks: const [],
+      instrumentTracks: const [
+        SavedInstrumentTrack(
+          id: 'hypno-1',
+          name: 'HypnoSynth',
+          gain: 0.35,
+          pan: 0.8,
+          muted: true,
+          solo: true,
+        ),
+      ],
+    ).toJson();
+    final restored = AudioSessionDocument.fromJson(encoded);
+    expect(restored.instrumentTracks.single.id, 'hypno-1');
+    expect(restored.instrumentTracks.single.name, 'HypnoSynth');
+    expect(restored.instrumentTracks.single.gain, 0.35);
+    expect(restored.instrumentTracks.single.pan, 0.8);
+    expect(restored.instrumentTracks.single.muted, isTrue);
+    expect(restored.instrumentTracks.single.solo, isTrue);
   });
 
   test('older performance settings default to the original 16-step phrase', () {
@@ -220,6 +279,14 @@ void main() {
               'gain': double.nan,
             }),
         throwsFormatException);
+    expect(
+      () => SavedInstrumentTrack.fromJson({
+        'id': 'hypno-1',
+        'name': 'HypnoSynth',
+        'gain': 1.1,
+      }),
+      throwsFormatException,
+    );
     expect(
         () => SavedAudioTrack.fromJson({
               ...track,

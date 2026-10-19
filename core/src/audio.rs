@@ -28,6 +28,10 @@ pub struct AudioProcessor {
     master_gain: GainRamp,
     meter: LevelMeter,
     synth: HypnoSynth,
+    synth_gain: GainRamp,
+    synth_pan: f32,
+    synth_muted: bool,
+    synth_solo: bool,
     bpm: f32,
     metronome: bool,
     sequence: bool,
@@ -66,6 +70,10 @@ impl AudioProcessor {
             master_gain: GainRamp::new(0.8),
             meter: LevelMeter::new(),
             synth: HypnoSynth::new(sample_rate),
+            synth_gain: GainRamp::new(0.8),
+            synth_pan: 0.5,
+            synth_muted: false,
+            synth_solo: false,
             bpm: 92.0,
             metronome: false,
             sequence: false,
@@ -173,6 +181,10 @@ impl AudioProcessor {
                     5 if (key as usize) < self.sequence_pattern.len() => {
                         self.sequence_pattern[key as usize] = (value >= 0.0).then_some(value as u8);
                     }
+                    6 if key == 0 => self.synth_gain.set_target(value, 128),
+                    7 if key == 0 => self.synth_pan = value,
+                    8 if key == 0 => self.synth_muted = value >= 0.5,
+                    9 if key == 0 => self.synth_solo = value >= 0.5,
                     _ => (),
                 },
                 ConfigureTransport {
@@ -350,8 +362,12 @@ impl AudioProcessor {
         }
 
         // 3. Mix all active tracks into the scratch bus
+        let audio_solo = self.tracks.has_solo();
+        let synth_pan_angle = self.synth_pan * (std::f32::consts::PI / 2.0);
+        let synth_pan_left = synth_pan_angle.cos();
+        let synth_pan_right = synth_pan_angle.sin();
         if self.is_playing {
-            let solo_active = self.tracks.has_solo();
+            let solo_active = audio_solo || self.synth_solo;
             let playhead_frame = self.playhead_frame;
             self.tracks.iter_mut().for_each(|track| {
                 track.mix_into(
@@ -400,8 +416,11 @@ impl AudioProcessor {
                 }
             }
             let synth = self.synth.next_frame();
-            self.scratch_left[f] += synth[0];
-            self.scratch_right[f] += synth[1];
+            let synth_gain = self.synth_gain.next_gain();
+            if !self.synth_muted && (!audio_solo || self.synth_solo) {
+                self.scratch_left[f] += synth[0] * synth_gain * synth_pan_left;
+                self.scratch_right[f] += synth[1] * synth_gain * synth_pan_right;
+            }
             if self.is_playing && self.metronome && self.click_remaining > 0 {
                 let time = self.click_remaining as f32 / self.sample_rate;
                 let click = (time * 1500.0 * std::f32::consts::TAU).sin() * time * 3.0;
@@ -687,6 +706,62 @@ mod tests {
         let mut output = vec![0.0f32; 1024 * 2];
         processor.process_interleaved(&mut output, 2);
         assert!(output.iter().any(|sample| sample.abs() > 0.0001));
+    }
+
+    #[test]
+    fn hypnosynth_mixer_mute_gain_and_pan_reach_callback_output() {
+        let (mut ui, audio) = create_engine_queues(32, 32);
+        let mut processor = AudioProcessor::new(48_000.0, audio);
+        ui.cmd_producer
+            .push(EngineCommand::SynthEvent {
+                event: 0,
+                key: 60,
+                value: 0.8,
+            })
+            .unwrap();
+        ui.cmd_producer
+            .push(EngineCommand::SynthEvent {
+                event: 8,
+                key: 0,
+                value: 1.0,
+            })
+            .unwrap();
+        let mut output = vec![0.0_f32; 256 * 2];
+        processor.process_interleaved(&mut output, 2);
+        assert!(output.iter().all(|sample| *sample == 0.0));
+
+        ui.cmd_producer
+            .push(EngineCommand::SynthEvent {
+                event: 8,
+                key: 0,
+                value: 0.0,
+            })
+            .unwrap();
+        ui.cmd_producer
+            .push(EngineCommand::SynthEvent {
+                event: 6,
+                key: 0,
+                value: 0.25,
+            })
+            .unwrap();
+        ui.cmd_producer
+            .push(EngineCommand::SynthEvent {
+                event: 7,
+                key: 0,
+                value: 0.0,
+            })
+            .unwrap();
+        processor.process_interleaved(&mut output, 2);
+        assert!(output
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .any(|frame| frame[0].abs() > 0.0001));
+        assert!(output
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .all(|frame| frame[1] == 0.0));
     }
 
     #[test]

@@ -57,6 +57,10 @@ pub struct ExportSettings {
     pub metronome: bool,
     pub sequence: bool,
     pub sequence_pattern: [Option<u8>; 16],
+    pub synth_gain: f32,
+    pub synth_pan: f32,
+    pub synth_muted: bool,
+    pub synth_solo: bool,
     pub preset: u8,
     pub macros: [f32; 5],
 }
@@ -143,6 +147,10 @@ pub fn render_stereo_wav(
         || !settings.bpm.is_finite()
         || !(30.0..=300.0).contains(&settings.bpm)
         || settings.preset > 2
+        || !settings.synth_gain.is_finite()
+        || !(0.0..=1.0).contains(&settings.synth_gain)
+        || !settings.synth_pan.is_finite()
+        || !(0.0..=1.0).contains(&settings.synth_pan)
         || settings
             .macros
             .iter()
@@ -255,7 +263,11 @@ fn render_to_temporary(
     for (index, value) in settings.macros.iter().enumerate() {
         synth.parameter(index as u8, *value);
     }
-    let solo_active = tracks.iter().any(|track| track.solo);
+    let audio_solo = tracks.iter().any(|track| track.solo);
+    let solo_active = audio_solo || settings.synth_solo;
+    let synth_pan_angle = settings.synth_pan * std::f32::consts::FRAC_PI_2;
+    let synth_pan_left = synth_pan_angle.cos() * settings.synth_gain;
+    let synth_pan_right = synth_pan_angle.sin() * settings.synth_gain;
     let mut beat_phase = 0.0_f64;
     let mut sequence_note = None;
     let mut click_remaining = 0_u32;
@@ -324,8 +336,12 @@ fn render_to_temporary(
                 }
             }
             let synth_frame = synth.next_frame();
-            left[frame] = (left[frame] + synth_frame[0]) * settings.master;
-            right[frame] = (right[frame] + synth_frame[1]) * settings.master;
+            if !settings.synth_muted && (!audio_solo || settings.synth_solo) {
+                left[frame] += synth_frame[0] * synth_pan_left;
+                right[frame] += synth_frame[1] * synth_pan_right;
+            }
+            left[frame] *= settings.master;
+            right[frame] *= settings.master;
             let l = (left[frame].clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16;
             let r = (right[frame].clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16;
             bytes.extend_from_slice(&l.to_le_bytes());
@@ -438,6 +454,10 @@ mod tests {
             metronome: false,
             sequence: false,
             sequence_pattern: DEFAULT_SEQUENCE,
+            synth_gain: 0.8,
+            synth_pan: 0.5,
+            synth_muted: false,
+            synth_solo: false,
             preset: 0,
             macros: [0.42, 0.38, 0.55, 0.36, 0.7],
         };
@@ -487,6 +507,10 @@ mod tests {
             metronome: true,
             sequence: true,
             sequence_pattern: DEFAULT_SEQUENCE,
+            synth_gain: 0.8,
+            synth_pan: 0.5,
+            synth_muted: false,
+            synth_solo: false,
             preset: 0,
             macros: [0.42, 0.38, 0.55, 0.36, 0.7],
         };
@@ -511,6 +535,10 @@ mod tests {
             metronome: false,
             sequence: true,
             sequence_pattern: pattern,
+            synth_gain: 0.8,
+            synth_pan: 0.5,
+            synth_muted: false,
+            synth_solo: false,
             preset: 0,
             macros: [0.42, 0.38, 0.55, 0.36, 0.7],
         };
@@ -519,6 +547,55 @@ mod tests {
         assert!(data[44..44 + 800 * 4].iter().all(|sample| *sample == 0));
         assert!(data[44 + 800 * 4..].iter().any(|sample| *sample != 0));
         let _ = fs::remove_file(output);
+    }
+
+    #[test]
+    fn instrument_mixer_pan_and_mute_are_applied_to_offline_sequence() {
+        let left_output = temp_path("synth-hard-left");
+        let muted_output = temp_path("synth-muted");
+        let settings = ExportSettings {
+            sample_rate: 8_000,
+            master: 0.8,
+            bpm: 120.0,
+            metronome: false,
+            sequence: true,
+            sequence_pattern: DEFAULT_SEQUENCE,
+            synth_gain: 0.8,
+            synth_pan: 0.0,
+            synth_muted: false,
+            synth_solo: false,
+            preset: 0,
+            macros: [0.42, 0.38, 0.55, 0.36, 0.7],
+        };
+        render_stereo_wav(&left_output, &[], settings).unwrap();
+        let data = fs::read(&left_output).unwrap();
+        let frames = data[44..]
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|frame| {
+                (
+                    i16::from_le_bytes([frame[0], frame[1]]),
+                    i16::from_le_bytes([frame[2], frame[3]]),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert!(frames.iter().any(|frame| frame.0 != 0));
+        assert!(frames.iter().all(|frame| frame.1 == 0));
+
+        render_stereo_wav(
+            &muted_output,
+            &[],
+            ExportSettings {
+                synth_muted: true,
+                ..settings
+            },
+        )
+        .unwrap();
+        let muted = fs::read(&muted_output).unwrap();
+        assert!(muted[44..].iter().all(|sample| *sample == 0));
+        let _ = fs::remove_file(left_output);
+        let _ = fs::remove_file(muted_output);
     }
 
     #[test]
@@ -543,6 +620,10 @@ mod tests {
                 metronome: false,
                 sequence: false,
                 sequence_pattern: DEFAULT_SEQUENCE,
+                synth_gain: 0.8,
+                synth_pan: 0.5,
+                synth_muted: false,
+                synth_solo: false,
                 preset: 0,
                 macros: [0.42, 0.38, 0.55, 0.36, 0.7],
             },
@@ -573,6 +654,10 @@ mod tests {
                 metronome: false,
                 sequence: false,
                 sequence_pattern: DEFAULT_SEQUENCE,
+                synth_gain: 0.8,
+                synth_pan: 0.5,
+                synth_muted: false,
+                synth_solo: false,
                 preset: 0,
                 macros: [0.42, 0.38, 0.55, 0.36, 0.7],
             },

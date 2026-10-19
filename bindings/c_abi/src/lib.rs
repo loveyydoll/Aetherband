@@ -210,7 +210,8 @@ pub unsafe extern "C" fn daw_engine_export_wav(engine: *mut DAWEngine, path: *co
 
 /// HypnoSynth events: 0 note-on (key 0..127, velocity 0..1), 1 note-off,
 /// 2 preset (0..2), 3 macro (key 0..4, value 0..1), 4 all-sounds-off,
-/// 5 set an eight-note-per-bar sequencer step (step 0..15, note 0..127 or -1 for rest).
+/// 5 set an eight-note-per-bar sequencer step (step 0..15, note 0..127 or -1 for rest);
+/// 6-9 set HypnoSynth track gain (0..1), pan (0..1), mute (0/1), and solo (0/1), key 0.
 ///
 /// # Safety
 /// `engine` must be a live handle returned by `daw_engine_create`, with calls
