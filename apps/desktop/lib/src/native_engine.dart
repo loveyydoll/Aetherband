@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
@@ -17,6 +18,14 @@ typedef _PollN = Int32 Function(Pointer<Void>, Pointer<_MeteringFrame>);
 typedef _PollD = int Function(Pointer<Void>, Pointer<_MeteringFrame>);
 typedef _SampleRateN = Int32 Function(Pointer<Void>, Pointer<Uint32>);
 typedef _SampleRateD = int Function(Pointer<Void>, Pointer<Uint32>);
+typedef _DeviceCountN = Int32 Function(Pointer<Void>);
+typedef _DeviceCountD = int Function(Pointer<Void>);
+typedef _DeviceInfoN = Int32 Function(
+    Pointer<Void>, Uint32, Pointer<_NativeDeviceInfo>);
+typedef _DeviceInfoD = int Function(
+    Pointer<Void>, int, Pointer<_NativeDeviceInfo>);
+typedef _SelectDeviceN = Int32 Function(Pointer<Void>, Uint32);
+typedef _SelectDeviceD = int Function(Pointer<Void>, int);
 typedef _LoadTrackN = Int32 Function(
     Pointer<Void>, Pointer<Utf8>, Pointer<Uint32>);
 typedef _LoadTrackD = int Function(
@@ -76,11 +85,28 @@ final class _MeteringFrame extends Struct {
   external int deviceErrorFlag;
 }
 
+final class _NativeDeviceInfo extends Struct {
+  @Uint32()
+  external int index;
+  @Array(256)
+  external Array<Uint8> name;
+  @Uint32()
+  external int defaultSampleRate;
+  @Uint16()
+  external int channels;
+  @Uint8()
+  external int isDefault;
+}
+
 /// The worker isolate owns every native pointer and serializes all calls,
 /// including polling and destruction. Only commands/metadata cross isolates;
 /// importing, restarting decoders and releasing hardware cannot block Flutter.
 class NativeEngineController
-    implements EngineController, PerformanceEngine, ExportEngine {
+    implements
+        EngineController,
+        PerformanceEngine,
+        ExportEngine,
+        AudioOutputEngine {
   NativeEngineController._() {
     _events.listen(_onEvent);
   }
@@ -193,6 +219,14 @@ class NativeEngineController
   }
 
   @override
+  Future<List<AudioOutputDevice>> getOutputDevices() =>
+      _request<List<AudioOutputDevice>>('outputDevices');
+
+  @override
+  Future<void> selectOutputDevice(int index) =>
+      _request<void>('selectOutputDevice', index);
+
+  @override
   Future<void> pause() => _request<void>('pause');
   @override
   Future<void> stop() => _request<void>('stop');
@@ -299,6 +333,10 @@ Future<void> _runNativeEngine((SendPort, String?) configuration) async {
             await session.setMasterVolume(argument as double);
           case 'export':
             await session.exportWav(argument as String);
+          case 'outputDevices':
+            result = await session.getOutputDevices();
+          case 'selectOutputDevice':
+            await session.selectOutputDevice(argument as int);
           case 'play':
             await session.play();
           case 'pause':
@@ -350,7 +388,11 @@ Future<void> _runNativeEngine((SendPort, String?) configuration) async {
 /// Used only on the dedicated native control isolate. This object's pointers,
 /// library, timer and handle never cross the isolate boundary.
 class _NativeEngineSession
-    implements EngineController, PerformanceEngine, ExportEngine {
+    implements
+        EngineController,
+        PerformanceEngine,
+        ExportEngine,
+        AudioOutputEngine {
   _NativeEngineSession._({
     required this.synthNative,
     required this.transportNative,
@@ -364,6 +406,10 @@ class _NativeEngineSession
     required _CommandD destroyNative,
     required _PollD pollNative,
     required this.sampleRateHz,
+    required this.getSampleRateNative,
+    required this.deviceCountNative,
+    required this.deviceInfoNative,
+    required this.selectDeviceNative,
     required _LoadTrackD loadTrackNative,
     required _RemoveTrackD removeTrackNative,
     required _TrackCountD trackCountNative,
@@ -415,7 +461,11 @@ class _NativeEngineSession
   final _TransportD transportNative;
   final _MasterD masterNative;
   final _ExportD exportNative;
-  final int sampleRateHz;
+  final _SampleRateD getSampleRateNative;
+  final _DeviceCountD deviceCountNative;
+  final _DeviceInfoD deviceInfoNative;
+  final _SelectDeviceD selectDeviceNative;
+  int sampleRateHz;
   final StreamController<EngineTelemetry> _telemetry =
       StreamController<EngineTelemetry>.broadcast();
   Timer? _pollTimer;
@@ -455,6 +505,12 @@ class _NativeEngineSession
         library.lookupFunction<_PollN, _PollD>('daw_engine_poll_telemetry');
     final getSampleRate = library.lookupFunction<_SampleRateN, _SampleRateD>(
         'daw_engine_get_sample_rate');
+    final deviceCount = library.lookupFunction<_DeviceCountN, _DeviceCountD>(
+        'daw_engine_get_device_count');
+    final deviceInfo = library.lookupFunction<_DeviceInfoN, _DeviceInfoD>(
+        'daw_engine_get_device_info');
+    final selectDevice = library.lookupFunction<_SelectDeviceN, _SelectDeviceD>(
+        'daw_engine_select_device');
     final loadTrack = library
         .lookupFunction<_LoadTrackN, _LoadTrackD>('daw_engine_load_track');
     final removeTrack = library.lookupFunction<_RemoveTrackN, _RemoveTrackD>(
@@ -516,6 +572,10 @@ class _NativeEngineSession
           destroyNative: destroy,
           pollNative: poll,
           sampleRateHz: outSampleRate.value,
+          getSampleRateNative: getSampleRate,
+          deviceCountNative: deviceCount,
+          deviceInfoNative: deviceInfo,
+          selectDeviceNative: selectDevice,
           loadTrackNative: loadTrack,
           removeTrackNative: removeTrack,
           trackCountNative: trackCount,
@@ -681,6 +741,56 @@ class _NativeEngineSession
       }
     } finally {
       calloc.free(nativePath);
+    }
+  }
+
+  @override
+  Future<List<AudioOutputDevice>> getOutputDevices() async {
+    if (_disposed) throw StateError('Native engine has been disposed.');
+    final count = deviceCountNative(_handle);
+    if (count < 0) {
+      throw StateError('Native output-device query failed (error $count).');
+    }
+    final info = calloc<_NativeDeviceInfo>();
+    try {
+      final devices = <AudioOutputDevice>[];
+      for (var index = 0; index < count; index++) {
+        final result = deviceInfoNative(_handle, index, info);
+        _check('output-device metadata', result);
+        final bytes = <int>[];
+        for (var offset = 0; offset < 256; offset++) {
+          final byte = info.ref.name[offset];
+          if (byte == 0) break;
+          bytes.add(byte);
+        }
+        devices.add(AudioOutputDevice(
+          index: info.ref.index,
+          name: utf8.decode(bytes, allowMalformed: true),
+          sampleRateHz: info.ref.defaultSampleRate,
+          channels: info.ref.channels,
+          isDefault: info.ref.isDefault != 0,
+        ));
+      }
+      return devices;
+    } finally {
+      calloc.free(info);
+    }
+  }
+
+  @override
+  Future<void> selectOutputDevice(int index) async {
+    if (_disposed) throw StateError('Native engine has been disposed.');
+    _check('output-device selection', selectDeviceNative(_handle, index));
+    final outputRate = calloc<Uint32>();
+    try {
+      _check(
+          'output sample-rate query', getSampleRateNative(_handle, outputRate));
+      if (outputRate.value == 0) {
+        throw StateError('Selected output reported an invalid sample rate.');
+      }
+      sampleRateHz = outputRate.value;
+    } finally {
+      calloc.free(outputRate);
     }
   }
 

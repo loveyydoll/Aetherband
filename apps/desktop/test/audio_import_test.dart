@@ -119,6 +119,31 @@ class FakeEngine implements EngineController, PerformanceEngine, ExportEngine {
   }
 }
 
+class FakeAudioEngine extends FakeEngine implements AudioOutputEngine {
+  final devices = const [
+    AudioOutputDevice(
+        index: 0,
+        name: 'Windows Speakers',
+        sampleRateHz: 48000,
+        channels: 2,
+        isDefault: true),
+    AudioOutputDevice(
+        index: 1,
+        name: 'USB Interface',
+        sampleRateHz: 96000,
+        channels: 2,
+        isDefault: false),
+  ];
+
+  @override
+  Future<List<AudioOutputDevice>> getOutputDevices() async => devices;
+
+  @override
+  Future<void> selectOutputDevice(int index) async {
+    calls.add('output:$index');
+  }
+}
+
 Finder get importedClip => find
     .byWidgetPredicate((widget) => widget is ClipTile && !widget.clip.isDemo);
 
@@ -372,7 +397,7 @@ void main() {
     expect(first.disposeCount, 1);
     expect(restarted.isCompleted, isTrue);
     expect(importedClip, findsNothing);
-    expect(find.textContaining('DEMO CLIPS ONLY'), findsOneWidget);
+    expect(find.textContaining('EMPTY SESSION'), findsOneWidget);
     expect(find.byType(MaterialBanner), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();

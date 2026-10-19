@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aetherband_desktop/src/aetherband_app.dart';
-import 'audio_import_test.dart' show FakeEngine;
+import 'audio_import_test.dart' show FakeAudioEngine, FakeEngine;
 
 void main() {
   testWidgets('renders the Aetherband workspace without Flutter exceptions',
@@ -56,6 +56,30 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(engine.calls, contains('transport:92.0:true:false'));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('Audio menu selects an output device through the engine',
+      (tester) async {
+    tester.view.physicalSize = const Size(1440, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final engine = FakeAudioEngine();
+
+    await tester.pumpWidget(AetherbandApp(createEngine: () async => engine));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Audio menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Choose Output Device…'));
+    await tester.pumpAndSettle();
+    expect(find.text('USB Interface'), findsOneWidget);
+    await tester.tap(find.text('USB Interface'));
+    await tester.pumpAndSettle();
+
+    expect(engine.calls, contains('output:1'));
+    expect(find.textContaining('OUTPUT · USB Interface'), findsOneWidget);
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }
