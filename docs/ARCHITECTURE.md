@@ -1,5 +1,7 @@
 # Aetherband Architecture
 
+**Current target:** Windows desktop only. See [Technology choices](TECH_STACK.md) for language and platform scope.
+
 ## Product stack
 
 - **Desktop presentation:** Flutter/Dart.
@@ -25,14 +27,14 @@ The former C#/.NET + Avalonia frontend is retired and removed from the desktop a
 - **Telemetry:** Rust engine telemetry -> C ABI struct -> Dart polling adapter -> UI state.
 - **Audio:** Rust decoder workers -> preallocated/bounded engine buffers -> Rust audio callback -> OS audio device.
 
-The current C ABI exposes engine lifecycle, transport, telemetry, device enumeration/selection, test tone, track load/remove/metadata, track gain/pan/mute and track count. Check `bindings/c_abi/src/lib.rs` as the source of truth before adding calls. ABI 0.3.0 adds source-frame/rate/channel metadata for duration-scaled imported clips. The playhead still uses the active output rate. Device selection is not fully wired into Flutter; refresh the cached output rate if it is added.
+ABI 0.5.0 exposes engine lifecycle, transport and telemetry; Windows output-device enumeration/selection; HypnoSynth events and performance settings; track import, metadata, start scheduling, gain, pan, mute and solo. Check `bindings/c_abi/src/lib.rs` as the source of truth before adding calls. The playhead and clip positions use the active output rate. Output-device selection is available natively but is not wired into Flutter.
 
 Native calls run in a long-lived Dart isolate, serialized with polling and disposal. The opaque C handle delegates engine and decoder work to a dedicated Rust control thread through a bounded channel, keeping that work away from Flutter's UI isolate and preserving one serialized engine owner. This remains an architectural choice; the current CPAL 0.18 stream is Send. The control channel is separate from real-time SPSC queues; blocking and allocation remain off the audio callback. See ADR-008 in [Decisions](DECISIONS.md).
 
 ## Why Flutter
 
-Flutter was selected for its UI flexibility, custom timeline and mixer rendering, faster visual iteration, consistent cross-platform presentation, and ability to optimize rendering for DAW-specific workloads. These are engineering goals, not proof that Flutter is inherently faster than other UI frameworks; profile actual sessions on supported operating systems.
+Flutter was selected for its UI flexibility, custom timeline and mixer rendering, and rapid visual iteration. These are engineering goals, not proof that Flutter is inherently faster than other UI frameworks; profile actual sessions on Windows.
 
 ## Verification
 
-From the repository root, run Rust formatting/checks/tests and build the C ABI library. From `apps/desktop/`, run `flutter pub get`, `flutter analyze`, and `flutter test`. Native loading and real audio playback require manual end-to-end verification on Windows and macOS.
+From the repository root, run Rust formatting/checks/tests and build the C ABI library. From `apps/desktop/`, run `flutter pub get`, `flutter analyze`, and `flutter test`. Native loading and real audio playback require manual end-to-end verification on Windows.
