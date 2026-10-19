@@ -241,6 +241,37 @@ Future<void> deleteSelected(WidgetTester tester, {bool settle = true}) async {
 }
 
 void main() {
+  testWidgets('arrangement track order can be changed from track actions',
+      (tester) async {
+    final engine = FakeEngine();
+    var pickIndex = 0;
+    await mountWorkspace(
+      tester,
+      engine,
+      picker: () async => XFile(pickIndex++ == 0
+          ? 'C:/audio/first.wav'
+          : 'C:/audio/second.wav'),
+    );
+
+    await importAudio(tester);
+    await importAudio(tester);
+
+    var timeline = tester.widget<TimelineView>(find.byType(TimelineView));
+    expect(timeline.tracks.map((track) => track.name).toList(),
+        containsAllInOrder(<String>['first.wav', 'second.wav']));
+
+    await tester.tap(find.byTooltip('Track actions').at(1));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Move track up'));
+    await tester.pumpAndSettle();
+
+    timeline = tester.widget<TimelineView>(find.byType(TimelineView));
+    expect(timeline.tracks.map((track) => track.name).toList(),
+        containsAllInOrder(<String>['second.wav', 'first.wav']));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('HypnoSynth pattern inserts a playable arrangement clip',
       (tester) async {
     final engine = FakeEngine();
