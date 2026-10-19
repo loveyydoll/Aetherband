@@ -245,6 +245,8 @@ void main() {
       (tester) async {
     final engine = FakeEngine();
     await mountWorkspace(tester, engine);
+    await tester.ensureVisible(find.text('Add pattern to arrangement'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Add pattern to arrangement'));
     await tester.pumpAndSettle();
     expect(
@@ -252,6 +254,47 @@ void main() {
     expect(find.text('HypnoSynth pattern'), findsOneWidget);
     expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
         findsOneWidget);
+  });
+
+  testWidgets('HypnoSynth patterns support copy, paste, duplicate and cut',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await tester.ensureVisible(find.text('Add pattern to arrangement'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add pattern to arrangement'));
+    await tester.pumpAndSettle();
+    final pattern =
+        find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern');
+    expect(pattern, findsOneWidget);
+
+    Future<void> shortcut(LogicalKeyboardKey key) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(key);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+    }
+
+    await shortcut(LogicalKeyboardKey.keyC);
+    await shortcut(LogicalKeyboardKey.keyV);
+    expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
+        findsNWidgets(2));
+    expect(engine.calls.where((call) => call.startsWith('pattern:')),
+        hasLength(2));
+
+    await shortcut(LogicalKeyboardKey.keyD);
+    expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
+        findsNWidgets(3));
+    expect(engine.calls.where((call) => call.startsWith('pattern:')),
+        hasLength(3));
+
+    await shortcut(LogicalKeyboardKey.keyX);
+    expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
+        findsNWidgets(2));
+    expect(engine.calls.where((call) => call.startsWith('removePattern:')),
+        hasLength(1));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('Add Instrument Track creates one session HypnoSynth track',
@@ -645,10 +688,12 @@ void main() {
       (tester) async {
     final engine = FakeEngine();
     await mountWorkspace(tester, engine);
+    await tester.ensureVisible(find.text('Add pattern to arrangement'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Add pattern to arrangement'));
     await tester.pumpAndSettle();
-    final patternFinder =
-        find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern');
+    final patternFinder = find.byWidgetPredicate(
+        (widget) => widget is ClipTile && widget.clip.isSequenceRegion);
     final clip = tester.widget<ClipTile>(patternFinder).clip;
     await tester.ensureVisible(patternFinder);
     await tester.dragFrom(
@@ -796,7 +841,7 @@ void main() {
 
     await tester.sendKeyEvent(LogicalKeyboardKey.f2);
     await tester.pumpAndSettle();
-    expect(find.text('Rename audio track'), findsOneWidget);
+    expect(find.text('Rename track'), findsOneWidget);
     await tester.enterText(
       find.byKey(const ValueKey('rename-track-name')),
       'Guitar take',
@@ -1114,7 +1159,8 @@ void main() {
     final imported = tester
         .widget<InstrumentDock>(find.byType(InstrumentDock))
         .tracks
-        .singleWhere((track) => track.id.startsWith('native-'));
+        .singleWhere(
+            (track) => track.kind == 'AUDIO' && track.id.startsWith('native-'));
     final instrument = tester
         .widget<InstrumentDock>(find.byType(InstrumentDock))
         .tracks

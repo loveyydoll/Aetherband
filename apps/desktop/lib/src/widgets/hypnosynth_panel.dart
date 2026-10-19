@@ -122,7 +122,7 @@ class _HypnoSynthPanelState extends State<HypnoSynthPanel> {
       child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: SizedBox(
-              width: 1000,
+              width: 1500,
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

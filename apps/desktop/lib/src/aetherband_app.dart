@@ -86,6 +86,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   final Map<String, int> _nativeSequenceRegionIds = <String, int>{};
   final Map<String, String> _nativeTrackSources = <String, String>{};
   SavedAudioTrack? _copiedAudioTrack;
+  ClipModel? _copiedSequenceRegion;
   final Map<String, Timer> _clipPositionTimers = <String, Timer>{};
   final Map<String, double> _confirmedClipStarts = <String, double>{};
   final Map<String, double> _clipMoveStarts = <String, double>{};
@@ -1152,6 +1153,13 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   Future<void> _duplicateSelectedTrack() async {
+    final selectedPattern = _selectedPatternRegion;
+    if (selectedPattern != null) {
+      await _copyOrDuplicateSequenceRegion(selectedPattern,
+          startSeconds: selectedPattern.startSeconds +
+              (selectedPattern.durationSeconds ?? 0));
+      return;
+    }
     final selected = _selectedTrack;
     final source = selected == null ? null : _nativeTrackSources[selected.id];
     if (selected == null || source == null) {
@@ -1297,7 +1305,27 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     }
   }
 
-  bool _copySelectedAudioTrack() {
+  bool _copySelectedItem() {
+    final pattern = _selectedPatternRegion;
+    if (pattern != null) {
+      _copiedAudioTrack = null;
+      _copiedSequenceRegion = ClipModel(
+        id: pattern.id,
+        title: pattern.title,
+        start: pattern.start,
+        width: pattern.width,
+        color: pattern.color,
+        isDemo: false,
+        isSequenceRegion: true,
+        sequenceNotes: List<int?>.unmodifiable(pattern.sequenceNotes),
+        durationSeconds: pattern.durationSeconds,
+        startSeconds: pattern.startSeconds,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Copied HypnoSynth pattern.'),
+      ));
+      return true;
+    }
     final selected = _selectedTrack;
     final source = selected == null ? null : _nativeTrackSources[selected.id];
     if (selected == null || source == null || selected.clips.isEmpty) {
@@ -1322,6 +1350,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
               ))
           .toList(growable: false),
     );
+    _copiedSequenceRegion = null;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Copied ${selected.name}.')),
     );
@@ -1330,6 +1359,12 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
 
   Future<void> _pasteAudioTrack() async {
     if (_trackOperationPending || _initializingEngine) return;
+    final copiedPattern = _copiedSequenceRegion;
+    if (copiedPattern != null) {
+      await _copyOrDuplicateSequenceRegion(copiedPattern,
+          startSeconds: _telemetry.playheadSeconds);
+      return;
+    }
     final copied = _copiedAudioTrack;
     if (copied == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -1366,6 +1401,64 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       copied.sourcePath,
       startSeconds: _telemetry.playheadSeconds,
     );
+  }
+
+  ClipModel? get _selectedPatternRegion => _tracks
+      .expand((track) => track.clips)
+      .where((clip) => clip.id == _selectedClipId && clip.isSequenceRegion)
+      .firstOrNull;
+
+  Future<void> _copyOrDuplicateSequenceRegion(ClipModel source,
+      {required double startSeconds}) async {
+    if (_trackOperationPending || _initializingEngine) return;
+    final engine = _engine;
+    if (engine is! SequenceRegionEngine) {
+      _showFeatureUnavailable('HypnoSynth pattern regions');
+      return;
+    }
+    final sequenceEngine = engine as SequenceRegionEngine;
+    var track =
+        _tracks.where((value) => value.kind == 'INSTRUMENT').firstOrNull;
+    if (track == null) {
+      _addInstrumentTrack();
+      track = _tracks.where((value) => value.kind == 'INSTRUMENT').firstOrNull;
+    }
+    if (track == null) return;
+    final regionId = _createSequenceRegionId();
+    final notes = List<int?>.unmodifiable(source.sequenceNotes);
+    final beatSeconds = 60 / _performance.tempo;
+    final start = (startSeconds / beatSeconds).round() * beatSeconds;
+    final clipId = '${track.id}-pattern-$regionId';
+    try {
+      await sequenceEngine.setSequenceRegion(regionId, start, notes);
+      if (!mounted) {
+        await sequenceEngine.removeSequenceRegion(regionId);
+        return;
+      }
+      final clip = ClipModel(
+        id: clipId,
+        title: source.title,
+        start: 0,
+        width: 0,
+        color: AetherColors.magenta,
+        isDemo: false,
+        isSequenceRegion: true,
+        sequenceNotes: notes,
+        durationSeconds: 8 * beatSeconds,
+        startSeconds: start,
+      );
+      setState(() {
+        _nativeSequenceRegionIds[clipId] = regionId;
+        _confirmedClipStarts[clipId] = start;
+        track!.clips.add(clip);
+        _selectedTrackId = track.id;
+        _selectedClipId = clipId;
+        _showMixer = true;
+        _markSessionChanged();
+      });
+    } catch (error) {
+      if (mounted) _reportMixerFailure('Copy HypnoSynth pattern', error);
+    }
   }
 
   Future<void> _renameSelectedTrack() async {
@@ -2185,10 +2278,16 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         unawaited(_removeSelectedPatternRegion());
         return;
       case 'edit.cut':
-        if (_copySelectedAudioTrack()) unawaited(_removeSelectedTrack());
+        if (_copySelectedItem()) {
+          if (_selectedPatternRegion != null) {
+            unawaited(_removeSelectedPatternRegion());
+          } else {
+            unawaited(_removeSelectedTrack());
+          }
+        }
         return;
       case 'edit.copy':
-        _copySelectedAudioTrack();
+        _copySelectedItem();
         return;
       case 'edit.paste':
         unawaited(_pasteAudioTrack());
@@ -3064,10 +3163,16 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         const SingleActivator(LogicalKeyboardKey.keyY, control: true): () =>
             unawaited(_redoClipMove()),
         const SingleActivator(LogicalKeyboardKey.keyX, control: true): () {
-          if (_copySelectedAudioTrack()) unawaited(_removeSelectedTrack());
+          if (_copySelectedItem()) {
+            if (_selectedPatternRegion != null) {
+              unawaited(_removeSelectedPatternRegion());
+            } else {
+              unawaited(_removeSelectedTrack());
+            }
+          }
         },
         const SingleActivator(LogicalKeyboardKey.keyC, control: true): () =>
-            _copySelectedAudioTrack(),
+            _copySelectedItem(),
         const SingleActivator(LogicalKeyboardKey.keyV, control: true): () =>
             unawaited(_pasteAudioTrack()),
         const SingleActivator(LogicalKeyboardKey.keyD, control: true): () =>
