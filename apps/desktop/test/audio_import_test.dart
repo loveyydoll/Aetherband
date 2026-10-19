@@ -468,21 +468,17 @@ void main() {
       await tester.tap(find.text('Discard changes'));
       await tester.pumpAndSettle();
     }
-    await tester.runAsync(() async {
-      for (var i = 0; i < 100 && !stagedEngine.isCompleted; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      }
-      final visibleMessages = tester
-          .widgetList<SnackBar>(find.byType(SnackBar))
-          .map((snackBar) => snackBar.content)
-          .join(' | ');
-      expect(stagedEngine.isCompleted, isTrue, reason: visibleMessages);
-      for (var i = 0; i < 100 && first.disposeCount == 0; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      }
-      expect(first.disposeCount, 1);
-    });
+    // Alternate real time for file I/O with Flutter pumps so async continuations
+    // can advance through both the picker and the session store.
+    for (var i = 0; i < 100 && !stagedEngine.isCompleted; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    expect(stagedEngine.isCompleted, isTrue);
     await tester.pumpAndSettle();
+    expect(first.disposeCount, 1);
     expect(
         restored.calls,
         containsAllInOrder([
