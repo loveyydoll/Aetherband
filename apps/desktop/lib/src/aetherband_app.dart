@@ -1796,6 +1796,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
             unawaited(_pasteAudioTrack()),
         const SingleActivator(LogicalKeyboardKey.keyD, control: true): () =>
             unawaited(_duplicateSelectedTrack()),
+        const SingleActivator(LogicalKeyboardKey.delete): () =>
+            unawaited(_removeSelectedTrack()),
         const SingleActivator(LogicalKeyboardKey.keyS, control: true): () =>
             unawaited(_saveSession()),
         const SingleActivator(LogicalKeyboardKey.keyS, meta: true): () =>

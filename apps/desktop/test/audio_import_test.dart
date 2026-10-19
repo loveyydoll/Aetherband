@@ -519,6 +519,20 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('Delete removes the selected imported audio track',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+    await tester.pumpAndSettle();
+
+    expect(await engine.getTrackCount(), 0);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('picker cancellation leaves transport and inventory untouched',
       (tester) async {
     final engine = FakeEngine();

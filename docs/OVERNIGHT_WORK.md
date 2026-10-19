@@ -17,9 +17,9 @@ Branch: `feat/hypnosynth-daw-foundations`. PR: [#33](https://github.com/loveyydo
 
 - Windows `cargo test --workspace --jobs 1`: 47 core tests, 8 C ABI tests, callback-allocation test and WASAPI smoke target pass. The C ABI crate disables irrelevant doctests to avoid duplicate `daw_core` crate candidates.
 - Windows workspace Clippy passes with existing C ABI missing-`# Safety` documentation warnings; optimized C ABI DLL build passes.
-- Flutter analysis is clean; 48 Flutter tests pass and the optional native test is skipped in the default suite. The focused Windows FFI integration test passes against the freshly built release DLL and default output device, covering device selection, synth/sequence state restoration, transport, import, mixer, stereo export and shutdown.
+- Flutter analysis is clean; 49 Flutter tests pass and the optional native test is skipped in the default suite. The focused Windows FFI integration test passes against the freshly built release DLL and default output device, covering device selection, synth/sequence state restoration, transport, import, mixer, stereo export and shutdown.
 - A separate opt-in WASAPI smoke test reaches nonzero HypnoSynth samples and shuts down cleanly. This confirms callback output, not speaker audibility.
-- The Windows runner is now checked into the desktop project; its local debug build passes. Published commit `49fb2a2` passes both Windows CI workflows (Rust run 286 and Flutter desktop run 82). Local verification includes all 48 Flutter tests, clean analysis and a successful Windows debug build; current editing changes are still local.
+- The Windows runner is now checked into the desktop project; its local debug build passes. Published commit `49fb2a2` passes both Windows CI workflows (Rust run 286 and Flutter desktop run 82). Local verification includes all 49 Flutter tests, clean analysis and a successful Windows debug build; the latest track Delete-key change is tested locally and awaits Windows CI.
 
 ## Remaining limits and next work
 
