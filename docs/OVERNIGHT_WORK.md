@@ -17,7 +17,7 @@ Branch: `feat/hypnosynth-daw-foundations`. PR: [#33](https://github.com/loveyydo
 
 - Windows `cargo test --workspace --jobs 1`: 49 core tests, 10 C ABI tests, callback-allocation test and WASAPI smoke target pass. Generated WAV tests verify source seek and bounded region decode; the C ABI crate disables irrelevant doctests to avoid duplicate `daw_core` crate candidates.
 - Windows workspace Clippy passes with existing C ABI missing-`# Safety` documentation warnings; optimized C ABI DLL build passes.
-- Direct Dart analysis reports no errors. The local Flutter launcher could not run because the SDK lockfile at `C:\src\flutter\bin\cache\lockfile` is inaccessible; current-head Windows CI run 100 passed analysis, all 55 Flutter tests (one optional device test skipped), and the desktop build. Split, copy/duplicate and schema-v4 round-trip tests passed.
+- Direct Dart analysis reports no errors. The local Flutter launcher could not run because the SDK lockfile at `C:\src\flutter\bin\cache\lockfile` is inaccessible; current-head Windows CI run 105 passed analysis, all 55 Flutter tests (one optional device test skipped), and the desktop build at `8aff2f4`. Split, copy/duplicate and schema-v4 round-trip tests passed.
 - A separate opt-in WASAPI smoke test reaches nonzero HypnoSynth samples and shuts down cleanly. This confirms callback output, not speaker audibility.
 - The Windows runner is checked into the desktop project. The advertised Ctrl+Alt+E export shortcut, selected-track Delete action, F2 rename shortcut and Ctrl+arrow bar seeking are tested. Current-head Rust run 303 and Flutter desktop run 100 pass on `56ddb75`; the Flutter run includes the Windows desktop build. Earlier local Rust run 297 and Flutter desktop run 93 pass on `8c4a667`.
 
