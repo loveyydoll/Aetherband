@@ -1,7 +1,7 @@
 # Aetherband — Project State Handoff
 
 **Snapshot date:** 2026-10-19
-**Evidence level:** Windows Rust workspace tests, C ABI build, core Clippy and Dart analysis pass for the current local changes. An opt-in WASAPI smoke test produced nonzero HypnoSynth callback samples and shut down cleanly. Flutter analysis and all 52 tests pass locally; a separate Windows Dart FFI integration test passes against the release DLL; speaker listening/loopback capture is not independently verified.
+**Evidence level:** PR #33 head `19ecb8a` passes Rust CI run 313 and Windows Flutter CI run 111, including Rust workspace tests, callback-allocation and WASAPI smoke targets, native C ABI build, Dart analysis, 57 Flutter tests (one optional device test skipped), and the Windows desktop build. Local Dart analysis and the Rust, Clippy, and optimized DLL checks pass. The local Flutter launcher is blocked by an inaccessible SDK cache lock. Physical speaker/headphone listening and real microphone/line-in capture remain unverified.
 
 ## Product identity
 
@@ -22,11 +22,11 @@ Do not reintroduce C#/.NET/Avalonia as a second desktop frontend. Verify current
 - The launch arrangement is a real empty session rather than six visual demo tracks. Imported audio remains duration-aware and native playback is routed to the default Windows device using its native sample format.
 - The real-time Rust callback now renders imported tracks and HypnoSynth, supports full oversized buffers, and defers decoder/player reclamation to the control thread. Device stream errors are surfaced through telemetry. Space toggles play/pause and R toggles recording through the native engine.
 - HypnoSynth is an original polyphonic instrument with three original presets, live keyboard input and a persisted, editable 16-step sequence with tempo/metronome playback. Its musical references do not use copied recordings or claim to recreate a specific patch.
-- ABI 0.10.0, Dart FFI and session schema v4 carry transport seek, synth, master gain, track solo state, imported-audio clip positions and source-bounded split regions, the editable 16-step synth sequence, offline stereo WAV export and Windows input recording. Sessions stage media in a fresh engine before replacing active state; schema v1 through v3 remain readable.
+- ABI 0.10.0, Dart FFI and session schema v4 carry transport seek, synth, master gain, track solo state, imported-audio clip positions and source-bounded split/join/trim regions, the editable 16-step synth sequence, offline stereo WAV export and Windows input recording. Sessions stage media in a fresh engine before replacing active state; schema v1 through v3 remain readable.
 - Rust callback tests confirm audible generated and decoded signals; physical speaker or loopback listening still requires a user machine with an audio output.
 - Windows recording uses the default input device and a background stereo PCM16 WAV writer; stopping finalizes and imports the take at the transport position. Input hardware behavior remains unverified.
 - Live meters must use actual engine telemetry, not invented animation.
-- Measured PCM/IEEE-float WAV waveforms load off the UI isolate and render from decoded peaks; unsupported audio formats show an explicit unavailable state. The Region menu splits audio into native source-bounded clips persisted by schema v4; undo covers clip moves, while split-edit history, MIDI editing, effects, automation, plugin hosting and trim/resize remain incomplete. Imported audio clips can be moved and their start positions persist.
+- Measured PCM/IEEE-float WAV waveforms load off the UI isolate and render from decoded peaks; unsupported audio formats show an explicit unavailable state. The Region menu splits, joins contiguous regions, and trims region starts/ends to the stopped playhead. These operations update native playback and persisted source ranges; chronological undo/redo covers them and clip moves. MIDI regions, stretch resize, Bounce in Place, effects, automation and plugin hosting remain incomplete. Imported audio clips can be moved and their start positions persist.
 
 ## Critical invariants
 
@@ -42,13 +42,13 @@ Do not reintroduce C#/.NET/Avalonia as a second desktop frontend. Verify current
 See [Feature Tracker](FEATURE_TRACKER.md) for the living backlog. Initial order:
 1. Listen to HypnoSynth and imported audio through actual Windows output hardware.
 2. Verify input recording with a real Windows microphone/line-in device and listen to output through speakers.
-3. Add waveform/clip editing, undo/redo and MIDI data persistence.
+3. Add editable MIDI regions and MIDI data persistence; extend waveform editing and undo/redo.
 
 ## Current verification and uncertainty
 
-On 2026-10-19, commit `8c4a667` adds transport seeking through ABI 0.9.0, bar keyboard navigation and timeline-ruler seeking while preserving playback state. Rust CI run 297 and Flutter desktop run 93 pass on that head. Local checks also pass with 52 Flutter tests, 48 core tests, 9 ABI tests, callback-allocation and WASAPI smoke targets, clean analysis, Clippy and Windows debug/release builds. The focused Dart FFI integration test seeks during playback against the default output device. These results do not prove audible output through speakers or successful microphone/line-in capture. Clippy passes with existing missing-`# Safety` documentation warnings in C ABI exports.
+On 2026-10-19, the overnight branch added source-bounded split, join and trim editing and chronological undo/redo. Rust CI run 313 and Flutter desktop run 111 pass at `19ecb8a`; Flutter CI includes 57 passing tests, one optional device test skipped, and a Windows desktop build. Earlier local FFI integration verified seek during playback, import, mixer, export and shutdown against the default output device. These results do not prove audible output through speakers or successful microphone/line-in capture.
 
-PR #33 remains open and unmerged. New local edits must be published to the same PR and checked by remote CI; do not infer sound quality or hardware recording from callback/unit tests alone.
+PR #33 remains open, mergeable and unmerged. New local edits must be published to the same PR and checked by remote CI; do not infer sound quality or hardware recording from callback/unit tests alone.
 ## Required handoff format
 
 For each agent task, report **Implemented**, **Not implemented**, **Verified**, **Not verified**, **Known risks**, and **Next step**. Link the relevant PR/commit and checks when available.
