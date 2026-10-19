@@ -1,40 +1,34 @@
 # Product Vision: Aetherband
 
-## Vision
+Aetherband is a free and open-source desktop DAW for following musical ideas wherever they lead. It should bring recording, arrangement, editing, mixing, synthesis, and sound design into one expressive environment.
 
-Aetherband is a free and open-source desktop DAW designed around an expressive, arrangement-first creative workspace, reliable native audio, and a processing architecture the project can evolve itself. It should support both focused songwriting and deeper sound design without making creative work feel like operating unrelated tools.
+The creative direction values immediacy and precision without imitating any single existing DAW. The workspace should feel designed for music: clear arrangement and mixer workflows, purposeful visual hierarchy, fast keyboard/mouse interaction, and room for unusual textures, layered productions, and artist-specific instruments.
 
-This is a target vision, not a claim that the planned features are currently complete.
+This is a target vision, not a claim that the current prototype already provides these workflows.
 
-## Architecture direction
+## Committed architecture
 
-- **Primary language:** C++20 or newer where supported.
-- **Desktop UI:** native C++ framework; JUCE is a leading candidate, subject to a Windows/macOS technical spike.
-- **Audio runtime:** C++ modules with explicit real-time thread and device-lifecycle contracts.
-- **DSP:** an Aetherband-owned processing graph and processor architecture, with external libraries allowed for well-scoped algorithms or infrastructure.
-- **Platforms:** Windows and macOS are required targets.
-- **Optional language integrations:** C# may be considered only when a concrete use case justifies the added runtime and interface boundary.
+- C++20 or newer as the primary language.
+- JUCE as the native application, UI, audio, and platform framework.
+- CMake as the build system.
+- Windows and macOS as required desktop targets.
+- Aetherband-owned DSP graph semantics, processor lifecycle, routing, transport, parameter/automation behavior, and offline-rendering rules.
+- GPL-3.0-or-later as the license goal, with compatible dependency choices.
 
-Flutter/Dart are no longer the target UI stack. The existing Rust/Flutter implementation is retained during migration as a behavioral reference; it must not be deleted wholesale before the replacement demonstrates tested parity for the agreed workflows.
+Rust, C ABI/Dart FFI, Flutter, and Dart are legacy references only. Do not build new target features on that stack. C# is not planned for the core.
 
-## Core principles
+## Principles
 
-1. **Creative continuity:** recording, arrangement, editing, sound design and mixing should form one coherent workflow.
-2. **Native reliability:** audio-device behavior, timing, clean shutdown and media handling must be verified on supported systems.
-3. **DSP ownership:** Aetherband controls its graph semantics, routing, parameter model and real-time execution. It does not need to reinvent every standard DSP algorithm.
-4. **Real-time discipline:** no blocking I/O, allocation or contended locks in the audio callback.
-5. **Modular architecture:** UI, project model, media, audio runtime, DSP and instruments have clear contracts and independent tests.
-6. **Honest status:** separate planned features, prototypes, implemented code and verified behavior.
-7. **Open-source sustainability:** prefer GPL-compatible dependencies, documented trade-offs and reproducible builds.
+1. Creative continuity: recording, arrangement, editing, mixing, and sound design should work together.
+2. Native reliability: device lifecycle, timing, recovery, shutdown, and media handling must be tested.
+3. DSP ownership: Aetherband owns graph execution semantics without reinventing every established algorithm.
+4. Real-time discipline: no blocking I/O, unpredictable allocation, or contended waits in the audio callback.
+5. Modularity: UI, session model, media, runtime, DSP, and instruments have clear contracts.
+6. Open development: architecture, trade-offs, limitations, and dependency licensing remain inspectable.
+7. Honest progress: distinguish planned work, implementation, automated tests, and platform/device verification.
 
-## Initial migration objective
+## First product milestone
 
-Build a minimal native vertical slice before expanding the feature set:
+Build a native JUCE application on both Windows and macOS, open/close an audio device, and play a known signal safely. Then prove a minimal DAW workflow: import WAV, arrange multiple tracks, play/mix, save/reopen, and export WAV.
 
-1. Build and test the C++ foundation on Windows and macOS.
-2. Process a known signal through the DSP path and render deterministic offline audio.
-3. Verify audio-device playback and lifecycle behavior.
-4. Import WAV, arrange and play multiple tracks, mix, save/reopen a project and export WAV.
-5. Port HypnoSynth and other proven behavior in small, tested increments.
-
-See [the C++ migration plan](CPP_MIGRATION_PLAN.md) and [the feature tracker](FEATURE_TRACKER.md) for implementation status and acceptance evidence.
+See ARCHITECTURE.md, CPP_MIGRATION_PLAN.md, and ROADMAP.md.
