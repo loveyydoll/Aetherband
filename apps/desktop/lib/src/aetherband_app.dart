@@ -3566,6 +3566,16 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
             () => unawaited(_seekPreviousBar()),
         const SingleActivator(LogicalKeyboardKey.arrowRight, control: true):
             () => unawaited(_seekNextBar()),
+        const SingleActivator(LogicalKeyboardKey.arrowUp,
+            control: true, shift: true): () {
+          final track = _selectedTrack;
+          if (track != null) _moveTrack(track, -1);
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowDown,
+            control: true, shift: true): () {
+          final track = _selectedTrack;
+          if (track != null) _moveTrack(track, 1);
+        },
         const SingleActivator(LogicalKeyboardKey.end): () =>
             unawaited(_seekToEnd()),
         const SingleActivator(LogicalKeyboardKey.keyZ, control: true): () =>
