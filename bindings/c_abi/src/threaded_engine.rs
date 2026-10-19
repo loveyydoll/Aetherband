@@ -1,6 +1,6 @@
-//! CPAL 0.15 stream handles are not Send. Dart isolates serialize calls but can
-//! migrate between OS threads, so the actual engine must live on one Rust thread.
-//! Only owned commands and Send results cross this bounded control-side queue.
+//! Keep engine/device lifecycle and decoder work serialized on one Rust control
+//! thread, away from Flutter's UI isolate. Only owned commands and Send results
+//! cross this bounded control-side queue; CPAL's Send support is not required.
 //! None of this channel, allocation or waiting runs on the audio callback.
 
 use std::path::Path;

@@ -12,5 +12,5 @@ to samples conversion, and adjusted module visibility. No ArtCraft branding,
 logos, assets or third-party plugins are included. Aetherband remains GPL-3.0.
 
 The native device-format dispatch was also compared with SoundCraft's playback
-implementation; Aetherband uses its existing CPAL 0.15 API and engine ownership.
-The remainder of HypnoSynth is original Aetherband implementation.
+implementation. Aetherband now uses CPAL 0.18.2. The remainder of HypnoSynth is
+original Aetherband implementation.
