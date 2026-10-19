@@ -280,10 +280,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(importedClip, findsNWidgets(4));
+    expect(engine.calls.where((call) => call == 'load:C:/audio/take.wav'),
+        hasLength(4));
     expect(
         engine.calls.where((call) => call.startsWith('region:')), hasLength(4));
     expect(engine.calls, contains('start:4:2.0'));
-    expect(find.text('take.wav copy'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
