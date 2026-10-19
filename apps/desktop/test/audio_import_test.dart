@@ -275,18 +275,31 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    await tester.tap(find.byTooltip('Hide mixer'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byTooltip('Rest on step 1'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Rest on step 1'));
+    await tester.pumpAndSettle();
+    expect(engine.calls.last, contains(':null,'));
+    await shortcut(LogicalKeyboardKey.keyZ);
+    expect(engine.calls.lastWhere((call) => call.startsWith('pattern:1:0.0:')),
+        startsWith('pattern:1:0.0:50,57,60'));
+    await shortcut(LogicalKeyboardKey.keyY);
+    expect(engine.calls.last, 'synth:5:0:-1.0');
+    await shortcut(LogicalKeyboardKey.keyZ);
+
     await shortcut(LogicalKeyboardKey.keyC);
     await shortcut(LogicalKeyboardKey.keyV);
     expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
         findsNWidgets(2));
-    expect(engine.calls.where((call) => call.startsWith('pattern:')),
-        hasLength(2));
+    expect(
+        engine.calls.any((call) => call.startsWith('pattern:2:0.0:')), isTrue);
 
     await shortcut(LogicalKeyboardKey.keyD);
     expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
         findsNWidgets(3));
-    expect(engine.calls.where((call) => call.startsWith('pattern:')),
-        hasLength(3));
+    expect(engine.calls.any((call) => call.startsWith('pattern:3:')), isTrue);
 
     await shortcut(LogicalKeyboardKey.keyX);
     expect(find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),

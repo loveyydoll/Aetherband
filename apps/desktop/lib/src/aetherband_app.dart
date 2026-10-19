@@ -2189,6 +2189,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     if (engine == null ||
         engine is! PerformanceEngine ||
         _trackOperationPending ||
+        _historyOperationPending ||
         _initializingEngine) {
       return;
     }
@@ -2201,6 +2202,16 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     final sequenceRegionId = selectedPattern == null
         ? null
         : _nativeSequenceRegionIds[selectedPattern.id];
+    final selectedTrack = selectedPattern == null
+        ? null
+        : _tracks
+            .where((track) => track.clips.contains(selectedPattern))
+            .firstOrNull;
+    final beforeNotes = selectedPattern == null
+        ? null
+        : List<int?>.unmodifiable(selectedPattern.sequenceNotes);
+    final notesChanged = beforeNotes != null &&
+        !_sameSequenceNotes(beforeNotes, settings.sequenceNotes);
     setState(() {
       _performance = settings;
       if (selectedPattern != null) {
@@ -2223,6 +2234,15 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
             sequenceRegionId,
             selectedPattern.startSeconds,
             settings.sequenceNotes);
+        if (notesChanged && selectedTrack != null) {
+          _pushHistory(_SequenceNotesEdit(
+            trackId: selectedTrack.id,
+            clip: selectedPattern,
+            regionId: sequenceRegionId,
+            beforeNotes: beforeNotes,
+            afterNotes: List<int?>.unmodifiable(settings.sequenceNotes),
+          ));
+        }
       }
     }).catchError((Object error) async {
       if (mounted && identical(_performance, settings)) {
@@ -2251,6 +2271,14 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     _performanceChain = action;
     _mixerActions.add(action);
     unawaited(action.whenComplete(() => _mixerActions.remove(action)));
+  }
+
+  bool _sameSequenceNotes(List<int?> left, List<int?> right) {
+    if (left.length != right.length) return false;
+    for (var index = 0; index < left.length; index++) {
+      if (left[index] != right[index]) return false;
+    }
+    return true;
   }
 
   Future<void> _sendSynth(int event, int key, double value) async {
@@ -2595,6 +2623,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         _RegionSplitEdit(:final trackId) => trackId,
         _RegionTrimEdit(:final trackId) => trackId,
         _SequenceRegionEdit(:final trackId) => trackId,
+        _SequenceNotesEdit(:final trackId) => trackId,
         _ => '',
       };
 
@@ -2629,9 +2658,62 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         await _applyRegionTrimHistory(edit, redo: redo);
       } else if (edit is _SequenceRegionEdit) {
         await _applySequenceRegionHistory(edit, redo: redo);
+      } else if (edit is _SequenceNotesEdit) {
+        await _applySequenceNotesHistory(edit, redo: redo);
       }
     } finally {
       _historyOperationPending = false;
+    }
+  }
+
+  Future<void> _applySequenceNotesHistory(
+    _SequenceNotesEdit edit, {
+    required bool redo,
+  }) async {
+    final source = redo ? _redoHistory : _undoHistory;
+    final destination = redo ? _undoHistory : _redoHistory;
+    final engine = _engine;
+    final track = _tracks.where((item) => item.id == edit.trackId).firstOrNull;
+    if (engine is! PerformanceEngine ||
+        engine is! SequenceRegionEngine ||
+        track == null ||
+        !track.clips.contains(edit.clip)) {
+      _showEngineUnavailable();
+      return;
+    }
+    final performanceEngine = engine as PerformanceEngine;
+    final sequenceEngine = engine as SequenceRegionEngine;
+    final previous = List<int?>.unmodifiable(edit.clip.sequenceNotes);
+    final next = redo ? edit.afterNotes : edit.beforeNotes;
+    try {
+      await sequenceEngine.setSequenceRegion(
+          edit.regionId, edit.clip.startSeconds, next);
+      for (var index = 0; index < next.length; index++) {
+        if (previous[index] != next[index]) {
+          await performanceEngine.synthEvent(
+              5, index, next[index]?.toDouble() ?? -1);
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        edit.clip.sequenceNotes = List<int?>.unmodifiable(next);
+        _performance = _performance.copyWith(sequenceNotes: next);
+        _markSessionChanged();
+      });
+      source.removeLast();
+      destination.add(edit);
+    } catch (error) {
+      try {
+        await sequenceEngine.setSequenceRegion(
+            edit.regionId, edit.clip.startSeconds, previous);
+        for (var index = 0; index < previous.length; index++) {
+          if (previous[index] != next[index]) {
+            await performanceEngine.synthEvent(
+                5, index, previous[index]?.toDouble() ?? -1);
+          }
+        }
+      } catch (_) {}
+      if (mounted) _reportMixerFailure('Pattern note history', error);
     }
   }
 
@@ -3503,6 +3585,22 @@ class _SequenceRegionEdit {
   final ClipModel clip;
   final int regionId;
   final bool presentAfterEdit;
+}
+
+class _SequenceNotesEdit {
+  const _SequenceNotesEdit({
+    required this.trackId,
+    required this.clip,
+    required this.regionId,
+    required this.beforeNotes,
+    required this.afterNotes,
+  });
+
+  final String trackId;
+  final ClipModel clip;
+  final int regionId;
+  final List<int?> beforeNotes;
+  final List<int?> afterNotes;
 }
 
 class _RegionSplitEdit {
