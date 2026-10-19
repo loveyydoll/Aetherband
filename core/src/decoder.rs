@@ -120,7 +120,7 @@ impl StreamDecoder {
     /// The worker decodes the file in bounded blocks and keeps the ring buffer
     /// fed as the audio thread consumes it, converting rate when necessary.
     pub fn spawn(path: &Path, output_sample_rate: u32) -> Result<Self, DecoderError> {
-        Self::spawn_from_output_frame(path, output_sample_rate, 0)
+        Self::spawn_region(path, output_sample_rate, 0, None)
     }
 
     /// Spawn a decoder that begins at an output-rate frame offset in the source.
@@ -130,8 +130,19 @@ impl StreamDecoder {
         output_sample_rate: u32,
         output_frame: i64,
     ) -> Result<Self, DecoderError> {
+        Self::spawn_region(path, output_sample_rate, output_frame, None)
+    }
+
+    /// Spawn a worker for one source region. `source_start_frame` and the
+    /// optional duration use the output rate so arrangement math stays stable.
+    pub fn spawn_region(
+        path: &Path,
+        output_sample_rate: u32,
+        source_start_frame: i64,
+        max_output_frames: Option<u64>,
+    ) -> Result<Self, DecoderError> {
         let path = path.to_path_buf();
-        let output_frame = output_frame.max(0);
+        let output_frame = source_start_frame.max(0);
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_clone = Arc::clone(&stop_flag);
 
@@ -148,6 +159,7 @@ impl StreamDecoder {
                     info,
                     output_sample_rate,
                     output_frame,
+                    max_output_frames,
                     producer,
                     stop_clone,
                 ) {
@@ -200,6 +212,7 @@ fn decode_worker(
     info: AudioFileInfo,
     output_sample_rate: u32,
     output_frame: i64,
+    max_output_frames: Option<u64>,
     mut producer: Producer<DecodedBlock>,
     stop_flag: Arc<AtomicBool>,
 ) -> Result<(), DecoderError> {
@@ -288,6 +301,9 @@ fn decode_worker(
     let mut pending_r: Vec<f32> = Vec::with_capacity(DECODE_BLOCK_FRAMES);
 
     loop {
+        if max_output_frames.is_some_and(|limit| (playhead - output_frame).max(0) as u64 >= limit) {
+            break;
+        }
         if stop_flag.load(Ordering::Relaxed) {
             break;
         }
@@ -383,10 +399,24 @@ fn decode_worker(
                 (l_chunk, r_chunk)
             };
 
-            let n = out_l.len();
+            let already_written = (playhead - output_frame).max(0) as u64;
+            let allowed = max_output_frames
+                .map(|limit| {
+                    limit
+                        .saturating_sub(already_written)
+                        .min(out_l.len() as u64)
+                })
+                .unwrap_or(out_l.len() as u64) as usize;
+            if allowed == 0 {
+                return Ok(());
+            }
+            let n = allowed;
             let mut block = DecodedBlock::silent(n);
             block.start_frame = playhead;
             block.valid_frames = n;
+            let region_finished =
+                max_output_frames.is_some_and(|limit| already_written + n as u64 >= limit);
+            block.is_last = region_finished;
             for i in 0..n {
                 block.samples[i * 2] = out_l[i];
                 block.samples[i * 2 + 1] = out_r[i];
@@ -405,6 +435,9 @@ fn decode_worker(
                         std::thread::sleep(std::time::Duration::from_millis(1));
                     }
                 }
+            }
+            if region_finished {
+                return Ok(());
             }
         }
     }
@@ -434,7 +467,14 @@ fn decode_worker(
             (pending_l, pending_r)
         };
 
-        let n = out_l.len();
+        let already_written = (playhead - output_frame).max(0) as u64;
+        let n = max_output_frames
+            .map(|limit| {
+                limit
+                    .saturating_sub(already_written)
+                    .min(out_l.len() as u64)
+            })
+            .unwrap_or(out_l.len() as u64) as usize;
         let mut block = DecodedBlock::silent(n);
         block.start_frame = playhead;
         block.valid_frames = n;
@@ -604,5 +644,69 @@ mod tests {
             first_block.samples[0] > 0.45,
             "seek must skip earlier samples"
         );
+    }
+
+    #[test]
+    fn wav_decoder_reads_only_the_requested_source_region() {
+        use std::io::Write;
+        use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("aetherband-region-{stamp}.wav"));
+        let frames = 96_000u32;
+        let data_bytes = frames * 4;
+        let mut wav = Vec::with_capacity(44 + data_bytes as usize);
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data_bytes).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&48_000u32.to_le_bytes());
+        wav.extend_from_slice(&192_000u32.to_le_bytes());
+        wav.extend_from_slice(&4u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data_bytes.to_le_bytes());
+        for frame in 0..frames {
+            let sample = if frame < 24_000 { 8192i16 } else { 16_384i16 };
+            wav.extend_from_slice(&sample.to_le_bytes());
+            wav.extend_from_slice(&sample.to_le_bytes());
+        }
+        std::fs::File::create(&path)
+            .unwrap()
+            .write_all(&wav)
+            .unwrap();
+
+        let mut decoder = StreamDecoder::spawn_region(&path, 48_000, 24_000, Some(12_000)).unwrap();
+        let mut consumer = decoder.take_consumer();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut first = true;
+        let mut frames_read = 0;
+        loop {
+            match consumer.pop() {
+                Ok(block) => {
+                    if first {
+                        assert_eq!(block.start_frame, 24_000);
+                        assert!(block.samples[0] > 0.45);
+                        first = false;
+                    }
+                    frames_read += block.valid_frames;
+                    if block.is_last {
+                        break;
+                    }
+                }
+                Err(_) => {
+                    assert!(Instant::now() < deadline, "decoder did not finish region");
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+            }
+        }
+        decoder.stop();
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(frames_read, 12_000);
     }
 }

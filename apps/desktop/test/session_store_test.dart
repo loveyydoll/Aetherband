@@ -57,7 +57,44 @@ void main() {
     expect(reopened.performance.preset, 0);
     expect(reopened.performance.tempo, 92);
     expect(
-        File(path).readAsString(), completion(contains('"schemaVersion": 3')));
+        File(path).readAsString(), completion(contains('"schemaVersion": 4')));
+  });
+
+  test('split regions round-trip source ranges and timeline positions', () {
+    final split = document().tracks.single;
+    final encoded = AudioSessionDocument(
+      title: 'Split take',
+      tracks: [
+        SavedAudioTrack(
+          id: split.id,
+          name: split.name,
+          sourceUri: split.sourceUri,
+          gain: split.gain,
+          pan: split.pan,
+          muted: split.muted,
+          regions: const [
+            SavedAudioRegion(
+              id: 'native-stable-001-clip',
+              startSeconds: 0,
+              sourceStartSeconds: 0,
+              durationSeconds: 2.5,
+            ),
+            SavedAudioRegion(
+              id: 'native-stable-001-region-right',
+              startSeconds: 2.5,
+              sourceStartSeconds: 2.5,
+              durationSeconds: 1.75,
+            ),
+          ],
+        ),
+      ],
+    ).toJson();
+
+    final restored = AudioSessionDocument.fromJson(encoded);
+    expect(restored.tracks.single.effectiveRegions, hasLength(2));
+    expect(restored.tracks.single.effectiveRegions[1].startSeconds, 2.5);
+    expect(restored.tracks.single.effectiveRegions[1].sourceStartSeconds, 2.5);
+    expect(restored.tracks.single.effectiveRegions[1].durationSeconds, 1.75);
   });
 
   test('session restores instrument macros tempo click and editable sequence',

@@ -85,6 +85,12 @@ abstract interface class TransportSeekEngine {
   Future<void> seekSeconds(double seconds);
 }
 
+/// Optional source-region configuration for native audio clips.
+abstract interface class AudioRegionEngine {
+  Future<void> setTrackRegionSeconds(
+      int trackId, double sourceStartSeconds, double durationSeconds);
+}
+
 /// Optional native performance capabilities, separate from imported-track I/O.
 abstract interface class PerformanceEngine {
   Future<void> synthEvent(int event, int key, double value);

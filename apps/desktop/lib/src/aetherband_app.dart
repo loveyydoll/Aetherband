@@ -82,6 +82,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   PerformanceSettings _performance = const PerformanceSettings();
   Future<void> _performanceChain = Future.value();
   final Map<String, int> _nativeTrackIds = <String, int>{};
+  final Map<String, int> _nativeRegionIds = <String, int>{};
   final Map<String, String> _nativeTrackSources = <String, String>{};
   SavedAudioTrack? _copiedAudioTrack;
   final Map<String, Timer> _clipPositionTimers = <String, Timer>{};
@@ -167,6 +168,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       setState(() {
         _tracks.removeWhere((track) => _nativeTrackIds.containsKey(track.id));
         _nativeTrackIds.clear();
+        _nativeRegionIds.clear();
         _nativeTrackSources.clear();
         _clipMoveStarts.clear();
         _undoClipMoves.clear();
@@ -378,10 +380,160 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         (active) => active.id == track.id && active.clips.contains(clip))) {
       return;
     }
+    if (peaks != null && clip.sourceDurationSeconds != null) {
+      peaks = _sliceWaveform(
+        peaks,
+        clip.sourceDurationSeconds!,
+        clip.sourceStartSeconds,
+        clip.durationSeconds ?? clip.sourceDurationSeconds!,
+      );
+    }
     setState(() {
       clip.waveformPeaks = peaks;
       clip.waveformLoaded = true;
     });
+  }
+
+  List<double> _sliceWaveform(List<double> peaks, double sourceDuration,
+      double sourceStart, double duration) {
+    if (peaks.isEmpty || sourceDuration <= 0 || duration <= 0) return peaks;
+    final first = (sourceStart / sourceDuration * peaks.length)
+        .floor()
+        .clamp(0, peaks.length - 1);
+    final last = ((sourceStart + duration) / sourceDuration * peaks.length)
+        .ceil()
+        .clamp(first + 1, peaks.length);
+    return peaks.sublist(first, last);
+  }
+
+  int? _nativeIdForClip(ClipModel clip) => _nativeRegionIds[clip.id];
+
+  List<int> _nativeIdsForTrack(TrackModel track) => track.clips
+      .map(_nativeIdForClip)
+      .whereType<int>()
+      .toSet()
+      .toList(growable: false);
+
+  Future<void> _splitSelectedRegionAtPlayhead() async {
+    final track = _selectedTrack;
+    final clip =
+        track?.clips.where((item) => item.id == _selectedClipId).firstOrNull;
+    final engine = _engine;
+    if (track == null || clip == null || clip.isDemo) {
+      _showFeatureUnavailable('Splitting demo or unselected clips');
+      return;
+    }
+    if (_trackOperationPending || _initializingEngine) return;
+    if (_telemetry.isPlaying || _isRecording) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Stop playback and recording before splitting a clip.'),
+      ));
+      return;
+    }
+    if (engine == null || engine is! AudioRegionEngine) {
+      _showFeatureUnavailable('Audio region editing');
+      return;
+    }
+    final duration = clip.durationSeconds;
+    final fullDuration = clip.sourceDurationSeconds;
+    final start = _telemetry.playheadSeconds;
+    final local = start - clip.startSeconds;
+    if (duration == null ||
+        fullDuration == null ||
+        local < 0.02 ||
+        duration - local < 0.02 ||
+        clip.sourceStartSeconds + duration > fullDuration + 0.02) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content:
+            Text('Place the playhead inside the clip, away from its edges.'),
+      ));
+      return;
+    }
+    final nativeIds = _nativeIdsForTrack(track);
+    final originalId = _nativeIdForClip(clip);
+    if (originalId == null || nativeIds.length != track.clips.length) {
+      _showEngineUnavailable();
+      return;
+    }
+    setState(() => _trackOperationPending = true);
+    int? createdId;
+    var leftChanged = false;
+    try {
+      if (await engine.getTrackCount() >= AudioSessionDocument.maxTracks) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('This session has reached its audio region limit.'),
+          ));
+        }
+        return;
+      }
+      if (!mounted) return;
+      final loaded = await engine.loadTrack(_nativeTrackSources[track.id]!);
+      createdId = loaded.id;
+      await engine.setTrackVolume(loaded.id, track.volume);
+      await engine.setTrackPan(loaded.id, track.pan);
+      await engine.muteTrack(loaded.id, track.muted);
+      await engine.soloTrack(loaded.id, track.solo);
+      final splitEngine = engine as AudioRegionEngine;
+      final rightDuration = duration - local;
+      await splitEngine.setTrackRegionSeconds(
+          loaded.id, clip.sourceStartSeconds + local, rightDuration);
+      await engine.setTrackStartSeconds(loaded.id, start);
+      await splitEngine.setTrackRegionSeconds(
+          originalId, clip.sourceStartSeconds, local);
+      leftChanged = true;
+
+      final rightPeaks = clip.waveformPeaks == null
+          ? null
+          : _sliceWaveform(clip.waveformPeaks!, duration, local, rightDuration);
+      final leftPeaks = clip.waveformPeaks == null
+          ? null
+          : _sliceWaveform(clip.waveformPeaks!, duration, 0, local);
+      final right = ClipModel(
+        id: '${track.id}-region-${_createPersistentTrackId()}',
+        title: clip.title,
+        start: 0,
+        width: 0,
+        color: clip.color,
+        isDemo: false,
+        durationSeconds: rightDuration,
+        sourceDurationSeconds: fullDuration,
+        sourceStartSeconds: clip.sourceStartSeconds + local,
+        startSeconds: start,
+        waveformPeaks: rightPeaks,
+        waveformLoaded: clip.waveformLoaded,
+      );
+      if (!mounted) return;
+      setState(() {
+        clip.durationSeconds = local;
+        clip.waveformPeaks = leftPeaks;
+        track.clips.insert(track.clips.indexOf(clip) + 1, right);
+        _nativeRegionIds[right.id] = loaded.id;
+        _confirmedClipStarts[right.id] = right.startSeconds;
+        _selectedClipId = right.id;
+        _markSessionChanged();
+      });
+      createdId = null;
+    } catch (error) {
+      if (leftChanged) {
+        try {
+          await (engine as AudioRegionEngine).setTrackRegionSeconds(
+              originalId, clip.sourceStartSeconds, duration);
+        } catch (_) {}
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Split failed: $error')),
+        );
+      }
+    } finally {
+      if (createdId != null) {
+        try {
+          await engine.removeTrack(createdId);
+        } catch (_) {}
+      }
+      if (mounted) setState(() => _trackOperationPending = false);
+    }
   }
 
   Future<void> _importAudio() async {
@@ -432,6 +584,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       );
       setState(() {
         _nativeTrackIds[id] = nativeId;
+        _nativeRegionIds[clip.id] = nativeId;
         _nativeTrackSources[id] = file.path;
         _showMixer = true;
         _markSessionChanged();
@@ -577,6 +730,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     );
     setState(() {
       _nativeTrackIds[id] = loaded.id;
+      _nativeRegionIds[clip.id] = loaded.id;
       _nativeTrackSources[id] = path;
       _showMixer = true;
       _markSessionChanged();
@@ -591,20 +745,29 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     if (_trackOperationPending || _initializingEngine) return;
     final engine = _engine;
     final selectedId = _selectedTrackId;
-    final nativeId = _nativeTrackIds[selectedId];
-    if (engine == null || nativeId == null) {
+    final selected =
+        _tracks.where((track) => track.id == selectedId).firstOrNull;
+    final nativeIds = selected == null ? <int>[] : _nativeIdsForTrack(selected);
+    if (engine == null || nativeIds.isEmpty) {
       _showFeatureUnavailable('Removing demo tracks');
       return;
     }
     setState(() => _trackOperationPending = true);
+    final removedNativeIds = <int>[];
     try {
-      await engine.removeTrack(nativeId);
+      for (final nativeId in nativeIds) {
+        await engine.removeTrack(nativeId);
+        removedNativeIds.add(nativeId);
+      }
       if (!mounted) return;
       setState(() {
         final removedTrack =
             _tracks.where((track) => track.id == selectedId).firstOrNull;
         _tracks.removeWhere((track) => track.id == selectedId);
         _nativeTrackIds.remove(selectedId);
+        for (final clip in removedTrack?.clips ?? const <ClipModel>[]) {
+          _nativeRegionIds.remove(clip.id);
+        }
         _nativeTrackSources.remove(selectedId);
         if (removedTrack != null) {
           for (final clip in removedTrack.clips) {
@@ -623,8 +786,37 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       });
     } catch (error) {
       if (mounted) {
+        if (removedNativeIds.isNotEmpty) {
+          setState(() {
+            final track =
+                _tracks.where((item) => item.id == selectedId).firstOrNull;
+            if (track != null) {
+              final removedClips = track.clips
+                  .where((clip) =>
+                      removedNativeIds.contains(_nativeRegionIds[clip.id]))
+                  .toList();
+              for (final clip in removedClips) {
+                track.clips.remove(clip);
+                _nativeRegionIds.remove(clip.id);
+                _confirmedClipStarts.remove(clip.id);
+                _clipPositionTimers.remove(clip.id)?.cancel();
+              }
+              final remaining = _nativeIdsForTrack(track);
+              if (remaining.isEmpty) {
+                _tracks.remove(track);
+                _nativeTrackIds.remove(selectedId);
+                _nativeTrackSources.remove(selectedId);
+                _selectedTrackId = _tracks.isEmpty ? '' : _tracks.first.id;
+                _selectedClipId = null;
+              } else {
+                _nativeTrackIds[selectedId] = remaining.first;
+              }
+              _markSessionChanged();
+            }
+          });
+        }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Track removal failed: $error')),
+          SnackBar(content: Text('Track removal was incomplete: $error')),
         );
       }
     } finally {
@@ -655,6 +847,13 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       return;
     }
     if (clip == null) return;
+    if (selected.clips.length > 1) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text(
+            'Duplicating a track with split regions is not available yet.'),
+      ));
+      return;
+    }
     final targetStart = startSeconds ?? clip.startSeconds;
 
     setState(() => _trackOperationPending = true);
@@ -706,6 +905,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       if (!mounted) return;
       setState(() {
         _nativeTrackIds[id] = loaded.id;
+        _nativeRegionIds[duplicateClip.id] = loaded.id;
         _nativeTrackSources[id] = source;
         _tracks.add(duplicate);
         _selectedTrackId = id;
@@ -744,6 +944,13 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     final clip = selected?.clips.firstOrNull;
     if (selected == null || source == null || clip == null) {
       _showFeatureUnavailable('Copying demo or instrument tracks');
+      return false;
+    }
+    if (selected.clips.length > 1) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content:
+            Text('Copying a track with split regions is not available yet.'),
+      ));
       return false;
     }
     _copiedAudioTrack = SavedAudioTrack(
@@ -859,6 +1066,15 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         muted: track.muted,
         solo: track.solo,
         startSeconds: track.clips.firstOrNull?.startSeconds ?? 0,
+        regions: track.clips
+            .where((clip) => !clip.isDemo)
+            .map((clip) => SavedAudioRegion(
+                  id: clip.id,
+                  startSeconds: clip.startSeconds,
+                  sourceStartSeconds: clip.sourceStartSeconds,
+                  durationSeconds: clip.durationSeconds,
+                ))
+            .toList(growable: false),
       ));
     }
     return AudioSessionDocument(
@@ -903,7 +1119,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       final track = clip == null
           ? null
           : _tracks.where((track) => track.clips.contains(clip)).firstOrNull;
-      final nativeId = track == null ? null : _nativeTrackIds[track.id];
+      final nativeId = clip == null ? null : _nativeIdForClip(clip);
       final engine = _engine;
       if (clip != null && track != null && nativeId != null && engine != null) {
         _queueMixerAction(
@@ -1032,6 +1248,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     required EngineController preparedEngine,
     required List<TrackModel> preparedTracks,
     required Map<String, int> preparedIds,
+    required Map<String, int> preparedRegionIds,
     required Map<String, String> preparedSources,
     required String title,
     required String? path,
@@ -1060,6 +1277,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       _nativeTrackIds
         ..clear()
         ..addAll(preparedIds);
+      _nativeRegionIds
+        ..clear()
+        ..addAll(preparedRegionIds);
       _nativeTrackSources
         ..clear()
         ..addAll(preparedSources);
@@ -1133,27 +1353,46 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
           staged as PerformanceEngine, document.performance);
       final tracks = <TrackModel>[];
       final ids = <String, int>{};
+      final regionIds = <String, int>{};
       final sources = <String, String>{};
       for (final saved in document.tracks) {
         final source = saved.sourcePath;
-        final loaded = await staged.loadTrack(source);
-        await staged.setTrackVolume(loaded.id, saved.gain);
-        await staged.setTrackPan(loaded.id, saved.pan);
-        await staged.muteTrack(loaded.id, saved.muted);
-        await staged.soloTrack(loaded.id, saved.solo);
-        await staged.setTrackStartSeconds(loaded.id, saved.startSeconds);
-        ids[saved.id] = loaded.id;
+        final clips = <ClipModel>[];
+        for (final region in saved.effectiveRegions) {
+          final loaded = await staged.loadTrack(source);
+          await staged.setTrackVolume(loaded.id, saved.gain);
+          await staged.setTrackPan(loaded.id, saved.pan);
+          await staged.muteTrack(loaded.id, saved.muted);
+          await staged.soloTrack(loaded.id, saved.solo);
+          await staged.setTrackStartSeconds(loaded.id, region.startSeconds);
+          if (region.sourceStartSeconds > 0 || region.durationSeconds != null) {
+            final regionEngine = staged;
+            if (regionEngine is! AudioRegionEngine) {
+              throw StateError(
+                  'This engine cannot restore split audio regions.');
+            }
+            await (regionEngine as AudioRegionEngine).setTrackRegionSeconds(
+              loaded.id,
+              region.sourceStartSeconds,
+              region.durationSeconds ?? loaded.durationSeconds ?? 0,
+            );
+          }
+          ids.putIfAbsent(saved.id, () => loaded.id);
+          regionIds[region.id] = loaded.id;
+          clips.add(ClipModel(
+            id: region.id,
+            title: saved.name,
+            start: 0,
+            width: 0,
+            color: AetherColors.sage,
+            isDemo: false,
+            durationSeconds: region.durationSeconds ?? loaded.durationSeconds,
+            sourceDurationSeconds: loaded.durationSeconds,
+            sourceStartSeconds: region.sourceStartSeconds,
+            startSeconds: region.startSeconds,
+          ));
+        }
         sources[saved.id] = source;
-        final clip = ClipModel(
-          id: '${saved.id}-clip',
-          title: saved.name,
-          start: 0,
-          width: 0,
-          color: AetherColors.sage,
-          isDemo: false,
-          durationSeconds: loaded.durationSeconds,
-          startSeconds: saved.startSeconds,
-        );
         tracks.add(TrackModel(
           id: saved.id,
           name: saved.name,
@@ -1163,7 +1402,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
           pan: saved.pan,
           muted: saved.muted,
           solo: saved.solo,
-          clips: [clip],
+          clips: clips,
         ));
       }
       if (!mounted) return;
@@ -1171,6 +1410,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         preparedEngine: staged,
         preparedTracks: tracks,
         preparedIds: ids,
+        preparedRegionIds: regionIds,
         preparedSources: sources,
         title: document.title,
         path: file.path,
@@ -1179,9 +1419,10 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       staged = null; // Ownership now belongs to the workspace.
       for (final track in tracks) {
         final source = sources[track.id];
-        final clip = track.clips.firstOrNull;
-        if (source != null && clip != null) {
-          unawaited(_loadClipWaveform(track, clip, source));
+        if (source != null) {
+          for (final clip in track.clips) {
+            unawaited(_loadClipWaveform(track, clip, source));
+          }
         }
       }
       if (mounted) {
@@ -1221,6 +1462,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         preparedEngine: staged,
         preparedTracks: const [],
         preparedIds: const {},
+        preparedRegionIds: const {},
         preparedSources: const {},
         title: 'Untitled Session',
         path: null,
@@ -1334,6 +1576,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         return;
       case 'edit.redo':
         unawaited(_redoClipMove());
+        return;
+      case 'region.split':
+        unawaited(_splitSelectedRegionAtPlayhead());
         return;
       case 'edit.cut':
         if (_copySelectedAudioTrack()) unawaited(_removeSelectedTrack());
@@ -1522,7 +1767,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       }
       return;
     }
-    final nativeId = _nativeTrackIds[track.id];
+    final nativeId = _nativeIdForClip(clip);
     final engine = _engine;
     if (nativeId == null || engine == null || _trackOperationPending) return;
     final pixelsPerSecond = timelinePixelsPerSecond(_performance.tempo);
@@ -1556,7 +1801,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         (clip.startSeconds - before).abs() < 1e-9) {
       return;
     }
-    final nativeId = _nativeTrackIds[track.id];
+    final nativeId = _nativeIdForClip(clip);
     final engine = _engine;
     if (nativeId == null || engine == null) return;
     _clipPositionTimers.remove(clip.id)?.cancel();
@@ -1608,7 +1853,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     final track = _tracks.where((item) => item.id == edit.trackId).firstOrNull;
     final clip =
         track?.clips.where((item) => item.id == edit.clipId).firstOrNull;
-    final nativeId = track == null ? null : _nativeTrackIds[track.id];
+    final nativeId = clip == null ? null : _nativeIdForClip(clip);
     if (engine == null || track == null || clip == null || nativeId == null) {
       source.add(edit);
       _showEngineUnavailable();
@@ -1626,7 +1871,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       _confirmedClipStarts[clip.id] = next;
       destination.add(edit);
     } catch (error) {
-      if (mounted && _nativeTrackIds[track.id] == nativeId) {
+      if (mounted && _nativeIdForClip(clip) == nativeId) {
         setState(() => clip.startSeconds = previous);
       }
       source.add(edit);
@@ -1653,7 +1898,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       }
     } catch (error) {
       if (!mounted) return;
-      if (_nativeTrackIds[track.id] == nativeId &&
+      if (_nativeIdForClip(clip) == nativeId &&
           (clip.startSeconds - seconds).abs() < 0.000001) {
         setState(() => clip.startSeconds = previous);
       }
@@ -1698,9 +1943,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   void _setTrackVolume(TrackModel track, double value) {
-    final id = _nativeTrackIds[track.id];
+    final ids = _nativeIdsForTrack(track);
     final engine = _engine;
-    if (id != null && engine == null) {
+    if (ids.isNotEmpty && engine == null) {
       _showEngineUnavailable();
       return;
     }
@@ -1708,20 +1953,29 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     final previous = track.volume;
     setState(() {
       track.volume = value;
-      if (id != null) _markSessionChanged();
+      if (ids.isNotEmpty) _markSessionChanged();
     });
-    if (id != null) {
-      _queueMixerAction(_commitVolume(engine!, track, id, value, previous));
+    if (ids.isNotEmpty) {
+      _queueMixerAction(_commitVolume(engine!, track, ids, value, previous));
     }
   }
 
-  Future<void> _commitVolume(EngineController engine, TrackModel track, int id,
-      double value, double previous) async {
+  Future<void> _commitVolume(EngineController engine, TrackModel track,
+      List<int> ids, double value, double previous) async {
+    final applied = <int>[];
     try {
-      await engine.setTrackVolume(id, value);
+      for (final id in ids) {
+        await engine.setTrackVolume(id, value);
+        applied.add(id);
+      }
     } catch (error) {
       if (!mounted) return;
-      if (_nativeTrackIds[track.id] == id && track.volume == value) {
+      for (final id in applied) {
+        try {
+          await engine.setTrackVolume(id, previous);
+        } catch (_) {}
+      }
+      if (track.volume == value) {
         setState(() => track.volume = previous);
       }
       _reportMixerFailure('Track volume', error);
@@ -1729,9 +1983,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   void _setTrackPan(TrackModel track, double value) {
-    final id = _nativeTrackIds[track.id];
+    final ids = _nativeIdsForTrack(track);
     final engine = _engine;
-    if (id != null && engine == null) {
+    if (ids.isNotEmpty && engine == null) {
       _showEngineUnavailable();
       return;
     }
@@ -1739,20 +1993,29 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     final previous = track.pan;
     setState(() {
       track.pan = value;
-      if (id != null) _markSessionChanged();
+      if (ids.isNotEmpty) _markSessionChanged();
     });
-    if (id != null) {
-      _queueMixerAction(_commitPan(engine!, track, id, value, previous));
+    if (ids.isNotEmpty) {
+      _queueMixerAction(_commitPan(engine!, track, ids, value, previous));
     }
   }
 
-  Future<void> _commitPan(EngineController engine, TrackModel track, int id,
-      double value, double previous) async {
+  Future<void> _commitPan(EngineController engine, TrackModel track,
+      List<int> ids, double value, double previous) async {
+    final applied = <int>[];
     try {
-      await engine.setTrackPan(id, value);
+      for (final id in ids) {
+        await engine.setTrackPan(id, value);
+        applied.add(id);
+      }
     } catch (error) {
       if (!mounted) return;
-      if (_nativeTrackIds[track.id] == id && track.pan == value) {
+      for (final id in applied) {
+        try {
+          await engine.setTrackPan(id, previous);
+        } catch (_) {}
+      }
+      if (track.pan == value) {
         setState(() => track.pan = previous);
       }
       _reportMixerFailure('Track pan', error);
@@ -1760,9 +2023,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   void _setTrackMute(TrackModel track, bool value) {
-    final id = _nativeTrackIds[track.id];
+    final ids = _nativeIdsForTrack(track);
     final engine = _engine;
-    if (id != null && engine == null) {
+    if (ids.isNotEmpty && engine == null) {
       _showEngineUnavailable();
       return;
     }
@@ -1770,20 +2033,29 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     final previous = track.muted;
     setState(() {
       track.muted = value;
-      if (id != null) _markSessionChanged();
+      if (ids.isNotEmpty) _markSessionChanged();
     });
-    if (id != null) {
-      _queueMixerAction(_commitMute(engine!, track, id, value, previous));
+    if (ids.isNotEmpty) {
+      _queueMixerAction(_commitMute(engine!, track, ids, value, previous));
     }
   }
 
-  Future<void> _commitMute(EngineController engine, TrackModel track, int id,
-      bool value, bool previous) async {
+  Future<void> _commitMute(EngineController engine, TrackModel track,
+      List<int> ids, bool value, bool previous) async {
+    final applied = <int>[];
     try {
-      await engine.muteTrack(id, value);
+      for (final id in ids) {
+        await engine.muteTrack(id, value);
+        applied.add(id);
+      }
     } catch (error) {
       if (!mounted) return;
-      if (_nativeTrackIds[track.id] == id && track.muted == value) {
+      for (final id in applied) {
+        try {
+          await engine.muteTrack(id, previous);
+        } catch (_) {}
+      }
+      if (track.muted == value) {
         setState(() => track.muted = previous);
       }
       _reportMixerFailure('Track mute', error);
@@ -1791,30 +2063,39 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   void _setTrackSolo(TrackModel track, bool value) {
-    final id = _nativeTrackIds[track.id];
+    final ids = _nativeIdsForTrack(track);
     final engine = _engine;
     if (_trackOperationPending) return;
-    if (id != null && engine == null) {
+    if (ids.isNotEmpty && engine == null) {
       _showEngineUnavailable();
       return;
     }
     final previous = track.solo;
     setState(() {
       track.solo = value;
-      if (id != null) _markSessionChanged();
+      if (ids.isNotEmpty) _markSessionChanged();
     });
-    if (id != null) {
-      _queueMixerAction(_commitSolo(engine!, track, id, value, previous));
+    if (ids.isNotEmpty) {
+      _queueMixerAction(_commitSolo(engine!, track, ids, value, previous));
     }
   }
 
-  Future<void> _commitSolo(EngineController engine, TrackModel track, int id,
-      bool value, bool previous) async {
+  Future<void> _commitSolo(EngineController engine, TrackModel track,
+      List<int> ids, bool value, bool previous) async {
+    final applied = <int>[];
     try {
-      await engine.soloTrack(id, value);
+      for (final id in ids) {
+        await engine.soloTrack(id, value);
+        applied.add(id);
+      }
     } catch (error) {
       if (!mounted) return;
-      if (_nativeTrackIds[track.id] == id && track.solo == value) {
+      for (final id in applied) {
+        try {
+          await engine.soloTrack(id, previous);
+        } catch (_) {}
+      }
+      if (track.solo == value) {
         setState(() => track.solo = previous);
       }
       _reportMixerFailure('Track solo', error);
@@ -2054,7 +2335,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                       engineConnected: _engine != null && _engineError == null,
                       isPlaying: _telemetry.isPlaying,
                       engineError: _engineError,
-                      loadedTrackCount: _nativeTrackIds.length,
+                      loadedTrackCount: _nativeRegionIds.length,
                       outputDeviceName: _selectedOutputDeviceName,
                     ),
                   ],

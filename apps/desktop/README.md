@@ -4,7 +4,7 @@ This is Aetherband's Windows-only desktop frontend, built with Flutter/Dart. It 
 
 ## Status
 
-Use **Import** in the arrangement toolbar to load audio; known-duration clips can be moved on the beat grid while stopped at the start. The Audio menu lists Windows output devices and switches the engine stream. HypnoSynth plays live keys and its generated phrase. Sessions save and reopen imported tracks and mixer/performance settings. **Export Mixdown** writes stereo PCM16 WAV. Waveforms, recording, editable MIDI regions, split/trim/resize, undo/redo, and effects processing are not implemented yet; errors are shown instead of simulated success.
+Use **Import** in the arrangement toolbar to load audio; known-duration clips can be moved on the beat grid while stopped at the start. The Region menu splits a selected audio clip at the stopped playhead into two playable source ranges, retained when saving and reopening the session. The Audio menu lists Windows output devices and switches the engine stream. HypnoSynth plays live keys and its generated phrase. Sessions save and reopen imported tracks and mixer/performance settings. **Export Mixdown** writes stereo PCM16 WAV. Waveforms and input recording are implemented; editable MIDI regions, trim/resize, split-edit undo, copying split tracks, and effects processing remain future work and are not represented as working controls.
 
 ## Prerequisites
 

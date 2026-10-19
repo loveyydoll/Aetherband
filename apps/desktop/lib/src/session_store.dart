@@ -16,6 +16,7 @@ class SavedAudioTrack {
     required this.muted,
     this.solo = false,
     this.startSeconds = 0,
+    this.regions = const <SavedAudioRegion>[],
   });
 
   final String id;
@@ -26,6 +27,16 @@ class SavedAudioTrack {
   final bool muted;
   final bool solo;
   final double startSeconds;
+  final List<SavedAudioRegion> regions;
+
+  List<SavedAudioRegion> get effectiveRegions => regions.isEmpty
+      ? <SavedAudioRegion>[
+          SavedAudioRegion(
+            id: '$id-clip',
+            startSeconds: startSeconds,
+          ),
+        ]
+      : regions;
 
   String get sourcePath => File.fromUri(_sourceFileUri(sourceUri)).path;
 
@@ -38,9 +49,10 @@ class SavedAudioTrack {
         'muted': muted,
         'solo': solo,
         'startSeconds': startSeconds,
+        'regions': effectiveRegions.map((region) => region.toJson()).toList(),
       };
 
-  factory SavedAudioTrack.fromJson(Object? value) {
+  factory SavedAudioTrack.fromJson(Object? value, {bool hasRegions = false}) {
     if (value is! Map<String, dynamic>) {
       throw const FormatException('Session track must be an object.');
     }
@@ -63,6 +75,14 @@ class SavedAudioTrack {
       throw const FormatException(
           'Track mute/solo flags or clip start time are invalid.');
     }
+    final regions = hasRegions
+        ? _regionsFromJson(value['regions'], id)
+        : <SavedAudioRegion>[
+            SavedAudioRegion(
+              id: '$id-clip',
+              startSeconds: startSeconds.toDouble(),
+            ),
+          ];
     return SavedAudioTrack(
       id: id,
       name: name,
@@ -72,6 +92,60 @@ class SavedAudioTrack {
       muted: muted,
       solo: solo,
       startSeconds: startSeconds.toDouble(),
+      regions: regions,
+    );
+  }
+}
+
+class SavedAudioRegion {
+  const SavedAudioRegion({
+    required this.id,
+    required this.startSeconds,
+    this.sourceStartSeconds = 0,
+    this.durationSeconds,
+  });
+
+  final String id;
+  final double startSeconds;
+  final double sourceStartSeconds;
+  final double? durationSeconds;
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'startSeconds': startSeconds,
+        'sourceStartSeconds': sourceStartSeconds,
+        'durationSeconds': durationSeconds,
+      };
+
+  factory SavedAudioRegion.fromJson(Object? value, String trackId) {
+    if (value is! Map<String, dynamic>) {
+      throw const FormatException('Audio region must be an object.');
+    }
+    final id = _boundedText(value['id'], 'region id', 160);
+    final start = value['startSeconds'];
+    final sourceStart = value['sourceStartSeconds'] ?? 0;
+    final duration = value['durationSeconds'];
+    if (start is! num ||
+        !start.isFinite ||
+        start < 0 ||
+        start > 86400 ||
+        sourceStart is! num ||
+        !sourceStart.isFinite ||
+        sourceStart < 0 ||
+        sourceStart > 86400 ||
+        (duration != null &&
+            (duration is! num ||
+                !duration.isFinite ||
+                duration <= 0 ||
+                duration > 86400)) ||
+        !id.startsWith('$trackId-')) {
+      throw const FormatException('Audio region position or range is invalid.');
+    }
+    return SavedAudioRegion(
+      id: id,
+      startSeconds: start.toDouble(),
+      sourceStartSeconds: sourceStart.toDouble(),
+      durationSeconds: (duration as num?)?.toDouble(),
     );
   }
 }
@@ -83,7 +157,7 @@ class AudioSessionDocument {
       this.performance = const PerformanceSettings()});
 
   static const String format = 'aetherband-session';
-  static const int schemaVersion = 3;
+  static const int schemaVersion = 4;
   static const int maxTracks = 64;
 
   final String title;
@@ -107,6 +181,7 @@ class AudioSessionDocument {
     }
     if (value['schemaVersion'] != 1 &&
         value['schemaVersion'] != 2 &&
+        value['schemaVersion'] != 3 &&
         value['schemaVersion'] != schemaVersion) {
       throw FormatException(
         'Unsupported session version: ${value['schemaVersion']}.',
@@ -117,10 +192,21 @@ class AudioSessionDocument {
     if (data is! List || data.length > maxTracks) {
       throw const FormatException('Invalid session track list or track limit.');
     }
-    final tracks = data.map(SavedAudioTrack.fromJson).toList(growable: false);
+    final hasRegions = value['schemaVersion'] == 4;
+    final tracks = data
+        .map((track) => SavedAudioTrack.fromJson(track, hasRegions: hasRegions))
+        .toList(growable: false);
     final ids = tracks.map((track) => track.id).toSet();
-    if (ids.length != tracks.length) {
-      throw const FormatException('Duplicate persistent track IDs.');
+    final regionIds = tracks
+        .expand((track) => track.effectiveRegions)
+        .map((region) => region.id)
+        .toList();
+    if (ids.length != tracks.length ||
+        regionIds.toSet().length != regionIds.length ||
+        regionIds.any(ids.contains) ||
+        regionIds.length > maxTracks) {
+      throw const FormatException(
+          'Duplicate track/region IDs or track limit exceeded.');
     }
     return AudioSessionDocument(
         title: title,
@@ -139,6 +225,17 @@ String _boundedText(Object? value, String name, int limit) {
     throw FormatException('Invalid $name.');
   }
   return value;
+}
+
+List<SavedAudioRegion> _regionsFromJson(Object? value, String trackId) {
+  if (value is! List ||
+      value.isEmpty ||
+      value.length > AudioSessionDocument.maxTracks) {
+    throw const FormatException('Invalid audio region list or region limit.');
+  }
+  return value
+      .map((region) => SavedAudioRegion.fromJson(region, trackId))
+      .toList(growable: false);
 }
 
 double _unitNumber(Object? value, String name) {

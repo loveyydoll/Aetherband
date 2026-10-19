@@ -1,4 +1,4 @@
-# Aetherband native session format — Alpha v3
+# Aetherband native session format — Alpha v4
 
 **Implemented in:** `apps/desktop/lib/src/session_store.dart` and the Flutter File menu.  
 **Extension:** `.aetherband.json` (JSON, UTF-8).  
@@ -6,12 +6,12 @@
 
 ## What this version actually saves
 
-A v3 document saves the session title, ordered imported audio tracks, stable persistent track IDs, local file URIs, display names, track gain, pan, mute and solo settings, clip start positions, and HypnoSynth/performance settings. Native engine IDs are allocated afresh when reopening and never appear in the document. Version 1 and version 2 files remain readable; missing solo and clip-position fields default to off and zero respectively.
+A v4 document saves the session title, ordered imported audio tracks, stable persistent track IDs, local file URIs, display names, track gain, pan, mute and solo settings, clip timeline positions and source ranges, and HypnoSynth/performance settings. Native engine IDs are allocated afresh when reopening and never appear in the document. Versions 1 through 3 remain readable; missing solo and clip-position fields default to off and zero respectively.
 
 ```json
 {
   "format": "aetherband-session",
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "title": "My Song",
   "performance": {
     "tempo": 120.0,
@@ -30,13 +30,21 @@ A v3 document saves the session title, ordered imported audio tracks, stable per
       "pan": 0.5,
       "muted": false,
       "solo": false,
-      "startSeconds": 2.5
+      "startSeconds": 2.5,
+      "regions": [
+        {
+          "id": "native-stable-001-clip",
+          "startSeconds": 2.5,
+          "sourceStartSeconds": 0.0,
+          "durationSeconds": 4.25
+        }
+      ]
     }
   ]
 }
 ```
 
-The app validates schema version, object fields, unique IDs, parameter ranges, track count (maximum 64) and local-file URI format. The document has a 2 MiB size limit. Opening preflights the referenced audio paths. Unsupported versions, malformed JSON or unavailable source audio raise visible errors instead of loading an incomplete session.
+The app validates schema version, object fields, globally unique track/region IDs, parameter ranges, total audio region count (maximum 64) and local-file URI format. The document has a 2 MiB size limit. Opening preflights the referenced audio paths. Unsupported versions, malformed JSON or unavailable source audio raise visible errors instead of loading an incomplete session.
 
 ## Save and reopen
 
@@ -49,7 +57,7 @@ The app validates schema version, object fields, unique IDs, parameter ranges, t
 ## Explicit non-features
 
 * Local audio files are **referenced, not embedded or copied**. Do not move them after saving; cross-computer portability and relinking are not implemented.
-* The existing demo clips remain visualization-only and are not saved. Imported audio clips snap to quarter-note beats while moved with the transport stopped at its start; native playback scheduling and the clip start position are saved together.
+* The existing demo clips remain visualization-only and are not saved. Imported audio clips snap to quarter-note beats while moved with transport stopped at its start; the Region menu can split a selected audio clip at the stopped playhead. Source offsets and durations are applied by native playback and retained in the session.
 * This format does **not** save recorded audio, instrument/MIDI regions, automation, plugins, device configuration, undo history, or mastered output. HypnoSynth performance settings, including its editable 16-step note/rest sequence, are saved. The sequence is instrument performance data; the session format still has no MIDI regions or MIDI file interchange.
 * This is still an early-alpha audio-session save/open workflow, not a stable project-compatibility commitment. MIDI and instrument regions are not saved.
 * Atomic replacement semantics depend on filesystem behavior; especially after power loss, manual recovery from `.bak` may be necessary. Project writes are not a substitute for versioned backups.

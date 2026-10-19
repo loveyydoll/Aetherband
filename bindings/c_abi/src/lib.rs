@@ -131,7 +131,7 @@ impl Default for DAWDeviceInfo {
 /// Returns the API version (major << 16 | minor << 8 | patch).
 #[no_mangle]
 pub extern "C" fn daw_get_api_version() -> u32 {
-    9 << 8
+    10 << 8
 }
 
 /// Starts recording from the default Windows input device to a new WAV path.
@@ -660,6 +660,41 @@ pub unsafe extern "C" fn daw_engine_set_track_start_seconds(
     }
 }
 
+/// Sets the source interval used by an audio region.
+///
+/// # Safety
+/// `engine` must be null or a valid, live engine handle. Calls for one handle
+/// must be serialized.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_set_track_region_seconds(
+    engine: *mut DAWEngine,
+    track_id: u32,
+    source_start_seconds: f64,
+    duration_seconds: f64,
+) -> i32 {
+    if !source_start_seconds.is_finite()
+        || !duration_seconds.is_finite()
+        || source_start_seconds < 0.0
+        || duration_seconds <= 0.0
+        || source_start_seconds + duration_seconds > 86_400.0
+    {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    }
+    if let Some(eng) = to_core_mut(engine) {
+        if eng.set_track_region_seconds(
+            daw_core::ringbuf::TrackId(track_id),
+            source_start_seconds,
+            duration_seconds,
+        ) {
+            DAW_OK
+        } else {
+            DAW_ERROR_COMMAND_REJECTED
+        }
+    } else {
+        DAW_ERROR_INVALID_ARGUMENT
+    }
+}
+
 /// Mutes or unmutes a track.
 #[no_mangle]
 pub unsafe extern "C" fn daw_engine_mute_track(
@@ -697,7 +732,7 @@ mod ffi_contract_tests {
 
     #[test]
     fn api_version_matches_dart_ffi_contract() {
-        assert_eq!(daw_get_api_version(), 0x0000_0900);
+        assert_eq!(daw_get_api_version(), 0x0000_0A00);
     }
 
     #[test]
@@ -715,6 +750,28 @@ mod ffi_contract_tests {
             assert_eq!(daw_engine_seek_seconds(ptr::null_mut(), -1.0), -1);
             assert_eq!(daw_engine_seek_seconds(ptr::null_mut(), f64::NAN), -1);
             assert_eq!(daw_engine_seek_seconds(ptr::null_mut(), 86_400.1), -1);
+        }
+    }
+
+    #[test]
+    fn region_rejects_null_handles_and_invalid_ranges() {
+        unsafe {
+            assert_eq!(
+                daw_engine_set_track_region_seconds(ptr::null_mut(), 1, 0.0, 1.0),
+                DAW_ERROR_INVALID_ARGUMENT
+            );
+            assert_eq!(
+                daw_engine_set_track_region_seconds(ptr::null_mut(), 1, -0.1, 1.0),
+                DAW_ERROR_INVALID_ARGUMENT
+            );
+            assert_eq!(
+                daw_engine_set_track_region_seconds(ptr::null_mut(), 1, 0.0, 0.0),
+                DAW_ERROR_INVALID_ARGUMENT
+            );
+            assert_eq!(
+                daw_engine_set_track_region_seconds(ptr::null_mut(), 1, 86_400.0, 1.0),
+                DAW_ERROR_INVALID_ARGUMENT
+            );
         }
     }
 
@@ -746,6 +803,7 @@ mod ffi_contract_tests {
                 duration_secs: 0.0,
             },
             output_frames: 48000,
+            source_start_frame: 0,
             start_frame: 0,
             gain: 0.8,
             pan: 0.5,

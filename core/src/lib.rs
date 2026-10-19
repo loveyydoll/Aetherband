@@ -83,6 +83,8 @@ pub struct TrackInfo {
     pub info: AudioFileInfo,
     /// Duration converted to output sample-rate frames.
     pub output_frames: i64,
+    /// Source-region start in output-rate frames.
+    pub source_start_frame: i64,
     /// Arrangement start position in output-rate frames.
     pub start_frame: i64,
     pub gain: f32,
@@ -187,14 +189,20 @@ impl DAWEngine {
         let mut new_players = Vec::with_capacity(self.tracks.len());
 
         for track in &self.tracks {
-            let mut decoder = StreamDecoder::spawn(Path::new(&track.file_path), sample_rate)?;
+            let source_start_frame = rescale_frame(
+                track.source_start_frame,
+                self.output_sample_rate,
+                sample_rate,
+            );
+            let output_frames =
+                rescale_frame(track.output_frames, self.output_sample_rate, sample_rate);
+            let mut decoder = StreamDecoder::spawn_region(
+                Path::new(&track.file_path),
+                sample_rate,
+                source_start_frame,
+                Some(output_frames.max(0) as u64),
+            )?;
             let consumer = decoder.take_consumer();
-            let output_frames = if track.info.sample_rate > 0 {
-                (track.info.total_frames as f64 * sample_rate as f64
-                    / track.info.sample_rate as f64) as i64
-            } else {
-                0
-            };
             let mut player = TrackPlayer::new(track.id, consumer, track.gain, output_frames);
             player.pan = track.pan;
             player.muted = track.muted;
@@ -208,6 +216,7 @@ impl DAWEngine {
             new_decoders.insert(track.id.0, decoder);
             let mut updated = track.clone();
             updated.output_frames = output_frames;
+            updated.source_start_frame = source_start_frame;
             updated.start_frame = start_frame;
             new_track_infos.push(updated);
         }
@@ -372,9 +381,12 @@ impl DAWEngine {
         self.transport_playing = false;
         let mut replacements = Vec::with_capacity(self.tracks.len());
         for track in &self.tracks {
-            let Ok(mut decoder) =
-                StreamDecoder::spawn(Path::new(&track.file_path), self.output_sample_rate)
-            else {
+            let Ok(mut decoder) = StreamDecoder::spawn_region(
+                Path::new(&track.file_path),
+                self.output_sample_rate,
+                track.source_start_frame,
+                Some(track.output_frames.max(0) as u64),
+            ) else {
                 return false;
             };
             let mut player = Box::new(TrackPlayer::new(
@@ -419,11 +431,16 @@ impl DAWEngine {
 
         let mut replacements = Vec::with_capacity(self.tracks.len());
         for track in &self.tracks {
-            let source_offset = frame.saturating_sub(track.start_frame).max(0);
-            let Ok(mut decoder) = StreamDecoder::spawn_from_output_frame(
+            let region_offset = frame.saturating_sub(track.start_frame).max(0);
+            let source_offset = track
+                .source_start_frame
+                .saturating_add(region_offset.min(track.output_frames));
+            let remaining = track.output_frames.saturating_sub(region_offset).max(0);
+            let Ok(mut decoder) = StreamDecoder::spawn_region(
                 Path::new(&track.file_path),
                 self.output_sample_rate,
                 source_offset,
+                Some(remaining as u64),
             ) else {
                 return false;
             };
@@ -570,6 +587,7 @@ impl DAWEngine {
             .map(|track| offline_export::ExportTrack {
                 path: Path::new(&track.file_path).to_owned(),
                 start_frame: track.start_frame.max(0) as u64,
+                source_start_frame: track.source_start_frame.max(0) as u64,
                 total_frames: track.output_frames.max(0) as u64,
                 gain: track.gain,
                 pan: track.pan,
@@ -606,7 +624,7 @@ impl DAWEngine {
         // Compute total duration in output sample-rate frames
         let output_frames = if info.sample_rate > 0 {
             (info.total_frames as f64 * self.output_sample_rate as f64 / info.sample_rate as f64)
-                as i64
+                .round() as i64
         } else {
             0
         };
@@ -631,6 +649,7 @@ impl DAWEngine {
             file_path: path.display().to_string(),
             info,
             output_frames,
+            source_start_frame: 0,
             start_frame: 0,
             gain: 0.8,
             pan: 0.5,
@@ -757,6 +776,84 @@ impl DAWEngine {
         true
     }
 
+    /// Configure the source range played by one imported audio region.
+    /// Decoding and player replacement happen on the control thread.
+    pub fn set_track_region_seconds(
+        &mut self,
+        track_id: TrackId,
+        source_start_seconds: f64,
+        duration_seconds: f64,
+    ) -> bool {
+        if self.transport_playing
+            || !source_start_seconds.is_finite()
+            || !duration_seconds.is_finite()
+            || source_start_seconds < 0.0
+            || duration_seconds <= 0.0
+            || source_start_seconds + duration_seconds > 86_400.0
+            || self.ui_endpoints.cmd_producer.slots() == 0
+        {
+            return false;
+        }
+        let Some(index) = self.tracks.iter().position(|track| track.id == track_id) else {
+            return false;
+        };
+        let track = &self.tracks[index];
+        if track.info.duration_secs <= 0.0
+            || source_start_seconds + duration_seconds
+                > track.info.duration_secs + 1.0 / self.output_sample_rate.max(1) as f64
+        {
+            return false;
+        }
+        let source_start_frame =
+            (source_start_seconds * self.output_sample_rate as f64).round() as i64;
+        let requested_frames = (duration_seconds * self.output_sample_rate as f64).round() as i64;
+        let full_frames = (track.info.total_frames as f64 * self.output_sample_rate as f64
+            / track.info.sample_rate.max(1) as f64)
+            .round() as i64;
+        let output_frames = requested_frames.min(full_frames.saturating_sub(source_start_frame));
+        if output_frames <= 0 {
+            return false;
+        }
+        let Ok(mut decoder) = StreamDecoder::spawn_region(
+            Path::new(&track.file_path),
+            self.output_sample_rate,
+            source_start_frame,
+            Some(output_frames as u64),
+        ) else {
+            return false;
+        };
+        let mut player = Box::new(TrackPlayer::new(
+            track.id,
+            decoder.take_consumer(),
+            track.gain,
+            output_frames,
+        ));
+        player.start_frame = track.start_frame;
+        player.pan = track.pan;
+        player.muted = track.muted;
+        player.solo = track.solo;
+        let raw = Box::into_raw(player) as usize;
+        if self
+            .ui_endpoints
+            .cmd_producer
+            .push(EngineCommand::RestartTrack {
+                track_id,
+                player_ptr: raw,
+            })
+            .is_err()
+        {
+            // SAFETY: a rejected command leaves ownership on this control thread.
+            drop(unsafe { Box::from_raw(raw as *mut TrackPlayer) });
+            return false;
+        }
+        if let Some(mut old_decoder) = self.decoders.insert(track_id.0, decoder) {
+            old_decoder.stop();
+        }
+        self.tracks[index].source_start_frame = source_start_frame;
+        self.tracks[index].output_frames = output_frames;
+        true
+    }
+
     pub fn mute_track(&mut self, track_id: TrackId, muted: bool) -> bool {
         let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) else {
             return false;
@@ -854,6 +951,7 @@ mod engine_tests {
                     duration_secs: 1.0,
                 },
                 output_frames: 48000,
+                source_start_frame: 0,
                 start_frame: 0,
                 gain: 0.8,
                 pan: 0.5,

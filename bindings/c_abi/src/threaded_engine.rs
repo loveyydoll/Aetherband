@@ -127,6 +127,7 @@ impl EngineHandle {
     command!(set_track_volume, id: TrackId, gain: f32);
     command!(set_track_pan, id: TrackId, pan: f32);
     command!(set_track_start_seconds, id: TrackId, seconds: f64);
+    command!(set_track_region_seconds, id: TrackId, source_start: f64, duration: f64);
     command!(mute_track, id: TrackId, muted: bool);
     command!(solo_track, id: TrackId, solo: bool);
 

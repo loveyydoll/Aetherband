@@ -18,7 +18,8 @@ class FakeEngine
         EngineController,
         PerformanceEngine,
         ExportEngine,
-        TransportSeekEngine {
+        TransportSeekEngine,
+        AudioRegionEngine {
   final frames = StreamController<EngineTelemetry>.broadcast();
   final calls = <String>[];
   Completer<LoadedAudioTrack>? importResult;
@@ -50,6 +51,12 @@ class FakeEngine
   @override
   Future<void> seekSeconds(double seconds) async {
     calls.add('seek:$seconds');
+  }
+
+  @override
+  Future<void> setTrackRegionSeconds(
+      int trackId, double sourceStartSeconds, double durationSeconds) async {
+    calls.add('region:$trackId:$sourceStartSeconds:$durationSeconds');
   }
 
   @override
@@ -222,6 +229,33 @@ Future<void> deleteSelected(WidgetTester tester, {bool settle = true}) async {
 }
 
 void main() {
+  testWidgets('splits a selected audio clip into two native regions',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    engine.frames.add(const EngineTelemetry(
+      playheadSeconds: 2,
+      sampleRateHz: 44100,
+      peakLeft: 0,
+      peakRight: 0,
+      isPlaying: false,
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Region'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Split at Playhead'));
+    await tester.pumpAndSettle();
+
+    expect(importedClip, findsNWidgets(2));
+    expect(
+        engine.calls.where((call) => call.startsWith('region:')), hasLength(2));
+    expect(engine.calls, contains('start:2:2.0'));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('File menu exports a stereo WAV through the engine',
       (tester) async {
     final engine = FakeEngine();

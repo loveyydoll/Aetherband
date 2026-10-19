@@ -16,6 +16,8 @@ typedef _CommandN = Int32 Function(Pointer<Void>);
 typedef _CommandD = int Function(Pointer<Void>);
 typedef _SeekN = Int32 Function(Pointer<Void>, Double);
 typedef _SeekD = int Function(Pointer<Void>, double);
+typedef _TrackRegionN = Int32 Function(Pointer<Void>, Uint32, Double, Double);
+typedef _TrackRegionD = int Function(Pointer<Void>, int, double, double);
 typedef _PollN = Int32 Function(Pointer<Void>, Pointer<_MeteringFrame>);
 typedef _PollD = int Function(Pointer<Void>, Pointer<_MeteringFrame>);
 typedef _SampleRateN = Int32 Function(Pointer<Void>, Pointer<Uint32>);
@@ -62,7 +64,7 @@ typedef _StopRecordingN = Int32 Function(
     Pointer<Void>, Pointer<_RecordingStats>);
 typedef _StopRecordingD = int Function(Pointer<Void>, Pointer<_RecordingStats>);
 
-const int _expectedApiVersion = 0x00000900;
+const int _expectedApiVersion = 0x00000A00;
 
 final class _TrackInfo extends Struct {
   @Uint64()
@@ -124,7 +126,8 @@ class NativeEngineController
         ExportEngine,
         AudioOutputEngine,
         AudioRecordingEngine,
-        TransportSeekEngine {
+        TransportSeekEngine,
+        AudioRegionEngine {
   NativeEngineController._() {
     _events.listen(_onEvent);
   }
@@ -316,6 +319,20 @@ class NativeEngineController
   }
 
   @override
+  Future<void> setTrackRegionSeconds(
+      int trackId, double sourceStartSeconds, double durationSeconds) {
+    if (!sourceStartSeconds.isFinite ||
+        sourceStartSeconds < 0 ||
+        !durationSeconds.isFinite ||
+        durationSeconds <= 0 ||
+        sourceStartSeconds + durationSeconds > 86400) {
+      return Future.error(ArgumentError('Invalid audio source region.'));
+    }
+    return _request<void>(
+        'region', (trackId, sourceStartSeconds, durationSeconds));
+  }
+
+  @override
   Future<void> muteTrack(int trackId, bool muted) =>
       _request<void>('mute', (trackId, muted));
 
@@ -401,6 +418,10 @@ Future<void> _runNativeEngine((SendPort, String?) configuration) async {
           case 'start':
             final (trackId, seconds) = argument as (int, double);
             await session.setTrackStartSeconds(trackId, seconds);
+          case 'region':
+            final (trackId, sourceStart, duration) =
+                argument as (int, double, double);
+            await session.setTrackRegionSeconds(trackId, sourceStart, duration);
           case 'mute':
             final (trackId, muted) = argument as (int, bool);
             await session.muteTrack(trackId, muted);
@@ -439,7 +460,8 @@ class _NativeEngineSession
         ExportEngine,
         AudioOutputEngine,
         AudioRecordingEngine,
-        TransportSeekEngine {
+        TransportSeekEngine,
+        AudioRegionEngine {
   _NativeEngineSession._({
     required this.synthNative,
     required this.transportNative,
@@ -453,6 +475,7 @@ class _NativeEngineSession
     required _CommandD pauseNative,
     required _CommandD stopNative,
     required _SeekD seekNative,
+    required _TrackRegionD trackRegionNative,
     required _CommandD destroyNative,
     required _PollD pollNative,
     required this.sampleRateHz,
@@ -475,6 +498,7 @@ class _NativeEngineSession
         _pauseNative = pauseNative,
         _stopNative = stopNative,
         _seekNative = seekNative,
+        _trackRegionNative = trackRegionNative,
         _destroyNative = destroyNative,
         _pollNative = pollNative,
         _loadTrackNative = loadTrackNative,
@@ -498,6 +522,7 @@ class _NativeEngineSession
   final _CommandD _pauseNative;
   final _CommandD _stopNative;
   final _SeekD _seekNative;
+  final _TrackRegionD _trackRegionNative;
   final _CommandD _destroyNative;
   final _PollD _pollNative;
   final _LoadTrackD _loadTrackNative;
@@ -555,6 +580,8 @@ class _NativeEngineSession
         library.lookupFunction<_CommandN, _CommandD>('daw_engine_stop');
     final seek =
         library.lookupFunction<_SeekN, _SeekD>('daw_engine_seek_seconds');
+    final trackRegion = library.lookupFunction<_TrackRegionN, _TrackRegionD>(
+        'daw_engine_set_track_region_seconds');
     final destroy =
         library.lookupFunction<_CommandN, _CommandD>('daw_engine_destroy');
     final poll =
@@ -634,6 +661,7 @@ class _NativeEngineSession
           pauseNative: pause,
           stopNative: stop,
           seekNative: seek,
+          trackRegionNative: trackRegion,
           destroyNative: destroy,
           pollNative: poll,
           sampleRateHz: outSampleRate.value,
@@ -748,6 +776,16 @@ class _NativeEngineSession
   Future<void> setTrackStartSeconds(int trackId, double seconds) async {
     if (_disposed) throw StateError('Native engine has been disposed.');
     _check('track clip position', _trackStartNative(_handle, trackId, seconds));
+  }
+
+  @override
+  Future<void> setTrackRegionSeconds(
+      int trackId, double sourceStartSeconds, double durationSeconds) async {
+    if (_disposed) throw StateError('Native engine has been disposed.');
+    _check(
+      'audio clip region',
+      _trackRegionNative(_handle, trackId, sourceStartSeconds, durationSeconds),
+    );
   }
 
   @override

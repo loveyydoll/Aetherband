@@ -13,10 +13,12 @@ class ClipModel {
     required this.color,
     this.isDemo = true,
     this.durationSeconds,
+    double? sourceDurationSeconds,
+    this.sourceStartSeconds = 0,
     this.startSeconds = 0,
     this.waveformPeaks,
     this.waveformLoaded = false,
-  });
+  }) : sourceDurationSeconds = sourceDurationSeconds ?? durationSeconds;
 
   final String id;
   final String title;
@@ -24,7 +26,9 @@ class ClipModel {
   final double width;
   final Color color;
   final bool isDemo;
-  final double? durationSeconds;
+  double? durationSeconds;
+  final double? sourceDurationSeconds;
+  double sourceStartSeconds;
   double startSeconds;
   List<double>? waveformPeaks;
   bool waveformLoaded;

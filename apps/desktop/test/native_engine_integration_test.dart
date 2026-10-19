@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:aetherband_desktop/src/engine_controller.dart';
 import 'package:aetherband_desktop/src/native_engine.dart';
 
 void main() {
@@ -85,9 +86,20 @@ void main() {
           .timeout(const Duration(seconds: 5));
       await engine.seekSeconds(1.25);
       final sought = await engine.telemetry
-          .firstWhere((frame) => frame.isPlaying && frame.playheadSeconds >= 1.25)
+          .firstWhere(
+              (frame) => frame.isPlaying && frame.playheadSeconds >= 1.25)
           .timeout(const Duration(seconds: 5));
       expect(sought.playheadSeconds, greaterThanOrEqualTo(1.25));
+      await engine.stop();
+
+      // Region edits rebuild the decoder from the requested source offset and
+      // bound both live playback and offline rendering to the chosen duration.
+      await (engine as AudioRegionEngine)
+          .setTrackRegionSeconds(track.id, 0.5, 1.0);
+      await engine.play();
+      await engine.telemetry
+          .firstWhere((frame) => frame.isPlaying && frame.peakLeft > 0)
+          .timeout(const Duration(seconds: 5));
       await engine.stop();
 
       // Offline rendering traverses the real Dart isolate -> C ABI -> Rust
@@ -99,6 +111,11 @@ void main() {
       expect(String.fromCharCodes(mixedBytes.sublist(8, 12)), 'WAVE');
       expect(ByteData.sublistView(mixedBytes).getUint16(22, Endian.little), 2);
       expect(ByteData.sublistView(mixedBytes).getUint16(34, Endian.little), 16);
+      final exportRate =
+          ByteData.sublistView(mixedBytes).getUint32(24, Endian.little);
+      final exportFrames =
+          ByteData.sublistView(mixedBytes).getUint32(40, Endian.little) ~/ 4;
+      expect(exportFrames / exportRate, closeTo(1.0, 1 / exportRate));
       expect(mixedBytes.sublist(44).any((sample) => sample != 0), isTrue);
       expect((await engine.telemetry.first).playheadSeconds, 0);
 

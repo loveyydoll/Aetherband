@@ -41,6 +41,7 @@ pub enum ExportError {
 pub struct ExportTrack {
     pub path: PathBuf,
     pub start_frame: u64,
+    pub source_start_frame: u64,
     pub total_frames: u64,
     pub gain: f32,
     pub pan: f32,
@@ -180,8 +181,13 @@ pub fn render_stereo_wav(
     let mut readers = Vec::with_capacity(tracks.len());
     let mut decoders = Vec::with_capacity(tracks.len());
     for track in tracks {
-        let mut decoder = StreamDecoder::spawn(&track.path, settings.sample_rate)
-            .map_err(|error| ExportError::Decode(error.to_string()))?;
+        let mut decoder = StreamDecoder::spawn_region(
+            &track.path,
+            settings.sample_rate,
+            track.source_start_frame.min(i64::MAX as u64) as i64,
+            Some(track.total_frames),
+        )
+        .map_err(|error| ExportError::Decode(error.to_string()))?;
         readers.push(TrackReader::new(&mut decoder, track.total_frames));
         decoders.push(decoder);
     }
@@ -440,6 +446,7 @@ mod tests {
             &[ExportTrack {
                 path: input.clone(),
                 start_frame: 0,
+                source_start_frame: 0,
                 total_frames: 2048,
                 gain: 0.8,
                 pan: 0.5,
@@ -522,6 +529,7 @@ mod tests {
             &[ExportTrack {
                 path: PathBuf::new(),
                 start_frame: 0,
+                source_start_frame: 0,
                 total_frames: 0,
                 gain: 0.8,
                 pan: 0.5,
@@ -551,6 +559,7 @@ mod tests {
             &[ExportTrack {
                 path: source.clone(),
                 start_frame: 0,
+                source_start_frame: 0,
                 total_frames: 2048,
                 gain: 0.8,
                 pan: 0.5,
