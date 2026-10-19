@@ -3830,7 +3830,6 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       ),
     );
   }
-}
 
   void _applyTrackOrderHistory(
     _TrackOrderEdit edit, {
@@ -3853,6 +3852,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       destination.add(edit);
     });
   }
+
+}
 
 class _TrackOrderEdit {
   const _TrackOrderEdit({
