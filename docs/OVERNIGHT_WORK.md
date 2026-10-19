@@ -19,7 +19,7 @@ Branch: `feat/hypnosynth-daw-foundations`. PR: [#33](https://github.com/loveyydo
 - Windows workspace Clippy passes with existing C ABI missing-`# Safety` documentation warnings; optimized C ABI DLL build passes.
 - Flutter analysis is clean; 49 Flutter tests pass and the optional native test is skipped in the default suite. The focused Windows FFI integration test passes against the freshly built release DLL and default output device, covering device selection, synth/sequence state restoration, transport, import, mixer, stereo export and shutdown.
 - A separate opt-in WASAPI smoke test reaches nonzero HypnoSynth samples and shuts down cleanly. This confirms callback output, not speaker audibility.
-- The Windows runner is now checked into the desktop project; its local debug build passes. Published commit `49fb2a2` passes both Windows CI workflows (Rust run 286 and Flutter desktop run 82). Local verification includes all 49 Flutter tests, clean analysis and a successful Windows debug build; the latest track Delete-key change is tested locally and awaits Windows CI.
+- The Windows runner is now checked into the desktop project; its local debug build passes. Commit `5b9e7c7` publishes the selected-track Delete shortcut with a passing widget test; the PR description is refreshed. Rust run 289 (`39250273385`) and Flutter desktop run 85 (`39250273412`) are running for this head. Local verification includes all 49 Flutter tests, clean analysis and a successful Windows debug build.
 
 ## Remaining limits and next work
 

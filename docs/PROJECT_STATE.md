@@ -46,7 +46,7 @@ See [Feature Tracker](FEATURE_TRACKER.md) for the living backlog. Initial order:
 
 ## Current verification and uncertainty
 
-On 2026-10-19, published commit `49fb2a2` passed both Windows CI workflows. Local Windows checks pass for the current working tree: Rust workspace tests (47 core, 8 ABI, callback-allocation and WASAPI smoke target), Clippy, release DLL build, Flutter analysis and 49 Flutter tests, plus the focused Dart FFI integration test against the release DLL and default output device. The WASAPI smoke produces nonzero callback samples. These results do not prove audible output through speakers or successful microphone/line-in capture. Clippy passes with existing missing-`# Safety` documentation warnings in C ABI exports. Latest local editing changes await publication and latest-head CI.
+On 2026-10-19, published head `5b9e7c7` adds the tested Delete-key action. Local Windows checks pass: Rust workspace tests (47 core, 8 ABI, callback-allocation and WASAPI smoke target), Clippy, release DLL build, Flutter analysis and 49 Flutter tests, plus the focused Dart FFI integration test against the release DLL and default output device. The WASAPI smoke produces nonzero callback samples. These results do not prove audible output through speakers or successful microphone/line-in capture. Clippy passes with existing missing-`# Safety` documentation warnings in C ABI exports. Rust run 289 and Flutter desktop run 85 are pending on the current head.
 
 PR #33 remains open and unmerged. New local edits must be published to the same PR and checked by remote CI; do not infer sound quality or hardware recording from callback/unit tests alone.
 ## Required handoff format
