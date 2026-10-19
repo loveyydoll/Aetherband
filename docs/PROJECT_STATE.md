@@ -1,7 +1,7 @@
 # Aetherband — Project State Handoff
 
 **Snapshot date:** 2026-10-19
-**Evidence level:** Windows Rust tests, C ABI build, core Clippy and Dart analysis pass for the current branch. An opt-in WASAPI smoke test produced nonzero HypnoSynth callback samples and shut down cleanly. Flutter analysis and all 30 tests pass locally; a separate Windows Dart FFI integration test passes against the release DLL; speaker listening/loopback capture is not independently verified.
+**Evidence level:** Windows Rust tests, C ABI build, core Clippy and Dart analysis pass for the current branch. An opt-in WASAPI smoke test produced nonzero HypnoSynth callback samples and shut down cleanly. Flutter analysis and all 32 tests pass locally; a separate Windows Dart FFI integration test passes against the release DLL; speaker listening/loopback capture is not independently verified.
 
 ## Product identity
 
@@ -44,12 +44,13 @@ See [Feature Tracker](FEATURE_TRACKER.md) for the living backlog. Initial order:
 2. Verify input recording with a real Windows microphone/line-in device and listen to output through speakers.
 3. Add waveform/clip editing, undo/redo and MIDI data persistence.
 
-## Known uncertainty
+## Current verification and uncertainty
 
-The current local Rust workspace tests pass (39 core, one callback safety and six ABI tests), as do Rust formatting, Windows C ABI build and core Clippy. An opt-in default-device test confirms nonzero HypnoSynth samples reach the WASAPI callback and stream shutdown succeeds. On PR head `00e99cd`, Windows CI passed Dart analysis, 27 Flutter widget tests, the Windows debug build, and Rust formatting/check/tests. One native-device Flutter integration test is skipped in CI because it requires an audio output device. Local Dart tool invocations stalled without output; physical listening remains unverified.
+On 2026-10-19, the Windows Rust workflow (47 core tests, 8 ABI tests, callback-allocation test and Windows smoke target) and Windows Flutter workflow (analysis, 32 tests and desktop build) passed on PR #33 head `bec19b7`. Locally, the focused Dart FFI integration test also passed against the release DLL and the default output device; a separate opt-in WASAPI smoke produced nonzero callback samples. These results do not prove audible output through speakers or successful microphone/line-in capture. Clippy passes with existing missing-`# Safety` documentation warnings in C ABI exports.
 
-This document is not a runtime test report. It does not independently prove current CI status, device behaviour, audio output, persistence, export or platform packaging. Use current GitHub Actions logs and local results. Update this snapshot when evidence changes, and date it when a new status review is performed.
-
+PR #33 remains open and unmerged. Continue from its current head and validate CI against the latest commit; do not infer sound quality or hardware recording from callback/unit tests alone.
 ## Required handoff format
 
 For each agent task, report **Implemented**, **Not implemented**, **Verified**, **Not verified**, **Known risks**, and **Next step**. Link the relevant PR/commit and checks when available.
+
+
