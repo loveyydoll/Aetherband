@@ -1,17 +1,12 @@
 # Changelog
 
-## Unreleased
-
-### Added
-
-- Arrangement track actions can move lanes up/down. Track ordering marks the session dirty and supports undo/redo; a Flutter widget regression test covers reorder, undo, and redo.
-- Added `docs/DAW_PRODUCT_DEFINITION.md` as the canonical DAW capability map, definition of done, and staged implementation priorities.
-
 All notable changes to Aetherband are recorded here. This is a development changelog, not a substitute for Git tags or GitHub Releases. Dates below identify the merge date of the relevant pull request unless explicitly stated otherwise.
 
 ## [Unreleased]
 
 ### Added
+- Arrangement track actions can move lanes up/down. Track ordering marks the session dirty and supports undo/redo; a Flutter widget regression test covers reorder, undo, and redo.
+- Added `docs/DAW_PRODUCT_DEFINITION.md` as the canonical DAW capability map, definition of done, and staged implementation priorities.
 
 - **2026-10-19 — PR #33, HypnoSynth and DAW editing foundations (pending merge):** Added playable 16-step note/rest pattern regions to the timeline with move, copy, cut, paste, duplicate, delete, and undo/redo for insertion/removal, step-note edits and moves. Audio clips support beat-snapped source trimming with undo/redo. Sessions can choose 2–7/4 meters; bar seeking, timeline scaling and metronome accents follow the selected meter through ABI 0.12.0. Schema v6 persists pattern notes, positions and meter settings; the engine schedules regions in the real-time callback and offline stereo mixdown. Local Windows Rust checks pass, including 24-bit recording/export and fixed-48-kHz mixdown; prior Flutter CI passed before these export updates, and latest-head Windows CI is running. The opt-in native integration test observed nonzero arranged-pattern telemetry on the default Windows output device. Speaker audibility and microphone capture remain unverified.
 - **2026-10-19 — PR #33 follow-up:** Offline mixdown exports signed stereo PCM24 at fixed 48 kHz, rescaling clip source offsets, durations and timeline positions to preserve timing. Background input recording writes signed stereo PCM24 too. Dedicated WAV-header, resampling and signal tests cover export; input hardware capture remains outstanding.
