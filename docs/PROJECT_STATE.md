@@ -40,14 +40,13 @@ Do not reintroduce C#/.NET/Avalonia as a second desktop frontend. Verify current
 ## Current priorities
 
 See [Feature Tracker](FEATURE_TRACKER.md) for the living backlog. Initial order:
-1. Check the single PR's Windows CI for Flutter tests and packaging.
-2. Listen to HypnoSynth and imported audio through actual Windows output hardware.
-3. Add real stereo export and input recording as separately tested vertical slices.
-4. Add waveform/clip editing, undo/redo and MIDI data persistence.
+1. Listen to HypnoSynth and imported audio through actual Windows output hardware.
+2. Add real stereo export and input recording as separately tested vertical slices.
+3. Add waveform/clip editing, undo/redo and MIDI data persistence.
 
 ## Known uncertainty
 
-The current local Rust workspace tests pass (39 core, one callback safety and six ABI tests), as do Rust formatting, Windows C ABI build and core Clippy. An opt-in default-device test confirms nonzero HypnoSynth samples reach the WASAPI callback and stream shutdown succeeds. Dart analysis passed earlier in this implementation; latest local Dart format/analyzer invocation stalled without output. Flutter widget execution, full Flutter packaging and physical listening remain unverified for this branch.
+The current local Rust workspace tests pass (39 core, one callback safety and six ABI tests), as do Rust formatting, Windows C ABI build and core Clippy. An opt-in default-device test confirms nonzero HypnoSynth samples reach the WASAPI callback and stream shutdown succeeds. On PR head `00e99cd`, Windows CI passed Dart analysis, 27 Flutter widget tests, the Windows debug build, and Rust formatting/check/tests. One native-device Flutter integration test is skipped in CI because it requires an audio output device. Local Dart tool invocations stalled without output; physical listening remains unverified.
 
 This document is not a runtime test report. It does not independently prove current CI status, device behaviour, audio output, persistence, export or platform packaging. Use current GitHub Actions logs and local results. Update this snapshot when evidence changes, and date it when a new status review is performed.
 
