@@ -18,6 +18,10 @@ typedef _SeekN = Int32 Function(Pointer<Void>, Double);
 typedef _SeekD = int Function(Pointer<Void>, double);
 typedef _TrackRegionN = Int32 Function(Pointer<Void>, Uint32, Double, Double);
 typedef _TrackRegionD = int Function(Pointer<Void>, int, double, double);
+typedef _SequenceRegionN = Int32 Function(
+    Pointer<Void>, Uint32, Double, Pointer<Int32>);
+typedef _SequenceRegionD = int Function(
+    Pointer<Void>, int, double, Pointer<Int32>);
 typedef _PollN = Int32 Function(Pointer<Void>, Pointer<_MeteringFrame>);
 typedef _PollD = int Function(Pointer<Void>, Pointer<_MeteringFrame>);
 typedef _SampleRateN = Int32 Function(Pointer<Void>, Pointer<Uint32>);
@@ -64,7 +68,7 @@ typedef _StopRecordingN = Int32 Function(
     Pointer<Void>, Pointer<_RecordingStats>);
 typedef _StopRecordingD = int Function(Pointer<Void>, Pointer<_RecordingStats>);
 
-const int _expectedApiVersion = 0x00000A00;
+const int _expectedApiVersion = 0x00000B00;
 
 final class _TrackInfo extends Struct {
   @Uint64()
@@ -127,7 +131,8 @@ class NativeEngineController
         AudioOutputEngine,
         AudioRecordingEngine,
         TransportSeekEngine,
-        AudioRegionEngine {
+        AudioRegionEngine,
+        SequenceRegionEngine {
   NativeEngineController._() {
     _events.listen(_onEvent);
   }
@@ -333,6 +338,25 @@ class NativeEngineController
   }
 
   @override
+  Future<void> setSequenceRegion(
+      int regionId, double startSeconds, List<int?> notes) {
+    if (regionId <= 0 ||
+        !startSeconds.isFinite ||
+        startSeconds < 0 ||
+        startSeconds > 86400 ||
+        notes.length != 16 ||
+        notes.any((note) => note != null && (note < 0 || note > 127))) {
+      return Future.error(ArgumentError('Invalid HypnoSynth pattern region.'));
+    }
+    return _request<void>(
+        'setSequenceRegion', (regionId, startSeconds, List<int?>.of(notes)));
+  }
+
+  @override
+  Future<void> removeSequenceRegion(int regionId) =>
+      _request<void>('removeSequenceRegion', regionId);
+
+  @override
   Future<void> muteTrack(int trackId, bool muted) =>
       _request<void>('mute', (trackId, muted));
 
@@ -422,6 +446,12 @@ Future<void> _runNativeEngine((SendPort, String?) configuration) async {
             final (trackId, sourceStart, duration) =
                 argument as (int, double, double);
             await session.setTrackRegionSeconds(trackId, sourceStart, duration);
+          case 'setSequenceRegion':
+            final (regionId, startSeconds, notes) =
+                argument as (int, double, List<int?>);
+            await session.setSequenceRegion(regionId, startSeconds, notes);
+          case 'removeSequenceRegion':
+            await session.removeSequenceRegion(argument as int);
           case 'mute':
             final (trackId, muted) = argument as (int, bool);
             await session.muteTrack(trackId, muted);
@@ -461,7 +491,8 @@ class _NativeEngineSession
         AudioOutputEngine,
         AudioRecordingEngine,
         TransportSeekEngine,
-        AudioRegionEngine {
+        AudioRegionEngine,
+        SequenceRegionEngine {
   _NativeEngineSession._({
     required this.synthNative,
     required this.transportNative,
@@ -476,6 +507,8 @@ class _NativeEngineSession
     required _CommandD stopNative,
     required _SeekD seekNative,
     required _TrackRegionD trackRegionNative,
+    required _SequenceRegionD sequenceRegionNative,
+    required _RemoveTrackD removeSequenceRegionNative,
     required _CommandD destroyNative,
     required _PollD pollNative,
     required this.sampleRateHz,
@@ -499,6 +532,8 @@ class _NativeEngineSession
         _stopNative = stopNative,
         _seekNative = seekNative,
         _trackRegionNative = trackRegionNative,
+        _sequenceRegionNative = sequenceRegionNative,
+        _removeSequenceRegionNative = removeSequenceRegionNative,
         _destroyNative = destroyNative,
         _pollNative = pollNative,
         _loadTrackNative = loadTrackNative,
@@ -523,6 +558,8 @@ class _NativeEngineSession
   final _CommandD _stopNative;
   final _SeekD _seekNative;
   final _TrackRegionD _trackRegionNative;
+  final _SequenceRegionD _sequenceRegionNative;
+  final _RemoveTrackD _removeSequenceRegionNative;
   final _CommandD _destroyNative;
   final _PollD _pollNative;
   final _LoadTrackD _loadTrackNative;
@@ -582,6 +619,12 @@ class _NativeEngineSession
         library.lookupFunction<_SeekN, _SeekD>('daw_engine_seek_seconds');
     final trackRegion = library.lookupFunction<_TrackRegionN, _TrackRegionD>(
         'daw_engine_set_track_region_seconds');
+    final sequenceRegion =
+        library.lookupFunction<_SequenceRegionN, _SequenceRegionD>(
+            'daw_engine_set_sequence_region');
+    final removeSequenceRegion =
+        library.lookupFunction<_RemoveTrackN, _RemoveTrackD>(
+            'daw_engine_remove_sequence_region');
     final destroy =
         library.lookupFunction<_CommandN, _CommandD>('daw_engine_destroy');
     final poll =
@@ -662,6 +705,8 @@ class _NativeEngineSession
           stopNative: stop,
           seekNative: seek,
           trackRegionNative: trackRegion,
+          sequenceRegionNative: sequenceRegion,
+          removeSequenceRegionNative: removeSequenceRegion,
           destroyNative: destroy,
           pollNative: poll,
           sampleRateHz: outSampleRate.value,
@@ -718,6 +763,34 @@ class _NativeEngineSession
     }
     throw StateError(
       'Native library not found. Build the daw_core_ffi Rust library. Tried: ${errors.join('; ')}',
+    );
+  }
+
+  @override
+  Future<void> setSequenceRegion(
+      int regionId, double startSeconds, List<int?> notes) async {
+    if (_disposed) throw StateError('Native engine has been disposed.');
+    if (notes.length != 16) throw ArgumentError.value(notes, 'notes');
+    final nativeNotes = calloc<Int32>(16);
+    try {
+      for (var index = 0; index < 16; index++) {
+        nativeNotes[index] = notes[index] ?? -1;
+      }
+      _check(
+        'HypnoSynth pattern region',
+        _sequenceRegionNative(_handle, regionId, startSeconds, nativeNotes),
+      );
+    } finally {
+      calloc.free(nativeNotes);
+    }
+  }
+
+  @override
+  Future<void> removeSequenceRegion(int regionId) async {
+    if (_disposed) throw StateError('Native engine has been disposed.');
+    _check(
+      'remove HypnoSynth pattern region',
+      _removeSequenceRegionNative(_handle, regionId),
     );
   }
 

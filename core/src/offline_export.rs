@@ -12,6 +12,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 const OUTPUT_BLOCK_FRAMES: usize = 1024;
+pub const MAX_SEQUENCE_REGIONS: usize = 64;
 const MAX_WAV_DATA_BYTES: u64 = u32::MAX as u64 - 36;
 const DECODER_WAIT_LIMIT: Duration = Duration::from_secs(30);
 
@@ -50,6 +51,13 @@ pub struct ExportTrack {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct ExportSequenceRegion {
+    pub id: u32,
+    pub start_frame: u64,
+    pub notes: [Option<u8>; 16],
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct ExportSettings {
     pub sample_rate: u32,
     pub master: f32,
@@ -57,6 +65,7 @@ pub struct ExportSettings {
     pub metronome: bool,
     pub sequence: bool,
     pub sequence_pattern: [Option<u8>; 16],
+    pub sequence_regions: [Option<ExportSequenceRegion>; MAX_SEQUENCE_REGIONS],
     pub synth_gain: f32,
     pub synth_pan: f32,
     pub synth_muted: bool,
@@ -138,7 +147,15 @@ pub fn render_stereo_wav(
     tracks: &[ExportTrack],
     settings: ExportSettings,
 ) -> Result<(), ExportError> {
-    if tracks.is_empty() && !settings.sequence {
+    let has_regions = settings.sequence_regions.iter().any(Option::is_some);
+    let mut region_ids = [0_u32; MAX_SEQUENCE_REGIONS];
+    for (region_count, region) in settings.sequence_regions.iter().flatten().enumerate() {
+        if region.id == 0 || region_ids[..region_count].contains(&region.id) {
+            return Err(ExportError::InvalidSettings);
+        }
+        region_ids[region_count] = region.id;
+    }
+    if tracks.is_empty() && !settings.sequence && !has_regions {
         return Err(ExportError::EmptySession);
     }
     if !(8_000..=192_000).contains(&settings.sample_rate)
@@ -212,11 +229,22 @@ pub fn render_stereo_wav(
     } else {
         0
     };
-    let end_frame = audio_end_frame.max(sequence_frames);
+    let region_end_frame = settings
+        .sequence_regions
+        .iter()
+        .flatten()
+        .map(|region| {
+            region.start_frame.saturating_add(
+                (settings.sample_rate as f64 * 60.0 / settings.bpm as f64 * 8.0) as u64,
+            )
+        })
+        .max()
+        .unwrap_or(0);
+    let end_frame = audio_end_frame.max(sequence_frames).max(region_end_frame);
     if end_frame == 0 {
         return Err(ExportError::InvalidSettings);
     }
-    let tail_frames = if settings.sequence {
+    let tail_frames = if settings.sequence || has_regions {
         settings.sample_rate as u64 * 2
     } else {
         0
@@ -270,6 +298,8 @@ fn render_to_temporary(
     let synth_pan_right = synth_pan_angle.sin() * settings.synth_gain;
     let mut beat_phase = 0.0_f64;
     let mut sequence_note = None;
+    let mut region_steps = [-1_i64; MAX_SEQUENCE_REGIONS];
+    let mut region_notes = [None; MAX_SEQUENCE_REGIONS];
     let mut click_remaining = 0_u32;
     let mut written_frames = 0_u64;
     let mut bytes = Vec::with_capacity(OUTPUT_BLOCK_FRAMES * 4);
@@ -321,6 +351,35 @@ fn render_to_temporary(
                 if let Some(note) = settings.sequence_pattern[step] {
                     synth.note_on(note, 0.72);
                     sequence_note = Some(note);
+                }
+            }
+            let frames_per_step = settings.sample_rate as f64 * 30.0 / settings.bpm as f64;
+            let region_frames = frames_per_step * 16.0;
+            for (region_index, region) in settings.sequence_regions.iter().enumerate() {
+                let Some(region) = region else {
+                    continue;
+                };
+                let elapsed = timeline_frame as i128 - region.start_frame as i128;
+                if elapsed < 0 {
+                    continue;
+                }
+                if elapsed as f64 >= region_frames {
+                    if let Some(note) = region_notes[region_index].take() {
+                        synth.note_off(note);
+                    }
+                    region_steps[region_index] = -1;
+                    continue;
+                }
+                let step = (elapsed as f64 / frames_per_step).floor() as i64;
+                if step != region_steps[region_index] {
+                    if let Some(note) = region_notes[region_index].take() {
+                        synth.note_off(note);
+                    }
+                    if let Some(note) = region.notes[step as usize] {
+                        synth.note_on(note, 0.72);
+                        region_notes[region_index] = Some(note);
+                    }
+                    region_steps[region_index] = step;
                 }
             }
             if settings.metronome && timeline_frame < musical_end_frame {
@@ -454,6 +513,7 @@ mod tests {
             metronome: false,
             sequence: false,
             sequence_pattern: DEFAULT_SEQUENCE,
+            sequence_regions: [None; MAX_SEQUENCE_REGIONS],
             synth_gain: 0.8,
             synth_pan: 0.5,
             synth_muted: false,
@@ -507,6 +567,7 @@ mod tests {
             metronome: true,
             sequence: true,
             sequence_pattern: DEFAULT_SEQUENCE,
+            sequence_regions: [None; MAX_SEQUENCE_REGIONS],
             synth_gain: 0.8,
             synth_pan: 0.5,
             synth_muted: false,
@@ -523,6 +584,39 @@ mod tests {
     }
 
     #[test]
+    fn arrangement_pattern_exports_from_its_timeline_position() {
+        let output = temp_path("sequence-region");
+        let mut notes = [None; 16];
+        notes[0] = Some(60);
+        let mut regions = [None; MAX_SEQUENCE_REGIONS];
+        regions[0] = Some(ExportSequenceRegion {
+            id: 1,
+            start_frame: 8_000,
+            notes,
+        });
+        let settings = ExportSettings {
+            sample_rate: 8_000,
+            master: 0.8,
+            bpm: 120.0,
+            metronome: false,
+            sequence: false,
+            sequence_pattern: [None; 16],
+            sequence_regions: regions,
+            synth_gain: 0.8,
+            synth_pan: 0.5,
+            synth_muted: false,
+            synth_solo: false,
+            preset: 0,
+            macros: [0.42, 0.38, 0.55, 0.36, 0.7],
+        };
+        render_stereo_wav(&output, &[], settings).unwrap();
+        let data = fs::read(&output).unwrap();
+        assert!(data[44..44 + 8_000 * 4].iter().all(|sample| *sample == 0));
+        assert!(data[44 + 8_000 * 4..].iter().any(|sample| *sample != 0));
+        let _ = fs::remove_file(output);
+    }
+
+    #[test]
     fn editable_sequence_honors_initial_rest_and_note_on_export() {
         let output = temp_path("editable-sequence");
         let mut pattern = DEFAULT_SEQUENCE;
@@ -535,6 +629,7 @@ mod tests {
             metronome: false,
             sequence: true,
             sequence_pattern: pattern,
+            sequence_regions: [None; MAX_SEQUENCE_REGIONS],
             synth_gain: 0.8,
             synth_pan: 0.5,
             synth_muted: false,
@@ -560,6 +655,7 @@ mod tests {
             metronome: false,
             sequence: true,
             sequence_pattern: DEFAULT_SEQUENCE,
+            sequence_regions: [None; MAX_SEQUENCE_REGIONS],
             synth_gain: 0.8,
             synth_pan: 0.0,
             synth_muted: false,
@@ -620,6 +716,7 @@ mod tests {
                 metronome: false,
                 sequence: false,
                 sequence_pattern: DEFAULT_SEQUENCE,
+                sequence_regions: [None; MAX_SEQUENCE_REGIONS],
                 synth_gain: 0.8,
                 synth_pan: 0.5,
                 synth_muted: false,
@@ -654,6 +751,7 @@ mod tests {
                 metronome: false,
                 sequence: false,
                 sequence_pattern: DEFAULT_SEQUENCE,
+                sequence_regions: [None; MAX_SEQUENCE_REGIONS],
                 synth_gain: 0.8,
                 synth_pan: 0.5,
                 synth_muted: false,

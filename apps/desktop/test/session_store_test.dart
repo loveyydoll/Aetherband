@@ -57,7 +57,7 @@ void main() {
     expect(reopened.performance.preset, 0);
     expect(reopened.performance.tempo, 92);
     expect(
-        File(path).readAsString(), completion(contains('"schemaVersion": 5')));
+        File(path).readAsString(), completion(contains('"schemaVersion": 6')));
   });
 
   test('split regions round-trip source ranges and timeline positions', () {
@@ -176,7 +176,8 @@ void main() {
     expect(restored.performance.master, 0.55);
   });
 
-  test('HypnoSynth track identity round-trips in schema five', () {
+  test('HypnoSynth track and arrangement patterns round-trip in schema six',
+      () {
     final encoded = AudioSessionDocument(
       title: 'Synth sketch',
       tracks: const [],
@@ -188,6 +189,30 @@ void main() {
           pan: 0.8,
           muted: true,
           solo: true,
+          regions: [
+            SavedSequenceRegion(
+              id: 12,
+              startSeconds: 3.5,
+              notes: [
+                60,
+                null,
+                64,
+                null,
+                67,
+                null,
+                64,
+                null,
+                60,
+                null,
+                64,
+                null,
+                67,
+                null,
+                64,
+                null
+              ],
+            ),
+          ],
         ),
       ],
     ).toJson();
@@ -198,6 +223,9 @@ void main() {
     expect(restored.instrumentTracks.single.pan, 0.8);
     expect(restored.instrumentTracks.single.muted, isTrue);
     expect(restored.instrumentTracks.single.solo, isTrue);
+    expect(restored.instrumentTracks.single.regions.single.id, 12);
+    expect(restored.instrumentTracks.single.regions.single.startSeconds, 3.5);
+    expect(restored.instrumentTracks.single.regions.single.notes[2], 64);
   });
 
   test('older performance settings default to the original 16-step phrase', () {

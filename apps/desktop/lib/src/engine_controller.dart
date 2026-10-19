@@ -91,6 +91,13 @@ abstract interface class AudioRegionEngine {
       int trackId, double sourceStartSeconds, double durationSeconds);
 }
 
+/// Optional HypnoSynth arrangement-region operations on the Windows engine.
+abstract interface class SequenceRegionEngine {
+  Future<void> setSequenceRegion(
+      int regionId, double startSeconds, List<int?> notes);
+  Future<void> removeSequenceRegion(int regionId);
+}
+
 /// Optional native performance capabilities, separate from imported-track I/O.
 abstract interface class PerformanceEngine {
   Future<void> synthEvent(int event, int key, double value);

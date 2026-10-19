@@ -109,6 +109,16 @@ impl EngineHandle {
         .unwrap_or(false)
     }
     command!(synth_event, event: u32, key: u32, value: f32);
+    pub fn set_sequence_region(
+        &self,
+        id: u32,
+        start_seconds: f64,
+        notes: [Option<u8>; 16],
+    ) -> bool {
+        self.call(move |engine| engine.set_sequence_region(id, start_seconds, notes))
+            .unwrap_or(false)
+    }
+    command!(remove_sequence_region, id: u32);
     command!(configure_transport, bpm: f32, metronome: bool, sequence: bool);
     command!(set_master_volume, gain: f32);
     pub fn export_wav(&self, path: &Path) -> Result<(), ()> {

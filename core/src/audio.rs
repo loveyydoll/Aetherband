@@ -7,9 +7,18 @@
 
 use crate::dsp::{GainRamp, LevelMeter, SineOscillator};
 use crate::hypnosynth::{HypnoSynth, DEFAULT_SEQUENCE};
-use crate::ringbuf::{AudioEndpoints, DecodedBlock, EngineCommand, TelemetryFrame};
+use crate::ringbuf::{AudioEndpoints, DecodedBlock, EngineCommand, SequenceRegion, TelemetryFrame};
 use crate::track::{TrackPlayer, TrackSlots, MAX_TRACKS};
 use rtrb::{Consumer, Producer};
+
+const MAX_SEQUENCE_REGIONS: usize = 64;
+
+#[derive(Debug, Clone, Copy)]
+struct SequenceRegionState {
+    region: SequenceRegion,
+    last_step: i64,
+    active_note: Option<u8>,
+}
 
 /// Hard real-time audio callback processor.
 ///
@@ -37,6 +46,7 @@ pub struct AudioProcessor {
     sequence: bool,
     sequence_note: Option<u8>,
     sequence_pattern: [Option<u8>; 16],
+    sequence_regions: [Option<SequenceRegionState>; MAX_SEQUENCE_REGIONS],
     beat_phase: f64,
     click_remaining: usize,
 
@@ -79,6 +89,7 @@ impl AudioProcessor {
             sequence: false,
             sequence_note: None,
             sequence_pattern: DEFAULT_SEQUENCE,
+            sequence_regions: [None; MAX_SEQUENCE_REGIONS],
             beat_phase: 0.0,
             click_remaining: 0,
             sample_rate,
@@ -201,6 +212,39 @@ impl AudioProcessor {
                         }
                     }
                 }
+                SetSequenceRegion(region) => {
+                    let slot = self
+                        .sequence_regions
+                        .iter()
+                        .position(|entry| entry.is_some_and(|entry| entry.region.id == region.id))
+                        .or_else(|| self.sequence_regions.iter().position(Option::is_none));
+                    if let Some(slot) = slot {
+                        if let Some(note) =
+                            self.sequence_regions[slot].and_then(|entry| entry.active_note)
+                        {
+                            self.synth.note_off(note);
+                        }
+                        self.sequence_regions[slot] = Some(SequenceRegionState {
+                            region,
+                            last_step: -1,
+                            active_note: None,
+                        });
+                    }
+                }
+                RemoveSequenceRegion { region_id } => {
+                    if let Some(slot) = self
+                        .sequence_regions
+                        .iter()
+                        .position(|entry| entry.is_some_and(|entry| entry.region.id == region_id))
+                    {
+                        if let Some(note) =
+                            self.sequence_regions[slot].and_then(|entry| entry.active_note)
+                        {
+                            self.synth.note_off(note);
+                        }
+                        self.sequence_regions[slot] = None;
+                    }
+                }
                 Play => {
                     self.is_playing = true;
                 }
@@ -208,6 +252,12 @@ impl AudioProcessor {
                     self.is_playing = false;
                     self.synth.panic();
                     self.sequence_note = None;
+                    for slot in &mut self.sequence_regions {
+                        if let Some(region) = slot.as_mut() {
+                            region.active_note = None;
+                            region.last_step = -1;
+                        }
+                    }
                 }
                 Stop => {
                     self.is_playing = false;
@@ -218,6 +268,12 @@ impl AudioProcessor {
                     self.beat_phase = 0.0;
                     self.click_remaining = 0;
                     self.tracks.reset_all();
+                    for slot in &mut self.sequence_regions {
+                        if let Some(region) = slot.as_mut() {
+                            region.active_note = None;
+                            region.last_step = -1;
+                        }
+                    }
                 }
                 Seek(frame) => {
                     self.playhead_frame = frame.max(0);
@@ -227,6 +283,14 @@ impl AudioProcessor {
                     self.click_remaining = 0;
                     if let Some(note) = self.sequence_note.take() {
                         self.synth.note_off(note);
+                    }
+                    for slot in &mut self.sequence_regions {
+                        if let Some(region) = slot.as_mut() {
+                            if let Some(note) = region.active_note.take() {
+                                self.synth.note_off(note);
+                            }
+                            region.last_step = -1;
+                        }
                     }
                 }
                 SetMasterVolume {
@@ -412,6 +476,38 @@ impl AudioProcessor {
                     if let Some(note) = self.sequence_pattern[step] {
                         self.synth.note_on(note, 0.72);
                         self.sequence_note = Some(note);
+                    }
+                }
+            }
+            if self.is_playing {
+                let current_frame = self.playhead_frame.saturating_add(f as i64);
+                let frames_per_step = self.sample_rate as f64 * 30.0 / self.bpm as f64;
+                let region_frames = frames_per_step * 16.0;
+                for slot in &mut self.sequence_regions {
+                    let Some(region) = slot.as_mut() else {
+                        continue;
+                    };
+                    let elapsed = current_frame - region.region.start_frame;
+                    if elapsed < 0 {
+                        continue;
+                    }
+                    if elapsed as f64 >= region_frames {
+                        if let Some(note) = region.active_note.take() {
+                            self.synth.note_off(note);
+                        }
+                        region.last_step = -1;
+                        continue;
+                    }
+                    let step = (elapsed as f64 / frames_per_step).floor() as i64;
+                    if step != region.last_step {
+                        if let Some(note) = region.active_note.take() {
+                            self.synth.note_off(note);
+                        }
+                        if let Some(note) = region.region.notes[step as usize] {
+                            self.synth.note_on(note, 0.72);
+                            region.active_note = Some(note);
+                        }
+                        region.last_step = step;
                     }
                 }
             }
@@ -792,6 +888,34 @@ mod tests {
         ui.cmd_producer.push(EngineCommand::Play).unwrap();
 
         let mut output = vec![0.0_f32; 1600 * 2];
+        processor.process_interleaved(&mut output, 2);
+        assert!(output[..800 * 2].iter().all(|sample| *sample == 0.0));
+        assert!(output[800 * 2..].iter().any(|sample| sample.abs() > 0.0001));
+    }
+
+    #[test]
+    fn timeline_sequence_region_starts_on_its_arrangement_frame() {
+        let (mut ui, audio) = create_engine_queues(32, 32);
+        let mut processor = AudioProcessor::new(8_000.0, audio);
+        ui.cmd_producer
+            .push(EngineCommand::ConfigureTransport {
+                bpm: 300.0,
+                metronome: false,
+                sequence: false,
+            })
+            .unwrap();
+        let mut notes = [None; 16];
+        notes[0] = Some(60);
+        ui.cmd_producer
+            .push(EngineCommand::SetSequenceRegion(SequenceRegion {
+                id: 1,
+                start_frame: 800,
+                notes,
+            }))
+            .unwrap();
+        ui.cmd_producer.push(EngineCommand::Play).unwrap();
+
+        let mut output = vec![0.0_f32; 1_600 * 2];
         processor.process_interleaved(&mut output, 2);
         assert!(output[..800 * 2].iter().all(|sample| *sample == 0.0));
         assert!(output[800 * 2..].iter().any(|sample| sample.abs() > 0.0001));

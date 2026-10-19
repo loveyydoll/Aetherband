@@ -28,15 +28,17 @@ class ClipTile extends StatelessWidget {
     final base = clip.color;
     final duration = clip.durationSeconds;
     final peaks = clip.waveformPeaks;
-    final waveformStatus = !clip.waveformLoaded
-        ? 'Analyzing waveform'
-        : peaks == null
-            ? 'Waveform unavailable for this audio format'
-            : 'Decoded PCM waveform';
+    final waveformStatus = clip.isSequenceRegion
+        ? '16-step HypnoSynth pattern'
+        : !clip.waveformLoaded
+            ? 'Analyzing waveform'
+            : peaks == null
+                ? 'Waveform unavailable for this audio format'
+                : 'Decoded PCM waveform';
     return Tooltip(
       message: clip.isDemo
           ? 'Demo clip'
-          : '${clip.title} · ${duration == null ? 'Duration unknown' : '${duration.toStringAsFixed(2)} s'} · $waveformStatus',
+          : '${clip.title} · ${clip.isSequenceRegion ? waveformStatus : '${duration == null ? 'Duration unknown' : '${duration.toStringAsFixed(2)} s'} · $waveformStatus'}',
       child: GestureDetector(
         onTap: onTap,
         onHorizontalDragStart: (_) => onMoveStart(),
@@ -65,7 +67,38 @@ class ClipTile extends StatelessWidget {
                         seed: clip.id.hashCode),
                   ),
                 ),
-              if (!clip.isDemo && peaks != null)
+              if (clip.isSequenceRegion)
+                Positioned.fill(
+                  top: 18,
+                  bottom: 5,
+                  left: 8,
+                  right: 8,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      for (final note in clip.sequenceNotes)
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 1),
+                            child: FractionallySizedBox(
+                              heightFactor: note == null
+                                  ? 0.08
+                                  : 0.3 + ((note % 24) / 24) * 0.7,
+                              alignment: Alignment.bottomCenter,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: base.withValues(
+                                      alpha: note == null ? 0.24 : 0.92),
+                                  borderRadius: BorderRadius.circular(1),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              if (!clip.isDemo && !clip.isSequenceRegion && peaks != null)
                 Positioned.fill(
                   child: CustomPaint(
                     key: ValueKey('audio-waveform-${clip.id}'),
@@ -75,7 +108,9 @@ class ClipTile extends StatelessWidget {
                     ),
                   ),
                 ),
-              if (!clip.isDemo && !clip.waveformLoaded)
+              if (!clip.isDemo &&
+                  !clip.isSequenceRegion &&
+                  !clip.waveformLoaded)
                 const Positioned(
                   left: 8,
                   right: 6,
@@ -88,7 +123,10 @@ class ClipTile extends StatelessWidget {
                         color: AetherColors.secondaryText, fontSize: 8),
                   ),
                 ),
-              if (!clip.isDemo && clip.waveformLoaded && peaks == null)
+              if (!clip.isDemo &&
+                  !clip.isSequenceRegion &&
+                  clip.waveformLoaded &&
+                  peaks == null)
                 const Positioned(
                   left: 8,
                   right: 6,
@@ -101,7 +139,7 @@ class ClipTile extends StatelessWidget {
                         color: AetherColors.secondaryText, fontSize: 8),
                   ),
                 ),
-              if (!clip.isDemo)
+              if (!clip.isDemo && !clip.isSequenceRegion)
                 Positioned(
                   left: 8,
                   right: 6,

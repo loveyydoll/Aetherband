@@ -18,6 +18,8 @@ class ClipModel {
     this.startSeconds = 0,
     this.waveformPeaks,
     this.waveformLoaded = false,
+    this.isSequenceRegion = false,
+    this.sequenceNotes = const <int?>[],
   }) : sourceDurationSeconds = sourceDurationSeconds ?? durationSeconds;
 
   final String id;
@@ -32,15 +34,19 @@ class ClipModel {
   double startSeconds;
   List<double>? waveformPeaks;
   bool waveformLoaded;
+  final bool isSequenceRegion;
+  List<int?> sequenceNotes;
 
   double timelineLeft(int tempo) =>
       isDemo ? start : startSeconds * timelinePixelsPerSecond(tempo);
 
   double timelineWidth(int tempo) => isDemo
       ? width
-      : durationSeconds == null
-          ? 140 // Explicitly labelled unknown; not presented as a measured length.
-          : durationSeconds! * timelinePixelsPerSecond(tempo);
+      : isSequenceRegion
+          ? 8 * 60 / tempo * timelinePixelsPerSecond(tempo)
+          : durationSeconds == null
+              ? 140 // Explicitly labelled unknown; not presented as a measured length.
+              : durationSeconds! * timelinePixelsPerSecond(tempo);
 }
 
 class TrackModel {

@@ -1,4 +1,4 @@
-# Aetherband native session format — Alpha v5
+# Aetherband native session format — Alpha v6
 
 **Implemented in:** `apps/desktop/lib/src/session_store.dart` and the Flutter File menu.  
 **Extension:** `.aetherband.json` (JSON, UTF-8).  
@@ -6,12 +6,12 @@
 
 ## What this version actually saves
 
-A v5 document saves the session title, imported audio tracks and regions, mixer state, performance settings, and one HypnoSynth arrangement track with its own gain, pan, mute and solo state. The 16-step note/rest phrase remains session-wide. Native engine IDs are allocated afresh when reopening and never appear in the document. Versions 1 through 4 remain readable; missing solo, clip-position and instrument-track fields default to off, zero or empty respectively.
+A v6 document saves the session title, imported audio tracks and regions, mixer state, performance settings, and one HypnoSynth arrangement track with its own gain, pan, mute and solo state. It also saves each HypnoSynth pattern region's numeric session-local ID, timeline position and 16 MIDI-note/rest steps. Native audio-engine IDs are allocated afresh when reopening and never appear in the document. Versions 1 through 5 remain readable; older documents default pattern regions to empty.
 
 ```json
 {
   "format": "aetherband-session",
-  "schemaVersion": 5,
+  "schemaVersion": 6,
   "title": "My Song",
   "performance": {
     "tempo": 120.0,
@@ -19,7 +19,8 @@ A v5 document saves the session title, imported audio tracks and regions, mixer 
     "sequence": false,
     "master": 0.8,
     "preset": 0,
-    "macros": [0.5, 0.5, 0.5, 0.5, 0.5]
+    "macros": [0.5, 0.5, 0.5, 0.5, 0.5],
+    "sequenceNotes": [60, null, 64, null, 67, null, 64, null, 60, null, 64, null, 67, null, 64, null]
   },
   "tracks": [
     {
@@ -48,13 +49,20 @@ A v5 document saves the session title, imported audio tracks and regions, mixer 
       "gain": 0.8,
       "pan": 0.5,
       "muted": false,
-      "solo": false
+      "solo": false,
+      "regions": [
+        {
+          "id": 1,
+          "startSeconds": 2.5,
+          "notes": [60, null, 64, null, 67, null, 64, null, 60, null, 64, null, 67, null, 64, null]
+        }
+      ]
     }
   ]
 }
 ```
 
-The app validates schema version, object fields, globally unique track/region IDs, at most one HypnoSynth instrument track, parameter ranges, total track count (maximum 64), audio region count (maximum 64) and local-file URI format. The document has a 2 MiB size limit. Opening preflights the referenced audio paths. Unsupported versions, malformed JSON or unavailable source audio raise visible errors instead of loading an incomplete session.
+The app validates schema version, object fields, unique audio-region and pattern-region IDs, at most one HypnoSynth instrument track, parameter ranges, total track count (maximum 64), audio and pattern region counts (maximum 64 each) and local-file URI format. Pattern notes are MIDI values 0..127 or null rests. The document has a 2 MiB size limit. Opening preflights the referenced audio paths. Unsupported versions, malformed JSON or unavailable source audio raise visible errors instead of loading an incomplete session.
 
 ## Save and reopen
 
@@ -68,7 +76,7 @@ The app validates schema version, object fields, globally unique track/region ID
 
 * Local audio files are **referenced, not embedded or copied**. Do not move them after saving; cross-computer portability and relinking are not implemented.
 * The existing demo clips remain visualization-only and are not saved. Imported audio clips snap to quarter-note beats while moved with transport stopped at its start; the Region menu splits, joins and trims selected audio regions at the stopped playhead. Source offsets and durations are applied by native playback and retained in the session.
-* This format does **not** save recorded audio, independent MIDI regions or note editing, automation, plugins, device configuration, undo history, or mastered output. HypnoSynth performance settings, including its editable 16-step note/rest sequence, and the single instrument track's mixer state are saved. MIDI file interchange is not implemented.
+* This format does **not** save recorded audio, multiple independently routed MIDI tracks, automation, plugins, device configuration, undo history, or mastered output. HypnoSynth performance settings, arrangement pattern regions and the single instrument track's mixer state are saved. MIDI file interchange is not implemented.
 * This is still an early-alpha session save/open workflow, not a stable project-compatibility commitment.
 * Atomic replacement semantics depend on filesystem behavior; especially after power loss, manual recovery from `.bak` may be necessary. Project writes are not a substitute for versioned backups.
 

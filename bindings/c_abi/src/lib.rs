@@ -131,7 +131,7 @@ impl Default for DAWDeviceInfo {
 /// Returns the API version (major << 16 | minor << 8 | patch).
 #[no_mangle]
 pub extern "C" fn daw_get_api_version() -> u32 {
-    10 << 8
+    11 << 8
 }
 
 /// Starts recording from the default Windows input device to a new WAV path.
@@ -227,6 +227,65 @@ pub unsafe extern "C" fn daw_engine_synth_event(
         return DAW_ERROR_INVALID_ARGUMENT;
     };
     if eng.synth_event(event, key, value) {
+        DAW_OK
+    } else {
+        DAW_ERROR_COMMAND_REJECTED
+    }
+}
+
+/// Install or update a 16-step HypnoSynth arrangement region. Each note is
+/// -1 for a rest or a MIDI note in 0..=127. Start time is timeline seconds.
+///
+/// # Safety
+/// `engine` must be a live serialized handle and `notes` must point to 16
+/// readable `i32` values for the duration of this call.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_set_sequence_region(
+    engine: *mut DAWEngine,
+    region_id: u32,
+    start_seconds: f64,
+    notes: *const i32,
+) -> i32 {
+    if engine.is_null() || notes.is_null() || region_id == 0 {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    }
+    let Some(eng) = to_core_mut(engine) else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    if !start_seconds.is_finite() || !(0.0..=86_400.0).contains(&start_seconds) {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    }
+    let values = std::slice::from_raw_parts(notes, 16);
+    let mut pattern = [None; 16];
+    for (slot, value) in pattern.iter_mut().zip(values.iter().copied()) {
+        if !(-1..=127).contains(&value) {
+            return DAW_ERROR_INVALID_ARGUMENT;
+        }
+        *slot = (value >= 0).then_some(value as u8);
+    }
+    if eng.set_sequence_region(region_id, start_seconds, pattern) {
+        DAW_OK
+    } else {
+        DAW_ERROR_COMMAND_REJECTED
+    }
+}
+
+/// Remove a HypnoSynth arrangement region by its nonzero session-local ID.
+///
+/// # Safety
+/// `engine` must be a live serialized handle.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_remove_sequence_region(
+    engine: *mut DAWEngine,
+    region_id: u32,
+) -> i32 {
+    let Some(eng) = to_core_mut(engine) else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    if region_id == 0 {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    }
+    if eng.remove_sequence_region(region_id) {
         DAW_OK
     } else {
         DAW_ERROR_COMMAND_REJECTED
@@ -733,7 +792,7 @@ mod ffi_contract_tests {
 
     #[test]
     fn api_version_matches_dart_ffi_contract() {
-        assert_eq!(daw_get_api_version(), 0x0000_0A00);
+        assert_eq!(daw_get_api_version(), 0x0000_0B00);
     }
 
     #[test]
@@ -751,6 +810,29 @@ mod ffi_contract_tests {
             assert_eq!(daw_engine_seek_seconds(ptr::null_mut(), -1.0), -1);
             assert_eq!(daw_engine_seek_seconds(ptr::null_mut(), f64::NAN), -1);
             assert_eq!(daw_engine_seek_seconds(ptr::null_mut(), 86_400.1), -1);
+        }
+    }
+
+    #[test]
+    fn sequence_region_exports_reject_null_arguments_and_zero_ids() {
+        let notes = [60_i32; 16];
+        unsafe {
+            assert_eq!(
+                daw_engine_set_sequence_region(ptr::null_mut(), 1, 0.0, notes.as_ptr()),
+                DAW_ERROR_INVALID_ARGUMENT
+            );
+            assert_eq!(
+                daw_engine_set_sequence_region(ptr::null_mut(), 1, 0.0, ptr::null()),
+                DAW_ERROR_INVALID_ARGUMENT
+            );
+            assert_eq!(
+                daw_engine_remove_sequence_region(ptr::null_mut(), 1),
+                DAW_ERROR_INVALID_ARGUMENT
+            );
+            assert_eq!(
+                daw_engine_remove_sequence_region(ptr::null_mut(), 0),
+                DAW_ERROR_INVALID_ARGUMENT
+            );
         }
     }
 

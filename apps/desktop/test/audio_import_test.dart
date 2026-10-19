@@ -19,7 +19,8 @@ class FakeEngine
         PerformanceEngine,
         ExportEngine,
         TransportSeekEngine,
-        AudioRegionEngine {
+        AudioRegionEngine,
+        SequenceRegionEngine {
   final frames = StreamController<EngineTelemetry>.broadcast();
   final calls = <String>[];
   Completer<LoadedAudioTrack>? importResult;
@@ -57,6 +58,17 @@ class FakeEngine
   Future<void> setTrackRegionSeconds(
       int trackId, double sourceStartSeconds, double durationSeconds) async {
     calls.add('region:$trackId:$sourceStartSeconds:$durationSeconds');
+  }
+
+  @override
+  Future<void> setSequenceRegion(
+      int regionId, double startSeconds, List<int?> notes) async {
+    calls.add('pattern:$regionId:$startSeconds:${notes.join(',')}');
+  }
+
+  @override
+  Future<void> removeSequenceRegion(int regionId) async {
+    calls.add('removePattern:$regionId');
   }
 
   @override
@@ -229,6 +241,20 @@ Future<void> deleteSelected(WidgetTester tester, {bool settle = true}) async {
 }
 
 void main() {
+  testWidgets('HypnoSynth pattern inserts a playable arrangement clip',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await tester.tap(find.text('Add pattern to arrangement'));
+    await tester.pumpAndSettle();
+    expect(
+        engine.calls.any((call) => call.startsWith('pattern:1:0.0:')), isTrue);
+    expect(find.text('HypnoSynth pattern'), findsOneWidget);
+    expect(
+        find.byTooltip('HypnoSynth pattern · 16-step HypnoSynth pattern'),
+        findsOneWidget);
+  });
+
   testWidgets('Add Instrument Track creates one session HypnoSynth track',
       (tester) async {
     final engine = FakeEngine();

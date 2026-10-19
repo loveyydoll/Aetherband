@@ -12,6 +12,7 @@ class HypnoSynthPanel extends StatefulWidget {
       required this.onPanic,
       required this.onAudition,
       required this.onMixer,
+      required this.onInsertPattern,
       super.key});
   final PerformanceSettings settings;
   final bool enabled;
@@ -20,6 +21,7 @@ class HypnoSynthPanel extends StatefulWidget {
   final VoidCallback onPanic;
   final VoidCallback onAudition;
   final VoidCallback onMixer;
+  final VoidCallback onInsertPattern;
   @override
   State<HypnoSynthPanel> createState() => _HypnoSynthPanelState();
 }
@@ -155,6 +157,12 @@ class _HypnoSynthPanelState extends State<HypnoSynthPanel> {
                           onPressed: widget.enabled ? widget.onAudition : null,
                           icon: const Icon(Icons.play_arrow, size: 18),
                           label: const Text('Play original phrase')),
+                      TextButton.icon(
+                        onPressed:
+                            widget.enabled ? widget.onInsertPattern : null,
+                        icon: const Icon(Icons.add_box_outlined, size: 18),
+                        label: const Text('Add pattern to arrangement'),
+                      ),
                       TextButton(
                           onPressed: widget.enabled
                               ? () {

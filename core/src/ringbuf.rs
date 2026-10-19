@@ -14,6 +14,14 @@ use rtrb::{Consumer, Producer, RingBuffer};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TrackId(pub u32);
 
+/// One fixed-length HypnoSynth pattern clip scheduled on the session timeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SequenceRegion {
+    pub id: u32,
+    pub start_frame: i64,
+    pub notes: [Option<u8>; 16],
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Commands (UI/Control thread → Audio thread)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -36,6 +44,12 @@ pub enum EngineCommand {
         bpm: f32,
         metronome: bool,
         sequence: bool,
+    },
+    /// Replace or install one bounded 16-step instrument region.
+    SetSequenceRegion(SequenceRegion),
+    /// Remove an instrument region and release its currently sounding note.
+    RemoveSequenceRegion {
+        region_id: u32,
     },
     // --- Transport ---
     /// Start audio playback.

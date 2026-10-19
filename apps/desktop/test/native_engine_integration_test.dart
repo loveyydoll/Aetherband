@@ -34,6 +34,19 @@ void main() {
       expect(outputDevices.every((device) => device.name.isNotEmpty), isTrue);
       final defaultOutput =
           outputDevices.firstWhere((device) => device.isDefault);
+      final pattern = List<int?>.filled(16, null)..[0] = 60;
+      await engine.configureTransport(120, false, false);
+      await engine.setSequenceRegion(77, 0.1, pattern);
+      await engine.play();
+      final arrangedNote = await engine.telemetry
+          .firstWhere((frame) =>
+              frame.isPlaying &&
+              frame.playheadSeconds >= 0.1 &&
+              (frame.peakLeft > 0 || frame.peakRight > 0))
+          .timeout(const Duration(seconds: 10));
+      expect(arrangedNote.playheadSeconds, greaterThanOrEqualTo(0.1));
+      await engine.stop();
+      await engine.removeSequenceRegion(77);
       await engine.configureTransport(124, false, true);
       await engine.synthEvent(2, 1, 0);
       await engine.synthEvent(3, 0, 0.9);

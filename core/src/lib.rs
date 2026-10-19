@@ -27,7 +27,9 @@ use device::{
     RecordingStats,
 };
 use hypnosynth::DEFAULT_SEQUENCE;
-use ringbuf::{create_engine_queues, EngineCommand, TelemetryFrame, TrackId, UIEndpoints};
+use ringbuf::{
+    create_engine_queues, EngineCommand, SequenceRegion, TelemetryFrame, TrackId, UIEndpoints,
+};
 use track::TrackPlayer;
 
 /// Core engine version.
@@ -93,6 +95,15 @@ pub struct TrackInfo {
     pub solo: bool,
 }
 
+const MAX_SEQUENCE_REGIONS: usize = 64;
+
+#[derive(Debug, Clone, Copy)]
+struct SequenceRegionInfo {
+    id: u32,
+    start_seconds: f64,
+    notes: [Option<u8>; 16],
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // DAW Engine
 // ─────────────────────────────────────────────────────────────────────────────
@@ -134,6 +145,7 @@ pub struct DAWEngine {
     metronome: bool,
     sequence: bool,
     sequence_pattern: [Option<u8>; 16],
+    sequence_regions: [Option<SequenceRegionInfo>; MAX_SEQUENCE_REGIONS],
     synth_gain: f32,
     synth_pan: f32,
     synth_muted: bool,
@@ -168,6 +180,7 @@ impl DAWEngine {
             metronome: false,
             sequence: false,
             sequence_pattern: DEFAULT_SEQUENCE,
+            sequence_regions: [None; MAX_SEQUENCE_REGIONS],
             synth_gain: 0.8,
             synth_pan: 0.5,
             synth_muted: false,
@@ -277,6 +290,15 @@ impl DAWEngine {
                     key: 0,
                     value,
                 })
+                .expect("fresh device command queue has capacity");
+        }
+        for region in self.sequence_regions.iter().flatten() {
+            commands
+                .push(EngineCommand::SetSequenceRegion(SequenceRegion {
+                    id: region.id,
+                    start_frame: (region.start_seconds * sample_rate as f64).round() as i64,
+                    notes: region.notes,
+                }))
                 .expect("fresh device command queue has capacity");
         }
         commands
@@ -613,6 +635,69 @@ impl DAWEngine {
         accepted
     }
 
+    /// Adds or updates one fixed 16-step HypnoSynth arrangement region.
+    pub fn set_sequence_region(
+        &mut self,
+        region_id: u32,
+        start_seconds: f64,
+        notes: [Option<u8>; 16],
+    ) -> bool {
+        if region_id == 0
+            || !start_seconds.is_finite()
+            || !(0.0..=86_400.0).contains(&start_seconds)
+        {
+            return false;
+        }
+        let Some(slot) = self
+            .sequence_regions
+            .iter()
+            .position(|region| region.is_some_and(|region| region.id == region_id))
+            .or_else(|| self.sequence_regions.iter().position(Option::is_none))
+        else {
+            return false;
+        };
+        let region = SequenceRegion {
+            id: region_id,
+            start_frame: (start_seconds * self.output_sample_rate as f64).round() as i64,
+            notes,
+        };
+        if self
+            .ui_endpoints
+            .cmd_producer
+            .push(EngineCommand::SetSequenceRegion(region))
+            .is_err()
+        {
+            return false;
+        }
+        self.sequence_regions[slot] = Some(SequenceRegionInfo {
+            id: region_id,
+            start_seconds,
+            notes,
+        });
+        true
+    }
+
+    /// Removes one HypnoSynth arrangement region and releases its active note.
+    pub fn remove_sequence_region(&mut self, region_id: u32) -> bool {
+        let Some(slot) = self
+            .sequence_regions
+            .iter()
+            .position(|region| region.is_some_and(|region| region.id == region_id))
+        else {
+            return false;
+        };
+        if self
+            .ui_endpoints
+            .cmd_producer
+            .push(EngineCommand::RemoveSequenceRegion { region_id })
+            .is_err()
+        {
+            return false;
+        }
+        self.sequence_regions[slot] = None;
+        true
+    }
+
     /// Export a fresh offline stereo mix without seeking or interrupting live playback.
     pub fn export_mixdown(&self, path: &Path) -> Result<(), offline_export::ExportError> {
         let tracks = self
@@ -639,6 +724,14 @@ impl DAWEngine {
                 metronome: self.metronome,
                 sequence: self.sequence,
                 sequence_pattern: self.sequence_pattern,
+                sequence_regions: self.sequence_regions.map(|region| {
+                    region.map(|region| offline_export::ExportSequenceRegion {
+                        id: region.id,
+                        start_frame: (region.start_seconds * self.output_sample_rate as f64).round()
+                            as u64,
+                        notes: region.notes,
+                    })
+                }),
                 synth_gain: self.synth_gain,
                 synth_pan: self.synth_pan,
                 synth_muted: self.synth_muted,
@@ -1001,6 +1094,7 @@ mod engine_tests {
             metronome: false,
             sequence: false,
             sequence_pattern: DEFAULT_SEQUENCE,
+            sequence_regions: [None; MAX_SEQUENCE_REGIONS],
             synth_gain: 0.8,
             synth_pan: 0.5,
             synth_muted: false,

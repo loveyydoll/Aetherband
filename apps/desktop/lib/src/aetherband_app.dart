@@ -83,6 +83,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   Future<void> _performanceChain = Future.value();
   final Map<String, int> _nativeTrackIds = <String, int>{};
   final Map<String, int> _nativeRegionIds = <String, int>{};
+  final Map<String, int> _nativeSequenceRegionIds = <String, int>{};
   final Map<String, String> _nativeTrackSources = <String, String>{};
   SavedAudioTrack? _copiedAudioTrack;
   final Map<String, Timer> _clipPositionTimers = <String, Timer>{};
@@ -99,6 +100,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   bool _sessionDirty = false;
   int _sessionRevision = 0;
   int _nextPersistentTrackSerial = 0;
+  int _nextSequenceRegionId = 1;
   final Map<String, double> _knobValues = {
     'Tone': 0.62,
     'Motion': 0.44,
@@ -139,6 +141,20 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
 
   String _createPersistentTrackId() =>
       'native-${DateTime.now().microsecondsSinceEpoch}-${_nextPersistentTrackSerial++}';
+
+  int _createSequenceRegionId() {
+    for (var attempt = 0;
+        attempt <= _nativeSequenceRegionIds.length;
+        attempt++) {
+      final candidate = _nextSequenceRegionId;
+      _nextSequenceRegionId = candidate == 0xffffffff ? 1 : candidate + 1;
+      if (candidate > 0 &&
+          !_nativeSequenceRegionIds.values.contains(candidate)) {
+        return candidate;
+      }
+    }
+    throw StateError('No HypnoSynth pattern region IDs are available.');
+  }
 
   void _markSessionChanged() {
     _sessionRevision++;
@@ -984,6 +1000,33 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     unawaited(_loadClipWaveform(track, clip, path));
   }
 
+  Future<void> _removeSelectedPatternRegion() async {
+    final clip = _tracks
+        .expand((track) => track.clips)
+        .where((clip) => clip.id == _selectedClipId && clip.isSequenceRegion)
+        .firstOrNull;
+    final regionId = clip == null ? null : _nativeSequenceRegionIds[clip.id];
+    final engine = _engine;
+    if (clip == null || regionId == null || engine is! SequenceRegionEngine) {
+      return;
+    }
+    final track =
+        _tracks.where((track) => track.clips.contains(clip)).firstOrNull;
+    if (track == null) return;
+    try {
+      await (engine as SequenceRegionEngine).removeSequenceRegion(regionId);
+      if (!mounted) return;
+      setState(() {
+        track.clips.remove(clip);
+        _nativeSequenceRegionIds.remove(clip.id);
+        _selectedClipId = null;
+        _markSessionChanged();
+      });
+    } catch (error) {
+      if (mounted) _reportMixerFailure('Remove HypnoSynth pattern', error);
+    }
+  }
+
   Future<void> _removeSelectedTrack() async {
     if (_trackOperationPending || _initializingEngine) return;
     final engine = _engine;
@@ -999,12 +1042,25 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       final performanceEngine = engine as PerformanceEngine;
       setState(() => _trackOperationPending = true);
       try {
+        if (selected != null && engine is SequenceRegionEngine) {
+          for (final clip
+              in selected.clips.where((clip) => clip.isSequenceRegion)) {
+            final regionId = _nativeSequenceRegionIds[clip.id];
+            if (regionId != null) {
+              await (engine as SequenceRegionEngine)
+                  .removeSequenceRegion(regionId);
+            }
+          }
+        }
         await performanceEngine.synthEvent(6, 0, 0.8);
         await performanceEngine.synthEvent(7, 0, 0.5);
         await performanceEngine.synthEvent(8, 0, 0.0);
         await performanceEngine.synthEvent(9, 0, 0.0);
         if (!mounted) return;
         setState(() {
+          for (final clip in selected?.clips ?? const <ClipModel>[]) {
+            _nativeSequenceRegionIds.remove(clip.id);
+          }
           _tracks.removeWhere((track) => track.id == selectedId);
           _selectedTrackId = _tracks.isEmpty ? '' : _tracks.first.id;
           _selectedClipId = null;
@@ -1398,6 +1454,14 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                   pan: track.pan,
                   muted: track.muted,
                   solo: track.solo,
+                  regions: track.clips
+                      .where((clip) => clip.isSequenceRegion)
+                      .map((clip) => SavedSequenceRegion(
+                            id: _nativeSequenceRegionIds[clip.id] ?? 0,
+                            startSeconds: clip.startSeconds,
+                            notes: clip.sequenceNotes,
+                          ))
+                      .toList(growable: false),
                 ))
             .toList(growable: false),
         performance: _performance);
@@ -1448,6 +1512,56 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     });
   }
 
+  Future<void> _insertSequenceRegion() async {
+    if (_trackOperationPending || _initializingEngine) return;
+    final engine = _engine;
+    if (engine is! SequenceRegionEngine) {
+      _showFeatureUnavailable('HypnoSynth pattern regions');
+      return;
+    }
+    var track =
+        _tracks.where((value) => value.kind == 'INSTRUMENT').firstOrNull;
+    if (track == null) {
+      _addInstrumentTrack();
+      track = _tracks.where((value) => value.kind == 'INSTRUMENT').firstOrNull;
+    }
+    if (track == null) return;
+    final regionId = _createSequenceRegionId();
+    final notes = List<int?>.unmodifiable(_performance.sequenceNotes);
+    final beatSeconds = 60 / _performance.tempo;
+    final startSeconds =
+        (_telemetry.playheadSeconds / beatSeconds).round() * beatSeconds;
+    final clipId = '${track.id}-pattern-$regionId';
+    try {
+      await (engine as SequenceRegionEngine)
+          .setSequenceRegion(regionId, startSeconds, notes);
+      if (!mounted) return;
+      final clip = ClipModel(
+        id: clipId,
+        title: 'HypnoSynth pattern',
+        start: 0,
+        width: 0,
+        color: AetherColors.magenta,
+        isDemo: false,
+        isSequenceRegion: true,
+        sequenceNotes: notes,
+        durationSeconds: 8 * beatSeconds,
+        startSeconds: startSeconds,
+      );
+      setState(() {
+        _nativeSequenceRegionIds[clipId] = regionId;
+        _confirmedClipStarts[clipId] = startSeconds;
+        track!.clips.add(clip);
+        _selectedTrackId = track.id;
+        _selectedClipId = clip.id;
+        _showMixer = true;
+        _markSessionChanged();
+      });
+    } catch (error) {
+      if (mounted) _reportMixerFailure('Insert HypnoSynth pattern', error);
+    }
+  }
+
   String _titleFromSessionPath(String path) {
     final name = File(path).absolute.uri.pathSegments.last;
     const extension = '.aetherband.json';
@@ -1488,7 +1602,21 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
           : _tracks.where((track) => track.clips.contains(clip)).firstOrNull;
       final nativeId = clip == null ? null : _nativeIdForClip(clip);
       final engine = _engine;
-      if (clip != null && track != null && nativeId != null && engine != null) {
+      final sequenceRegionId =
+          clip == null ? null : _nativeSequenceRegionIds[clip.id];
+      if (clip?.isSequenceRegion == true &&
+          track != null &&
+          sequenceRegionId != null &&
+          engine is SequenceRegionEngine) {
+        _queueMixerAction(_commitSequenceRegionPosition(
+            engine as SequenceRegionEngine,
+            clip!,
+            sequenceRegionId,
+            clip.startSeconds));
+      } else if (clip != null &&
+          track != null &&
+          nativeId != null &&
+          engine != null) {
         _queueMixerAction(
           _commitClipStart(engine, track, clip, nativeId, clip.startSeconds),
         );
@@ -1617,6 +1745,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     required List<TrackModel> preparedTracks,
     required Map<String, int> preparedIds,
     required Map<String, int> preparedRegionIds,
+    Map<String, int> preparedSequenceRegionIds = const <String, int>{},
     required Map<String, String> preparedSources,
     required String title,
     required String? path,
@@ -1649,6 +1778,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       _nativeRegionIds
         ..clear()
         ..addAll(preparedRegionIds);
+      _nativeSequenceRegionIds
+        ..clear()
+        ..addAll(preparedSequenceRegionIds);
       _nativeTrackSources
         ..clear()
         ..addAll(preparedSources);
@@ -1725,6 +1857,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       final tracks = <TrackModel>[];
       final ids = <String, int>{};
       final regionIds = <String, int>{};
+      final sequenceRegionIds = <String, int>{};
       final sources = <String, String>{};
       for (final saved in document.tracks) {
         final source = saved.sourcePath;
@@ -1781,12 +1914,41 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         await performanceEngine.synthEvent(7, 0, saved.pan);
         await performanceEngine.synthEvent(8, 0, saved.muted ? 1 : 0);
         await performanceEngine.synthEvent(9, 0, saved.solo ? 1 : 0);
+        final sequenceClips = <ClipModel>[];
+        if (saved.regions.isNotEmpty) {
+          final sequenceEngine = staged;
+          if (sequenceEngine is! SequenceRegionEngine) {
+            throw StateError('This engine cannot restore HypnoSynth patterns.');
+          }
+          for (final region in saved.regions) {
+            await (sequenceEngine as SequenceRegionEngine).setSequenceRegion(
+                region.id, region.startSeconds, region.notes);
+            final clipId = '${saved.id}-pattern-${region.id}';
+            sequenceRegionIds[clipId] = region.id;
+            sequenceClips.add(ClipModel(
+              id: clipId,
+              title: 'HypnoSynth pattern',
+              start: 0,
+              width: 0,
+              color: AetherColors.magenta,
+              isDemo: false,
+              isSequenceRegion: true,
+              sequenceNotes: List<int?>.unmodifiable(region.notes),
+              durationSeconds: 8 * 60 / document.performance.tempo,
+              startSeconds: region.startSeconds,
+            ));
+            if (region.id >= _nextSequenceRegionId) {
+              _nextSequenceRegionId =
+                  region.id == 0xffffffff ? 1 : region.id + 1;
+            }
+          }
+        }
         tracks.add(TrackModel(
           id: saved.id,
           name: saved.name,
           kind: 'INSTRUMENT',
           color: AetherColors.magenta,
-          clips: <ClipModel>[],
+          clips: sequenceClips,
           volume: saved.gain,
           pan: saved.pan,
           muted: saved.muted,
@@ -1799,6 +1961,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         preparedTracks: tracks,
         preparedIds: ids,
         preparedRegionIds: regionIds,
+        preparedSequenceRegionIds: sequenceRegionIds,
         preparedSources: sources,
         title: document.title,
         path: file.path,
@@ -1915,8 +2078,19 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     }
     final performance = engine as PerformanceEngine;
     final previous = _performance;
+    final selectedPattern = _tracks
+        .expand((track) => track.clips)
+        .where((clip) => clip.id == _selectedClipId && clip.isSequenceRegion)
+        .firstOrNull;
+    final sequenceRegionId = selectedPattern == null
+        ? null
+        : _nativeSequenceRegionIds[selectedPattern.id];
     setState(() {
       _performance = settings;
+      if (selectedPattern != null) {
+        selectedPattern.sequenceNotes =
+            List<int?>.unmodifiable(settings.sequenceNotes);
+      }
       _markSessionChanged();
     });
     final action = _performanceChain
@@ -1925,9 +2099,36 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
               settings,
               previous: previous,
             ))
-        .catchError((Object error) {
+        .then((_) async {
+      if (selectedPattern != null &&
+          sequenceRegionId != null &&
+          engine is SequenceRegionEngine) {
+        await (engine as SequenceRegionEngine).setSequenceRegion(
+            sequenceRegionId,
+            selectedPattern.startSeconds,
+            settings.sequenceNotes);
+      }
+    }).catchError((Object error) async {
       if (mounted && identical(_performance, settings)) {
-        setState(() => _performance = previous);
+        setState(() {
+          _performance = previous;
+          if (selectedPattern != null) {
+            selectedPattern.sequenceNotes =
+                List<int?>.unmodifiable(previous.sequenceNotes);
+          }
+        });
+      }
+      if (selectedPattern != null &&
+          sequenceRegionId != null &&
+          engine is SequenceRegionEngine) {
+        try {
+          await (engine as SequenceRegionEngine).setSequenceRegion(
+              sequenceRegionId,
+              selectedPattern.startSeconds,
+              previous.sequenceNotes);
+        } catch (_) {
+          // Keep the visible rollback; the original native rejection is shown below.
+        }
       }
       _reportMixerFailure('Instrument settings', error);
     });
@@ -1979,6 +2180,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         return;
       case 'region.bounce':
         _showFeatureUnavailable('Bounce in Place');
+        return;
+      case 'region.deletePattern':
+        unawaited(_removeSelectedPatternRegion());
         return;
       case 'edit.cut':
         if (_copySelectedAudioTrack()) unawaited(_removeSelectedTrack());
@@ -2158,7 +2362,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       if (!_positionMoveDeniedShown) {
         _positionMoveDeniedShown = true;
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Stop playback before moving an audio clip.'),
+          content: Text('Stop playback before moving a clip.'),
         ));
         Timer(
           const Duration(seconds: 2),
@@ -2169,7 +2373,11 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     }
     final nativeId = _nativeIdForClip(clip);
     final engine = _engine;
-    if (nativeId == null || engine == null || _trackOperationPending) return;
+    if (engine == null ||
+        _trackOperationPending ||
+        (!clip.isSequenceRegion && nativeId == null)) {
+      return;
+    }
     final pixelsPerSecond = timelinePixelsPerSecond(_performance.tempo);
     final beatSeconds = 60 / _performance.tempo;
     final unsnapped = clip.startSeconds + deltaPx / _zoom / pixelsPerSecond;
@@ -2177,6 +2385,25 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         ? (unsnapped / beatSeconds).round() * beatSeconds
         : unsnapped;
     final next = positioned.clamp(0.0, 3600.0).toDouble();
+    if (clip.isSequenceRegion) {
+      final regionId = _nativeSequenceRegionIds[clip.id];
+      if (regionId == null || engine is! SequenceRegionEngine) return;
+      final sequenceEngine = engine as SequenceRegionEngine;
+      setState(() {
+        clip.startSeconds = next;
+        _selectedTrackId = track.id;
+        _selectedClipId = clip.id;
+        _markSessionChanged();
+      });
+      _clipPositionTimers.remove(clip.id)?.cancel();
+      _clipPositionTimers[clip.id] =
+          Timer(const Duration(milliseconds: 60), () {
+        _clipPositionTimers.remove(clip.id);
+        _queueMixerAction(_commitSequenceRegionPosition(
+            sequenceEngine, clip, regionId, next));
+      });
+      return;
+    }
     setState(() {
       clip.startSeconds = next;
       _selectedTrackId = track.id;
@@ -2186,7 +2413,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     _clipPositionTimers.remove(clip.id)?.cancel();
     _clipPositionTimers[clip.id] = Timer(const Duration(milliseconds: 60), () {
       _clipPositionTimers.remove(clip.id);
-      _queueMixerAction(_commitClipStart(engine, track, clip, nativeId, next));
+      _queueMixerAction(_commitClipStart(engine, track, clip, nativeId!, next));
     });
   }
 
@@ -2502,10 +2729,34 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     }
   }
 
+  Future<void> _commitSequenceRegionPosition(
+    SequenceRegionEngine engine,
+    ClipModel clip,
+    int regionId,
+    double seconds,
+  ) async {
+    final previous = _confirmedClipStarts[clip.id] ?? 0;
+    try {
+      await engine.setSequenceRegion(regionId, seconds, clip.sequenceNotes);
+      _confirmedClipStarts[clip.id] = seconds;
+    } catch (error) {
+      if (!mounted) return;
+      if (_nativeSequenceRegionIds[clip.id] == regionId &&
+          (clip.startSeconds - seconds).abs() < 0.000001) {
+        setState(() => clip.startSeconds = previous);
+      }
+      _reportMixerFailure('Pattern position', error);
+    }
+  }
+
   void _selectClip(TrackModel track, ClipModel clip) {
     setState(() {
       _selectedTrackId = track.id;
       _selectedClipId = clip.id;
+      if (clip.isSequenceRegion) {
+        _performance = _performance.copyWith(
+            sequenceNotes: List<int?>.of(clip.sequenceNotes));
+      }
     });
   }
 
@@ -2792,8 +3043,14 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
             unawaited(_pasteAudioTrack()),
         const SingleActivator(LogicalKeyboardKey.keyD, control: true): () =>
             unawaited(_duplicateSelectedTrack()),
-        const SingleActivator(LogicalKeyboardKey.delete): () =>
-            unawaited(_removeSelectedTrack()),
+        const SingleActivator(LogicalKeyboardKey.delete): () {
+          if (_selectedClipId != null &&
+              _nativeSequenceRegionIds.containsKey(_selectedClipId)) {
+            unawaited(_removeSelectedPatternRegion());
+          } else {
+            unawaited(_removeSelectedTrack());
+          }
+        },
         const SingleActivator(LogicalKeyboardKey.f2): () =>
             unawaited(_renameSelectedTrack()),
         const SingleActivator(LogicalKeyboardKey.keyE,
@@ -2957,6 +3214,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                             _sendSynth(down ? 0 : 1, note, down ? 0.8 : 0)),
                         onPanic: () => unawaited(_sendSynth(4, 0, 0)),
                         onAudition: () => unawaited(_auditionSynth()),
+                        onInsertPattern: () =>
+                            unawaited(_insertSequenceRegion()),
                         onMixer: () => setState(() => _showMixer = true),
                       )
                     else
@@ -3110,6 +3369,7 @@ class _MenuBar extends StatelessWidget {
       _MenuAction('track.delete', 'Delete Selected Track'),
     ],
     'Region': [
+      _MenuAction('region.deletePattern', 'Delete HypnoSynth Pattern'),
       _MenuAction('region.split', 'Split at Playhead'),
       _MenuAction('region.join', 'Join Selected Regions'),
       _MenuAction('region.trimStart', 'Trim Start to Playhead'),

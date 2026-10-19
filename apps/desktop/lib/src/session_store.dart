@@ -160,6 +160,7 @@ class SavedInstrumentTrack {
     this.pan = 0.5,
     this.muted = false,
     this.solo = false,
+    this.regions = const <SavedSequenceRegion>[],
   });
 
   final String id;
@@ -168,6 +169,7 @@ class SavedInstrumentTrack {
   final double pan;
   final bool muted;
   final bool solo;
+  final List<SavedSequenceRegion> regions;
 
   Map<String, Object?> toJson() => {
         'id': id,
@@ -176,6 +178,7 @@ class SavedInstrumentTrack {
         'pan': pan,
         'muted': muted,
         'solo': solo,
+        'regions': regions.map((region) => region.toJson()).toList(),
       };
 
   factory SavedInstrumentTrack.fromJson(Object? value) {
@@ -195,8 +198,29 @@ class SavedInstrumentTrack {
       pan: value.containsKey('pan') ? _unitNumber(value['pan'], 'pan') : 0.5,
       muted: muted,
       solo: solo,
+      regions: value['regions'] == null
+          ? const <SavedSequenceRegion>[]
+          : _sequenceRegionsFromJson(value['regions']),
     );
   }
+}
+
+class SavedSequenceRegion {
+  const SavedSequenceRegion({
+    required this.id,
+    required this.startSeconds,
+    required this.notes,
+  });
+
+  final int id;
+  final double startSeconds;
+  final List<int?> notes;
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'startSeconds': startSeconds,
+        'notes': notes,
+      };
 }
 
 class AudioSessionDocument {
@@ -207,7 +231,7 @@ class AudioSessionDocument {
       this.performance = const PerformanceSettings()});
 
   static const String format = 'aetherband-session';
-  static const int schemaVersion = 5;
+  static const int schemaVersion = 6;
   static const int maxTracks = 64;
 
   final String title;
@@ -236,6 +260,7 @@ class AudioSessionDocument {
         value['schemaVersion'] != 2 &&
         value['schemaVersion'] != 3 &&
         value['schemaVersion'] != 4 &&
+        value['schemaVersion'] != 5 &&
         value['schemaVersion'] != schemaVersion) {
       throw FormatException(
         'Unsupported session version: ${value['schemaVersion']}.',
@@ -243,17 +268,19 @@ class AudioSessionDocument {
     }
     final title = _boundedText(value['title'], 'session title', 120);
     final data = value['tracks'];
-    final instrumentsData = value['schemaVersion'] == 5
-        ? value['instrumentTracks']
-        : const <Object?>[];
+    final instrumentsData =
+        value['schemaVersion'] == 5 || value['schemaVersion'] == 6
+            ? value['instrumentTracks']
+            : const <Object?>[];
     if (data is! List ||
         instrumentsData is! List ||
         instrumentsData.length > 1 ||
         data.length + instrumentsData.length > maxTracks) {
       throw const FormatException('Invalid session track list or track limit.');
     }
-    final hasRegions =
-        value['schemaVersion'] == 4 || value['schemaVersion'] == 5;
+    final hasRegions = value['schemaVersion'] == 4 ||
+        value['schemaVersion'] == 5 ||
+        value['schemaVersion'] == 6;
     final tracks = data
         .map((track) => SavedAudioTrack.fromJson(track, hasRegions: hasRegions))
         .toList(growable: false);
@@ -272,6 +299,15 @@ class AudioSessionDocument {
         regionIds.length > maxTracks) {
       throw const FormatException(
           'Duplicate track/region IDs or track limit exceeded.');
+    }
+    final sequenceIds = instrumentTracks
+        .expand((track) => track.regions)
+        .map((region) => region.id)
+        .toList();
+    if (sequenceIds.toSet().length != sequenceIds.length ||
+        sequenceIds.any((id) => id <= 0 || id > 0xffffffff) ||
+        sequenceIds.length > 64) {
+      throw const FormatException('Invalid or duplicate pattern region IDs.');
     }
     return AudioSessionDocument(
         title: title,
@@ -302,6 +338,38 @@ List<SavedAudioRegion> _regionsFromJson(Object? value, String trackId) {
   return value
       .map((region) => SavedAudioRegion.fromJson(region, trackId))
       .toList(growable: false);
+}
+
+List<SavedSequenceRegion> _sequenceRegionsFromJson(Object? value) {
+  if (value is! List || value.length > 64) {
+    throw const FormatException('Invalid pattern region list.');
+  }
+  return value.map((entry) {
+    if (entry is! Map<String, dynamic>) {
+      throw const FormatException('Pattern region must be an object.');
+    }
+    final id = entry['id'];
+    final start = entry['startSeconds'];
+    final notes = entry['notes'];
+    if (id is! int ||
+        id <= 0 ||
+        id > 0xffffffff ||
+        start is! num ||
+        !start.isFinite ||
+        start < 0 ||
+        start > 86400 ||
+        notes is! List ||
+        notes.length != 16 ||
+        notes.any((note) =>
+            note != null && (note is! int || note < 0 || note > 127))) {
+      throw const FormatException('Invalid pattern region data.');
+    }
+    return SavedSequenceRegion(
+      id: id,
+      startSeconds: start.toDouble(),
+      notes: List<int?>.unmodifiable(notes.cast<int?>()),
+    );
+  }).toList(growable: false);
 }
 
 double _unitNumber(Object? value, String name) {
