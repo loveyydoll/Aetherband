@@ -680,6 +680,105 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
             0.02;
   }
 
+  Future<void> _trimSelectedRegionAtPlayhead({required bool trimStart}) async {
+    final track = _selectedTrack;
+    final clip =
+        track?.clips.where((item) => item.id == _selectedClipId).firstOrNull;
+    final engine = _engine;
+    if (track == null || clip == null || clip.isDemo) {
+      _showFeatureUnavailable('Trimming unselected or demo regions');
+      return;
+    }
+    if (_trackOperationPending ||
+        _historyOperationPending ||
+        _initializingEngine) {
+      return;
+    }
+    if (_telemetry.isPlaying || _isRecording) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Stop playback and recording before trimming a region.'),
+      ));
+      return;
+    }
+    if (engine == null || engine is! AudioRegionEngine) {
+      _showFeatureUnavailable('Audio region editing');
+      return;
+    }
+    final nativeId = _nativeIdForClip(clip);
+    final duration = clip.durationSeconds;
+    final fullDuration = clip.sourceDurationSeconds;
+    final local = _telemetry.playheadSeconds - clip.startSeconds;
+    if (nativeId == null || duration == null || fullDuration == null) {
+      _showEngineUnavailable();
+      return;
+    }
+    if (local < 0.02 || duration - local < 0.02) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content:
+            Text('Place the playhead inside the region, away from its edges.'),
+      ));
+      return;
+    }
+    final beforeSourceStart = clip.sourceStartSeconds;
+    final beforeDuration = duration;
+    final beforeStart = clip.startSeconds;
+    final beforeWaveform = clip.waveformPeaks == null
+        ? null
+        : List<double>.of(clip.waveformPeaks!);
+    final afterSourceStart =
+        trimStart ? clip.sourceStartSeconds + local : clip.sourceStartSeconds;
+    final afterDuration = trimStart ? duration - local : local;
+    final afterStart =
+        trimStart ? _telemetry.playheadSeconds : clip.startSeconds;
+    final afterWaveform = clip.waveformPeaks == null
+        ? null
+        : _sliceWaveform(clip.waveformPeaks!, duration, trimStart ? local : 0,
+            afterDuration);
+    setState(() => _trackOperationPending = true);
+    try {
+      final regionEngine = engine as AudioRegionEngine;
+      await regionEngine.setTrackRegionSeconds(
+          nativeId, afterSourceStart, afterDuration);
+      try {
+        await engine.setTrackStartSeconds(nativeId, afterStart);
+      } catch (_) {
+        await regionEngine.setTrackRegionSeconds(
+            nativeId, beforeSourceStart, beforeDuration);
+        await engine.setTrackStartSeconds(nativeId, beforeStart);
+        rethrow;
+      }
+      setState(() {
+        clip.sourceStartSeconds = afterSourceStart;
+        clip.durationSeconds = afterDuration;
+        clip.startSeconds = afterStart;
+        clip.waveformPeaks = afterWaveform;
+        _confirmedClipStarts[clip.id] = afterStart;
+        _markSessionChanged();
+      });
+      _pushHistory(_RegionTrimEdit(
+        trackId: track.id,
+        clip: clip,
+        beforeSourceStart: beforeSourceStart,
+        beforeDuration: beforeDuration,
+        beforeStart: beforeStart,
+        beforeWaveform: beforeWaveform,
+        afterSourceStart: afterSourceStart,
+        afterDuration: afterDuration,
+        afterStart: afterStart,
+        afterWaveform:
+            afterWaveform == null ? null : List<double>.of(afterWaveform),
+      ));
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not trim audio region: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _trackOperationPending = false);
+    }
+  }
+
   Future<void> _importAudio() async {
     if (_trackOperationPending || _initializingEngine) return;
     final engine = _engine;
@@ -1765,6 +1864,12 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       case 'region.join':
         unawaited(_joinSelectedRegions());
         return;
+      case 'region.trimStart':
+        unawaited(_trimSelectedRegionAtPlayhead(trimStart: true));
+        return;
+      case 'region.trimEnd':
+        unawaited(_trimSelectedRegionAtPlayhead(trimStart: false));
+        return;
       case 'region.bounce':
         _showFeatureUnavailable('Bounce in Place');
         return;
@@ -2017,6 +2122,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   String _historyTrackId(Object edit) => switch (edit) {
         _ClipMoveEdit(:final trackId) => trackId,
         _RegionSplitEdit(:final trackId) => trackId,
+        _RegionTrimEdit(:final trackId) => trackId,
         _ => '',
       };
 
@@ -2047,6 +2153,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         await _applyClipMoveHistory(edit, redo: redo);
       } else if (edit is _RegionSplitEdit) {
         await _applyRegionSplitHistory(edit, redo: redo);
+      } else if (edit is _RegionTrimEdit) {
+        await _applyRegionTrimHistory(edit, redo: redo);
       }
     } finally {
       _historyOperationPending = false;
@@ -2085,6 +2193,66 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         setState(() => clip.startSeconds = previous);
       }
       _reportMixerFailure('Clip move history', error);
+    }
+  }
+
+  Future<void> _applyRegionTrimHistory(
+    _RegionTrimEdit edit, {
+    required bool redo,
+  }) async {
+    final source = redo ? _redoHistory : _undoHistory;
+    final destination = redo ? _undoHistory : _redoHistory;
+    final engine = _engine;
+    final regionEngine = engine;
+    final track = _tracks.where((item) => item.id == edit.trackId).firstOrNull;
+    final nativeId = _nativeIdForClip(edit.clip);
+    if (engine == null ||
+        regionEngine is! AudioRegionEngine ||
+        track == null ||
+        nativeId == null) {
+      _showEngineUnavailable();
+      return;
+    }
+    final fromSourceStart =
+        redo ? edit.beforeSourceStart : edit.afterSourceStart;
+    final fromDuration = redo ? edit.beforeDuration : edit.afterDuration;
+    final fromStart = redo ? edit.beforeStart : edit.afterStart;
+    final toSourceStart = redo ? edit.afterSourceStart : edit.beforeSourceStart;
+    final toDuration = redo ? edit.afterDuration : edit.beforeDuration;
+    final toStart = redo ? edit.afterStart : edit.beforeStart;
+    final toWaveform = redo ? edit.afterWaveform : edit.beforeWaveform;
+    setState(() => _trackOperationPending = true);
+    try {
+      final audioRegionEngine = regionEngine as AudioRegionEngine;
+      await audioRegionEngine.setTrackRegionSeconds(
+          nativeId, toSourceStart, toDuration);
+      try {
+        await engine.setTrackStartSeconds(nativeId, toStart);
+      } catch (_) {
+        await audioRegionEngine.setTrackRegionSeconds(
+            nativeId, fromSourceStart, fromDuration);
+        await engine.setTrackStartSeconds(nativeId, fromStart);
+        rethrow;
+      }
+      setState(() {
+        edit.clip.sourceStartSeconds = toSourceStart;
+        edit.clip.durationSeconds = toDuration;
+        edit.clip.startSeconds = toStart;
+        edit.clip.waveformPeaks =
+            toWaveform == null ? null : List<double>.of(toWaveform);
+        _confirmedClipStarts[edit.clip.id] = toStart;
+        _markSessionChanged();
+      });
+      source.removeLast();
+      destination.add(edit);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Region trim history failed: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _trackOperationPending = false);
     }
   }
 
@@ -2699,6 +2867,32 @@ class _RegionSplitEdit {
   final bool wasJoined;
 }
 
+class _RegionTrimEdit {
+  const _RegionTrimEdit({
+    required this.trackId,
+    required this.clip,
+    required this.beforeSourceStart,
+    required this.beforeDuration,
+    required this.beforeStart,
+    required this.beforeWaveform,
+    required this.afterSourceStart,
+    required this.afterDuration,
+    required this.afterStart,
+    required this.afterWaveform,
+  });
+
+  final String trackId;
+  final ClipModel clip;
+  final double beforeSourceStart;
+  final double beforeDuration;
+  final double beforeStart;
+  final List<double>? beforeWaveform;
+  final double afterSourceStart;
+  final double afterDuration;
+  final double afterStart;
+  final List<double>? afterWaveform;
+}
+
 class _MenuAction {
   const _MenuAction(this.id, this.label, [this.shortcut]);
 
@@ -2745,6 +2939,8 @@ class _MenuBar extends StatelessWidget {
     'Region': [
       _MenuAction('region.split', 'Split at Playhead'),
       _MenuAction('region.join', 'Join Selected Regions'),
+      _MenuAction('region.trimStart', 'Trim Start to Playhead'),
+      _MenuAction('region.trimEnd', 'Trim End to Playhead'),
       _MenuAction('region.bounce', 'Bounce in Place'),
     ],
     'Navigate': [

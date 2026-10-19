@@ -318,6 +318,79 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets(
+      'trim start and end update native regions and undo chronologically',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    engine.frames.add(const EngineTelemetry(
+      playheadSeconds: 2,
+      sampleRateHz: 44100,
+      peakLeft: 0,
+      peakRight: 0,
+      isPlaying: false,
+    ));
+    await tester.pumpAndSettle();
+    final clip = tester.widget<ClipTile>(importedClip).clip;
+
+    await tester.tap(find.text('Region'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Trim Start to Playhead'));
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, 2);
+    expect(clip.sourceStartSeconds, 2);
+    expect(clip.durationSeconds, 118);
+
+    engine.frames.add(const EngineTelemetry(
+      playheadSeconds: 5,
+      sampleRateHz: 44100,
+      peakLeft: 0,
+      peakRight: 0,
+      isPlaying: false,
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Region'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Trim End to Playhead'));
+    await tester.pumpAndSettle();
+    expect(clip.sourceStartSeconds, 2);
+    expect(clip.durationSeconds, 3);
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(clip.durationSeconds, 118);
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, 0);
+    expect(clip.sourceStartSeconds, 0);
+    expect(clip.durationSeconds, 120);
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Redo'));
+    await tester.pumpAndSettle();
+    expect(clip.startSeconds, 2);
+    expect(clip.sourceStartSeconds, 2);
+    expect(clip.durationSeconds, 118);
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Redo'));
+    await tester.pumpAndSettle();
+    expect(clip.sourceStartSeconds, 2);
+    expect(clip.durationSeconds, 3);
+
+    expect(engine.calls, contains('region:1:2.0:118.0'));
+    expect(engine.calls, contains('region:1:2.0:3.0'));
+    expect(engine.calls, contains('region:1:0.0:120.0'));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('duplicates a split audio track with both native regions',
       (tester) async {
     final engine = FakeEngine();
