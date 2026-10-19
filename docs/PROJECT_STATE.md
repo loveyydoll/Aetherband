@@ -1,58 +1,58 @@
 # Aetherband — Project State Handoff
 
-**Snapshot date:** 2026-10-18
-**Evidence level:** local Windows Rust/Flutter checks, a Windows desktop build and native integration test; macOS runtime verification remains pending. Recheck current CI before relying on this snapshot.
+**Updated:** 2026-10-19  
+**Evidence level:** GitHub source review and creation of the first C++ foundation. The new C++ code has not yet been built or run on Windows/macOS in this migration step.
 
 ## Product identity
 
-Aetherband is an early-alpha, open-source desktop DAW. Its long-term direction is an arrangement-first creative workspace that combines production, precise editing, mixing and future extensibility. Aether Patcher is a possible future separate visual-programming application, not the current implementation priority.
+Aetherband is an early-stage, open-source desktop DAW. Its intended direction is an arrangement-first creative workspace with native audio processing, its own DSP architecture, and room for instruments and sound-design workflows. Windows and macOS are required targets.
 
-## Current architecture
+## Current architecture decision
 
-- **Desktop UI:** Flutter/Dart in `apps/desktop/`.
-- **Audio engine/DSP:** Rust in `core/`.
-- **Interop:** versioned C ABI in `bindings/c_abi/`, consumed through Dart FFI.
-- **Audio I/O/decoding:** Rust engine components using the existing audio/device and decoder stack.
-- **Target desktop platforms:** Windows and macOS.
+- **Target application and audio runtime:** C++20 or newer where supported.
+- **Native build system:** CMake.
+- **Desktop framework:** not yet finalized; JUCE is a leading candidate pending a focused cross-platform proof.
+- **DSP:** Aetherband-owned processing graph and processor contracts; third-party libraries may be used when appropriate.
+- **Optional integrations:** C# only if a specific use case justifies it.
+- **Legacy reference:** Rust engine, versioned C ABI, Flutter/Dart frontend and existing project documentation remain available during migration. Flutter/Dart are not the target UI stack.
 
-Do not reintroduce C#/.NET/Avalonia as a second desktop frontend. Verify current project files before changing build scripts, APIs or dependency versions.
+## New C++ foundation
 
-## Known implementation boundaries
+Branch: `rewrite/cpp-native-foundation`  
+Draft PR: [#35 — Start native C++ foundation migration](https://github.com/loveyydoll/Aetherband/pull/35)
 
-- The Flutter workspace and arrangement are still prototype-stage; demo tracks/clips are not proof of a loaded or persisted project.
-- Native engine initialization, telemetry and initial transport controls are wired through an adapter/controller. Verify every specific operation before treating it as end-to-end complete.
-- The native engine exposes a set of transport, telemetry, device, test-tone and track operations; inspect `bindings/c_abi/src/lib.rs` as the source of truth before adding or assuming APIs.
-- Audio import now queries source duration through ABI 0.3.0. Native calls run outside Flutter's UI isolate, with the actual engine confined to a dedicated Rust OS thread. Imported clips use probed metadata when available, label unknown duration, and do not fabricate waveforms or support visual-only movement/mixing. Track removal preserves state on command rejection. Reconnecting clears the old engine's native IDs and requires reimport.
-- Record UI controls must not imply actual recording unless a real recording path exists.
-- Live meters must use actual engine telemetry, not invented animation.
-- Project save/load, MIDI editing, instruments, effects, automation, plugin hosting, spatial rendering and final export must not be claimed complete unless current code and tests prove it.
+The branch currently adds:
+- CMake project configured for C++20.
+- Planar float audio buffer.
+- Additive mixer.
+- Initial native unit tests.
+- Migration plan and build notes.
 
-## Critical invariants
+This is a foundation slice only. It does not yet implement device I/O, transport, an executing DSP graph, decoding, recording, sessions, export, HypnoSynth or a DAW UI. Tests are written but still need to be run on Windows and macOS.
 
-1. Preserve the reported Stop/rewind fix. A UI playhead reset is not proof that audio stopped; verify engine result and playback silence.
-2. Never perform blocking I/O, blocking locks, sleep, logging, unbounded work or routine heap allocation/destruction in the real-time audio callback.
-3. Keep Flutter responsive; long-running work and file/device operations must not block the UI isolate.
-4. Keep Rust exports, C ABI declarations, Dart FFI signatures, ownership and error semantics synchronized.
-5. Never silently represent an unsupported/failed native operation as success.
-6. Treat session/media data as user work: avoid destructive changes and preserve recoverability.
+## Legacy implementation
 
-## Current priorities
+The previous Rust implementation contains useful reference behavior and should be audited subsystem-by-subsystem. Earlier documentation describes CPAL output, bounded queues, Symphonia decoding, Rubato resampling, track mixing, a versioned C ABI, HypnoSynth, session handling and WAV mixdown. Treat these as claims to verify against current source and tests, not as a guarantee that each workflow is reliable on hardware.
 
-See [Feature Tracker](FEATURE_TRACKER.md) for the living backlog. Initial order:
-1. Recheck and repair CI on the latest mainline.
-2. Verify the Flutter ↔ Rust integration and transport behaviour on Windows/macOS.
-3. Complete a coherent import → arrange → playback workflow.
-4. Define and implement project save/reopen.
-5. Add a basic stereo export path.
-6. Grow editing, MIDI/instruments and effects through tested vertical slices.
-7. Revisit spatial audio and advanced creative-engine experiments when core workflows are coherent.
+WAV is the only format previously reported as tested. Other formats require explicit validation.
 
-## Known uncertainty
+## Immediate priorities
 
-The 2026-10-18 local checks passed Rust formatting/check/test and C ABI build, Flutter analysis/tests, a Windows desktop build and native import/transport/removal/queued-shutdown testing. Existing Clippy findings in unchanged audio/decoder/DSP/track code prevent `cargo clippy --workspace --all-targets -- -D warnings` from passing. See [verification record](VERIFICATION_2026-10-18.md) for exact scope and limitations.
+1. Build and run the C++ foundation on Windows and macOS; fix compiler warnings and test failures.
+2. Inventory the existing Rust engine, tests, session schema and instrument behavior.
+3. Specify audio callback, transport, processor lifecycle, buffer/channel, sample-rate and command-queue contracts.
+4. Implement a minimal audio runtime and a real executing DSP graph.
+5. Establish deterministic offline rendering and hardware playback checks.
+6. Build a first useful vertical slice: WAV import, multitrack playback/mixing, save/reopen and WAV export.
+7. Port HypnoSynth and additional workflows only after the foundation is validated.
 
-This document is not a runtime test report. It does not independently prove current CI status, device behaviour, audio output, persistence, export or platform packaging. Use current GitHub Actions logs and local results. Update this snapshot when evidence changes, and date it when a new status review is performed.
+## Migration rules
 
-## Required handoff format
+- Do not delete the legacy implementation in a bulk cleanup.
+- Port validated behavior, not Rust code mechanically.
+- Never claim runtime, device or platform support based on compilation alone.
+- Keep UI, project model, media, DSP and audio runtime modular.
+- No blocking I/O, allocation or contended locks in the real-time callback.
+- Keep the README and feature tracker aligned with actual test evidence.
 
-For each agent task, report **Implemented**, **Not implemented**, **Verified**, **Not verified**, **Known risks**, and **Next step**. Link the relevant PR/commit and checks when available.
+See [C++ Migration Plan](CPP_MIGRATION_PLAN.md), [Feature Tracker](FEATURE_TRACKER.md), [Architecture](ARCHITECTURE.md), and [Engine Foundation Audit](ENGINE_FOUNDATION_AUDIT.md).
