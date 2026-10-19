@@ -256,6 +256,47 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('undo and redo restore a split native audio region',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    engine.frames.add(const EngineTelemetry(
+      playheadSeconds: 2,
+      sampleRateHz: 44100,
+      peakLeft: 0,
+      peakRight: 0,
+      isPlaying: false,
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Region'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Split at Playhead'));
+    await tester.pumpAndSettle();
+    expect(importedClip, findsNWidgets(2));
+    expect(await engine.getTrackCount(), 2);
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(importedClip, findsOneWidget);
+    expect(await engine.getTrackCount(), 1);
+    expect(engine.calls, contains('region:1:0.0:120.0'));
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Redo'));
+    await tester.pumpAndSettle();
+    expect(importedClip, findsNWidgets(2));
+    expect(await engine.getTrackCount(), 2);
+    expect(
+        engine.calls.where((call) => call.startsWith('region:')), hasLength(5));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('duplicates a split audio track with both native regions',
       (tester) async {
     final engine = FakeEngine();
@@ -434,12 +475,12 @@ void main() {
 
     await tester.tap(find.byTooltip('Edit menu'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Undo Clip Move'));
+    await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
     expect(clip.startSeconds, 0);
     await tester.tap(find.byTooltip('Edit menu'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Redo Clip Move'));
+    await tester.tap(find.text('Redo'));
     await tester.pumpAndSettle();
     expect(clip.startSeconds, movedSeconds);
     expect(tester.takeException(), isNull);
