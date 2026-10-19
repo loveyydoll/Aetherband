@@ -2,16 +2,14 @@
 applyTo: "**/*.dart, **/pubspec.yaml, **/analysis_options.yaml"
 ---
 
-# Flutter / Dart FFI — Aetherband
+# Legacy Flutter / Dart FFI — Migration Reference Only
 
-- Flutter/Dart is the sole intended desktop UI. Do not reintroduce Avalonia or a second desktop frontend without explicit owner approval.
-- Read `AGENTS.md`, `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, and `bindings/c_abi/src/lib.rs` before changing the UI/native boundary.
-- Rust owns audio I/O, decoding, mixing, DSP, and the real-time callback. Dart owns presentation and sends bounded control operations through the exported C ABI.
-- Use the shared adapter in `lib/src/native_engine.dart`; do not scatter raw FFI lookups through widgets.
-- Bind only real exported functions and exact `#[repr(C)]` layouts. Handle API-version mismatches, null pointers, native errors, UTF-8 and integer widths explicitly.
-- Serialize calls for a single engine handle and stop polling before destruction. Never destroy an engine while another call is in flight.
-- Do not pass audio buffers through Flutter events/platform channels, and never run DSP or disk I/O on the audio callback.
-- Native library loading and engine errors must be visible. Never simulate success for playback, recording, saving, or export.
-- Keep timeline painting and meter updates bounded. Virtualize large track lists and profile frame times rather than assuming performance.
-- Test realistic DPI/resize layouts, keyboard/mouse behavior, accessibility, lifecycle and error states. Do not remove assertions to make tests pass.
-- Run `flutter pub get`, `flutter analyze`, and `flutter test` from the Flutter application directory. Build and exercise the native library on Windows and macOS before claiming end-to-end audio works.
+Flutter and Dart are no longer the target desktop architecture for Aetherband. This file is retained only to help agents safely inspect or temporarily maintain the legacy implementation during the C++ migration.
+
+- Do not expand the Flutter frontend as the long-term product UI unless the project owner explicitly reverses the C++ migration decision.
+- Before touching legacy code, read `AGENTS.md`, `docs/CPP_MIGRATION_PLAN.md`, and `docs/PROJECT_STATE.md`.
+- Rust and Flutter code may be used to understand existing behavior, but do not assume that behavior is verified on hardware.
+- Avoid unrelated cleanup or wholesale deletion of the legacy stack during migration.
+- Any bug fix needed to preserve a useful reference should be focused and tested where possible.
+- Do not introduce new Flutter/Dart features as part of the C++ target implementation.
+- All new core audio runtime, DSP and target UI work belongs in the native C++ architecture unless an approved migration task explicitly says otherwise.
