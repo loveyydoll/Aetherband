@@ -6,6 +6,7 @@
 //! - Zero blocking filesystem / network I/O
 
 use crate::dsp::{GainRamp, LevelMeter, SineOscillator};
+use crate::hypnosynth::HypnoSynth;
 use crate::ringbuf::{AudioEndpoints, DecodedBlock, EngineCommand, TelemetryFrame};
 use crate::track::{TrackPlayer, TrackSlots, MAX_TRACKS};
 use rtrb::{Consumer, Producer};
@@ -18,6 +19,7 @@ pub struct AudioProcessor {
     cmd_consumer: Consumer<EngineCommand>,
     telemetry_producer: Producer<TelemetryFrame>,
     retired_tracks: Producer<Box<TrackPlayer>>,
+    retired_blocks: Producer<DecodedBlock>,
     // Fixed-capacity fallback when the control thread has not reclaimed returned players.
     pending_retired: [Option<Box<TrackPlayer>>; MAX_TRACKS],
 
@@ -25,6 +27,13 @@ pub struct AudioProcessor {
     oscillator: SineOscillator,
     master_gain: GainRamp,
     meter: LevelMeter,
+    synth: HypnoSynth,
+    bpm: f32,
+    metronome: bool,
+    sequence: bool,
+    sequence_note: Option<u8>,
+    beat_phase: f64,
+    click_remaining: usize,
 
     // State
     sample_rate: f32,
@@ -50,10 +59,18 @@ impl AudioProcessor {
             cmd_consumer: endpoints.cmd_consumer,
             telemetry_producer: endpoints.telemetry_producer,
             retired_tracks: endpoints.retired_tracks,
+            retired_blocks: endpoints.retired_blocks,
             pending_retired: std::array::from_fn(|_| None),
             oscillator: SineOscillator::new(sample_rate, 440.0),
             master_gain: GainRamp::new(0.8),
             meter: LevelMeter::new(),
+            synth: HypnoSynth::new(sample_rate),
+            bpm: 92.0,
+            metronome: false,
+            sequence: false,
+            sequence_note: None,
+            beat_phase: 0.0,
+            click_remaining: 0,
             sample_rate,
             playhead_frame: 0,
             is_playing: false,
@@ -145,16 +162,44 @@ impl AudioProcessor {
                 break;
             };
             match cmd {
+                SynthEvent { event, key, value } => match event {
+                    0 => self.synth.note_on(key as u8, value),
+                    1 => self.synth.note_off(key as u8),
+                    2 => self.synth.preset(key as u8),
+                    3 => self.synth.parameter(key as u8, value),
+                    4 => self.synth.panic(),
+                    _ => (),
+                },
+                ConfigureTransport {
+                    bpm,
+                    metronome,
+                    sequence,
+                } => {
+                    self.bpm = bpm;
+                    self.metronome = metronome;
+                    self.sequence = sequence;
+                    if !sequence {
+                        if let Some(note) = self.sequence_note.take() {
+                            self.synth.note_off(note);
+                        }
+                    }
+                }
                 Play => {
                     self.is_playing = true;
                 }
                 Pause => {
                     self.is_playing = false;
+                    self.synth.panic();
+                    self.sequence_note = None;
                 }
                 Stop => {
                     self.is_playing = false;
                     self.playhead_frame = 0;
                     self.oscillator.reset();
+                    self.synth.panic();
+                    self.sequence_note = None;
+                    self.beat_phase = 0.0;
+                    self.click_remaining = 0;
                     self.tracks.reset_all();
                 }
                 Seek(frame) => {
@@ -194,6 +239,11 @@ impl AudioProcessor {
                         track.muted = muted;
                     }
                 }
+                SoloTrack { track_id, solo } => {
+                    if let Some(track) = self.tracks.get_mut(track_id) {
+                        track.solo = solo;
+                    }
+                }
                 AddTrack { player_ptr } => {
                     // SAFETY: This pointer was created in `DAWEngine::load_track` via
                     // `Box::into_raw`. It is sent through the SPSC queue exactly once and
@@ -211,19 +261,18 @@ impl AudioProcessor {
                 }
                 RestartTrack {
                     track_id,
-                    consumer_ptr,
+                    player_ptr,
                 } => {
-                    // SAFETY: consumer_ptr is a Box<Consumer<DecodedBlock>> created by the
-                    // control thread and sent exactly once through the SPSC command queue.
-                    let consumer =
-                        unsafe { *Box::from_raw(consumer_ptr as *mut Consumer<DecodedBlock>) };
-                    if let Some(track) = self.tracks.get_mut(track_id) {
-                        track.replace_stream(consumer);
+                    // SAFETY: the control thread transfers this allocation exactly once.
+                    // Both rejected replacements and old players leave on the retirement queue.
+                    let player = unsafe { Box::from_raw(player_ptr as *mut TrackPlayer) };
+                    if let Some(old) = self.tracks.remove(track_id) {
+                        self.retire_track(old);
+                        if let Err(player) = self.tracks.add(player) {
+                            self.retire_track(player);
+                        }
                     } else {
-                        // Track already removed; drop the consumer on this thread
-                        // (still real-time safe — Consumer drop only frees the ring
-                        // slots it owns, which is bounded).
-                        drop(consumer);
+                        self.retire_track(player);
                     }
                 }
             }
@@ -239,15 +288,39 @@ impl AudioProcessor {
     /// # Real-Time Safety
     /// Zero heap allocations. Zero blocking operations. Zero OS locks.
     pub fn process_interleaved(&mut self, output: &mut [f32], channels: usize) {
+        self.process_samples(output, channels);
+    }
+
+    /// Render every frame in bounded scratch-sized chunks, converting to the
+    /// hardware's actual sample format without a callback allocation.
+    pub fn process_samples<T: cpal::Sample + cpal::FromSample<f32>>(
+        &mut self,
+        output: &mut [T],
+        channels: usize,
+    ) {
+        output.fill(T::EQUILIBRIUM);
+        if channels == 0 {
+            return;
+        }
+        self.handle_commands();
+        for chunk in output.chunks_mut(Self::MAX_BLOCK_FRAMES * channels) {
+            self.process_chunk(chunk, channels);
+        }
+    }
+
+    fn process_chunk<T: cpal::Sample + cpal::FromSample<f32>>(
+        &mut self,
+        output: &mut [T],
+        channels: usize,
+    ) {
         // A malformed/unsupported channel count must never cause division by
         // zero. Keep the callback allocation-free while guaranteeing silence.
         if channels == 0 {
-            output.fill(0.0);
+            output.fill(T::EQUILIBRIUM);
             return;
         }
 
         // 1. Process a bounded number of pending UI commands.
-        self.handle_commands();
 
         let frames = output.len() / channels;
         let meter_frames = frames.min(Self::MAX_BLOCK_FRAMES);
@@ -260,11 +333,14 @@ impl AudioProcessor {
 
         // 3. Mix all active tracks into the scratch bus
         if self.is_playing {
+            let solo_active = self.tracks.has_solo();
             self.tracks.iter_mut().for_each(|track| {
                 track.mix_into(
                     &mut self.scratch_left[..meter_frames],
                     &mut self.scratch_right[..meter_frames],
                     meter_frames,
+                    &mut self.retired_blocks,
+                    solo_active,
                 );
             });
         }
@@ -280,6 +356,40 @@ impl AudioProcessor {
 
         // 5. Apply master gain (with de-zippering) and write to hardware buffer
         for f in 0..frames {
+            if self.is_playing {
+                // Clock lives on the audio thread; UI refresh rate cannot change timing.
+                let previous = self.beat_phase;
+                self.beat_phase += self.bpm as f64 / (60.0 * self.sample_rate as f64);
+                if (previous == 0.0 || previous.floor() != self.beat_phase.floor())
+                    && self.metronome
+                {
+                    self.click_remaining = (self.sample_rate * 0.025) as usize;
+                }
+                if self.sequence
+                    && (previous == 0.0
+                        || (previous * 2.0).floor() != (self.beat_phase * 2.0).floor())
+                {
+                    const NOTES: [u8; 16] = [
+                        50, 57, 60, 57, 53, 60, 65, 60, 48, 55, 60, 62, 45, 52, 57, 64,
+                    ];
+                    if let Some(note) = self.sequence_note.take() {
+                        self.synth.note_off(note);
+                    }
+                    let note = NOTES[(self.beat_phase * 2.0) as usize % NOTES.len()];
+                    self.synth.note_on(note, 0.72);
+                    self.sequence_note = Some(note);
+                }
+            }
+            let synth = self.synth.next_frame();
+            self.scratch_left[f] += synth[0];
+            self.scratch_right[f] += synth[1];
+            if self.is_playing && self.metronome && self.click_remaining > 0 {
+                let time = self.click_remaining as f32 / self.sample_rate;
+                let click = (time * 1500.0 * std::f32::consts::TAU).sin() * time * 3.0;
+                self.scratch_left[f] += click;
+                self.scratch_right[f] += click;
+                self.click_remaining -= 1;
+            }
             let gain = self.master_gain.next_gain();
             let l = if f < meter_frames {
                 self.scratch_left[f] * gain
@@ -293,15 +403,15 @@ impl AudioProcessor {
             };
 
             if channels >= 2 {
-                output[f * channels] = l;
-                output[f * channels + 1] = r;
+                output[f * channels] = T::from_sample(l.clamp(-1.0, 1.0));
+                output[f * channels + 1] = T::from_sample(r.clamp(-1.0, 1.0));
                 // Explicitly clear channels beyond stereo instead of leaving
                 // stale/uninitialized samples in the hardware output buffer.
                 for channel in 2..channels {
-                    output[f * channels + channel] = 0.0;
+                    output[f * channels + channel] = T::EQUILIBRIUM;
                 }
             } else {
-                output[f * channels] = (l + r) * 0.5;
+                output[f * channels] = T::from_sample(((l + r) * 0.5).clamp(-1.0, 1.0));
             }
 
             // Store final mixed signal back into scratch for metering
@@ -361,8 +471,12 @@ mod tests {
 
         let mut output = vec![1.0f32; 128 * 6];
         processor.process_interleaved(&mut output, 6);
-        assert!(output.chunks_exact(6).any(|frame| frame[0] != 0.0));
-        for frame in output.chunks_exact(6) {
+        assert!(output
+            .as_chunks::<6>()
+            .0
+            .iter()
+            .any(|frame| frame[0] != 0.0));
+        for frame in output.as_chunks::<6>().0 {
             assert_eq!(&frame[2..], &[0.0; 4]);
         }
     }
@@ -370,7 +484,7 @@ mod tests {
     /// If the backend unexpectedly supplies a larger block than the preallocated
     /// scratch capacity, the unprocessed tail must be deterministically silent.
     #[test]
-    fn oversized_callback_clears_output_tail() {
+    fn oversized_callback_renders_output_tail() {
         let (mut ui, audio) = create_engine_queues(16, 16);
         let mut processor = AudioProcessor::new(48_000.0, audio);
         ui.cmd_producer
@@ -389,7 +503,7 @@ mod tests {
             .any(|sample| *sample != 0.0));
         assert!(output[AudioProcessor::MAX_BLOCK_FRAMES * 2..]
             .iter()
-            .all(|sample| *sample == 0.0));
+            .any(|sample| *sample != 0.0));
     }
 
     #[test]
@@ -421,7 +535,7 @@ mod tests {
 
         processor.process_interleaved(&mut buffer, 4);
 
-        for frame in buffer.chunks_exact(4) {
+        for frame in buffer.as_chunks::<4>().0 {
             assert_eq!(frame[2], 0.0);
             assert_eq!(frame[3], 0.0);
         }
@@ -538,6 +652,47 @@ mod tests {
         processor.process_interleaved(&mut buffer, 2);
 
         assert!(buffer.iter().any(|&s| s != 0.0));
+    }
+
+    #[test]
+    fn hypnosynth_note_event_reaches_the_output_without_transport_play() {
+        let (mut ui, audio) = create_engine_queues(16, 16);
+        let mut processor = AudioProcessor::new(48_000.0, audio);
+        ui.cmd_producer
+            .push(EngineCommand::SynthEvent {
+                event: 0,
+                key: 60,
+                value: 0.8,
+            })
+            .unwrap();
+        let mut output = vec![0.0f32; 1024 * 2];
+        processor.process_interleaved(&mut output, 2);
+        assert!(output.iter().any(|sample| sample.abs() > 0.0001));
+    }
+
+    #[test]
+    fn solo_mutes_other_tracks_in_the_mixer() {
+        let (mut ui, audio) = create_engine_queues(16, 16);
+        let mut processor = AudioProcessor::new(48_000.0, audio);
+        for id in [1, 2] {
+            let (mut producer, consumer) = create_stream_queue(2);
+            let mut block = DecodedBlock::silent(128);
+            let value = if id == 1 { 0.2 } else { 0.4 };
+            for frame in 0..128 {
+                block.samples[frame * 2] = value;
+                block.samples[frame * 2 + 1] = value;
+            }
+            producer.push(block).unwrap();
+            let mut player = TrackPlayer::new(TrackId(id), consumer, 1.0, 128);
+            player.solo = id == 1;
+            assert!(processor.tracks_mut().add(Box::new(player)).is_ok());
+        }
+
+        ui.cmd_producer.push(EngineCommand::Play).unwrap();
+        let mut output = vec![0.0f32; 256];
+        processor.process_interleaved(&mut output, 2);
+        assert!(output.iter().any(|sample| *sample != 0.0));
+        assert!(output.iter().all(|sample| *sample < 0.2));
     }
 
     /// Regression for issue #5: Stop must silence output and reset playhead.

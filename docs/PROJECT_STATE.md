@@ -1,7 +1,7 @@
 # Aetherband — Project State Handoff
 
-**Snapshot date:** 2026-10-18
-**Evidence level:** local Windows Rust/Flutter checks, a Windows desktop build and native integration test; macOS runtime verification remains pending. Recheck current CI before relying on this snapshot.
+**Snapshot date:** 2026-10-19
+**Evidence level:** Windows Rust tests, C ABI build, core Clippy and Dart analysis pass for the current branch. Flutter test execution is blocked by SDK lockfile access outside the writable workspace; real hardware output is not independently verified.
 
 ## Product identity
 
@@ -13,19 +13,20 @@ Aetherband is an early-alpha, open-source desktop DAW. Its long-term direction i
 - **Audio engine/DSP:** Rust in `core/`.
 - **Interop:** versioned C ABI in `bindings/c_abi/`, consumed through Dart FFI.
 - **Audio I/O/decoding:** Rust engine components using the existing audio/device and decoder stack.
-- **Target desktop platforms:** Windows and macOS.
+- **Target desktop platform:** Windows only by current owner direction; other platforms are deferred.
 
 Do not reintroduce C#/.NET/Avalonia as a second desktop frontend. Verify current project files before changing build scripts, APIs or dependency versions.
 
 ## Known implementation boundaries
 
-- The Flutter workspace and arrangement are still prototype-stage; demo tracks/clips are not proof of a loaded or persisted project.
-- Native engine initialization, telemetry and initial transport controls are wired through an adapter/controller. Verify every specific operation before treating it as end-to-end complete.
-- The native engine exposes a set of transport, telemetry, device, test-tone and track operations; inspect `bindings/c_abi/src/lib.rs` as the source of truth before adding or assuming APIs.
-- Audio import now queries source duration through ABI 0.3.0. Native calls run outside Flutter's UI isolate, with the actual engine confined to a dedicated Rust OS thread. Imported clips use probed metadata when available, label unknown duration, and do not fabricate waveforms or support visual-only movement/mixing. Track removal preserves state on command rejection. Reconnecting clears the old engine's native IDs and requires reimport.
+- The launch arrangement is a real empty session rather than six visual demo tracks. Imported audio remains duration-aware and native playback is routed to the default Windows device using its native sample format.
+- The real-time Rust callback now renders imported tracks and HypnoSynth, supports full oversized buffers, and defers decoder/player reclamation to the control thread. Device stream errors are surfaced through telemetry.
+- HypnoSynth is an original polyphonic instrument with three original presets, live keyboard input, tempo/metronome, and a generated phrase. Its musical references do not use copied recordings or claim to recreate a specific patch.
+- ABI 0.4.0, Dart FFI and session schema v2 carry synth, transport, master gain, and track solo state. Sessions stage media in a fresh engine before replacing active state.
+- Rust callback tests confirm audible generated and decoded signals; physical speaker or loopback listening still requires a user machine with an audio output.
 - Record UI controls must not imply actual recording unless a real recording path exists.
 - Live meters must use actual engine telemetry, not invented animation.
-- Project save/load, MIDI editing, instruments, effects, automation, plugin hosting, spatial rendering and final export must not be claimed complete unless current code and tests prove it.
+- MIDI editing/recording, stereo export, effects, automation, plugin hosting, waveform rendering, clip editing, undo/redo and device selection remain incomplete; visible controls report unsupported actions honestly.
 
 ## Critical invariants
 
@@ -39,17 +40,14 @@ Do not reintroduce C#/.NET/Avalonia as a second desktop frontend. Verify current
 ## Current priorities
 
 See [Feature Tracker](FEATURE_TRACKER.md) for the living backlog. Initial order:
-1. Recheck and repair CI on the latest mainline.
-2. Verify the Flutter ↔ Rust integration and transport behaviour on Windows/macOS.
-3. Complete a coherent import → arrange → playback workflow.
-4. Define and implement project save/reopen.
-5. Add a basic stereo export path.
-6. Grow editing, MIDI/instruments and effects through tested vertical slices.
-7. Revisit spatial audio and advanced creative-engine experiments when core workflows are coherent.
+1. Run Flutter tests and Windows packaging with a writable Flutter SDK, then check the single PR's CI.
+2. Listen to HypnoSynth and imported audio through actual Windows output hardware.
+3. Add real stereo export and input recording as separately tested vertical slices.
+4. Add waveform/clip editing, undo/redo and MIDI data persistence.
 
 ## Known uncertainty
 
-The 2026-10-18 local checks passed Rust formatting/check/test and C ABI build, Flutter analysis/tests, a Windows desktop build and native import/transport/removal/queued-shutdown testing. Existing Clippy findings in unchanged audio/decoder/DSP/track code prevent `cargo clippy --workspace --all-targets -- -D warnings` from passing. See [verification record](VERIFICATION_2026-10-18.md) for exact scope and limitations.
+The current local Rust workspace tests pass (38 core, one callback safety and six ABI tests), as do Rust formatting, Windows C ABI build, core Clippy and Dart analysis. The Flutter test runner could not start because its SDK attempts to create a lockfile under `C:\src\flutter`, outside the writable workspace. Flutter widget execution, full Flutter packaging and physical audio output remain unverified for this branch.
 
 This document is not a runtime test report. It does not independently prove current CI status, device behaviour, audio output, persistence, export or platform packaging. Use current GitHub Actions logs and local results. Update this snapshot when evidence changes, and date it when a new status review is performed.
 

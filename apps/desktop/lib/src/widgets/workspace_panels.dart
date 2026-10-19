@@ -17,13 +17,39 @@ class BrowserPanel extends StatelessWidget {
   final ValueChanged<String> onCategoryChanged;
   final ValueChanged<String> onPresetSelected;
 
-  static const categories = ['Instruments', 'Presets', 'Effects', 'Samples', 'Projects'];
+  static const categories = [
+    'Instruments',
+    'Presets',
+    'Effects',
+    'Samples',
+    'Projects'
+  ];
   static const items = <String, List<String>>{
-    'Instruments': ['Afterimage', 'Soft Focus', 'Glass Choir', 'Room Tone'],
-    'Presets': ['Warm Haze', 'Pale Blue', 'Slow Bloom', 'Velvet Tape'],
-    'Effects': ['Afterglow Reverb', 'Memory Chorus', 'Soft Saturation', 'Reverse Room'],
-    'Samples': ['Field recordings', 'Drum fragments', 'Vocal textures', 'Found sounds'],
-    'Projects': ['Recent sessions', 'Artist templates', 'Sketches', 'Finished mixes'],
+    'Instruments': [
+      'HypnoSynth',
+      'Morning Haze',
+      'Nervous Current',
+      'Submerged'
+    ],
+    'Presets': ['Morning Haze', 'Nervous Current', 'Submerged'],
+    'Effects': [
+      'Afterglow Reverb',
+      'Memory Chorus',
+      'Soft Saturation',
+      'Reverse Room'
+    ],
+    'Samples': [
+      'Field recordings',
+      'Drum fragments',
+      'Vocal textures',
+      'Found sounds'
+    ],
+    'Projects': [
+      'Recent sessions',
+      'Artist templates',
+      'Sketches',
+      'Finished mixes'
+    ],
   };
 
   @override
@@ -41,9 +67,14 @@ class BrowserPanel extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(16, 15, 12, 8),
             child: Row(
               children: [
-                Icon(Icons.auto_awesome_outlined, color: AetherColors.sage, size: 15),
+                Icon(Icons.auto_awesome_outlined,
+                    color: AetherColors.sage, size: 15),
                 SizedBox(width: 8),
-                Text('LIBRARY', style: TextStyle(fontSize: 10, letterSpacing: 1.5, fontWeight: FontWeight.w700)),
+                Text('LIBRARY',
+                    style: TextStyle(
+                        fontSize: 10,
+                        letterSpacing: 1.5,
+                        fontWeight: FontWeight.w700)),
               ],
             ),
           ),
@@ -52,13 +83,16 @@ class BrowserPanel extends StatelessWidget {
             child: TextField(
               decoration: InputDecoration(
                 hintText: 'Find a sound...',
-                hintStyle: const TextStyle(color: AetherColors.secondaryText, fontSize: 12),
+                hintStyle: const TextStyle(
+                    color: AetherColors.secondaryText, fontSize: 12),
                 prefixIcon: const Icon(Icons.search, size: 16),
                 isDense: true,
                 filled: true,
                 fillColor: AetherColors.panel,
                 contentPadding: const EdgeInsets.symmetric(vertical: 9),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide.none),
               ),
             ),
           ),
@@ -68,23 +102,35 @@ class BrowserPanel extends StatelessWidget {
               child: Container(
                 height: 34,
                 padding: const EdgeInsets.symmetric(horizontal: 15),
-                color: item == category ? AetherColors.raised : Colors.transparent,
+                color:
+                    item == category ? AetherColors.raised : Colors.transparent,
                 child: Row(
                   children: [
-                    Icon(_categoryIcon(item), size: 15, color: item == category ? AetherColors.sage : AetherColors.secondaryText),
+                    Icon(_categoryIcon(item),
+                        size: 15,
+                        color: item == category
+                            ? AetherColors.sage
+                            : AetherColors.secondaryText),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: Text(item, style: TextStyle(
-                        fontSize: 12,
-                        color: item == category ? AetherColors.paper : AetherColors.secondaryText,
-                        fontWeight: item == category ? FontWeight.w600 : FontWeight.normal,
-                      )),
+                      child: Text(item,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: item == category
+                                ? AetherColors.paper
+                                : AetherColors.secondaryText,
+                            fontWeight: item == category
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                          )),
                     ),
                     if (item == category)
                       Container(
                         width: 3,
                         height: 20,
-                        decoration: BoxDecoration(color: AetherColors.magenta, borderRadius: BorderRadius.circular(4)),
+                        decoration: BoxDecoration(
+                            color: AetherColors.magenta,
+                            borderRadius: BorderRadius.circular(4)),
                       ),
                   ],
                 ),
@@ -92,16 +138,24 @@ class BrowserPanel extends StatelessWidget {
             ),
           const Padding(
             padding: EdgeInsets.fromLTRB(15, 20, 15, 7),
-            child: Text('COLLECTION', style: TextStyle(color: AetherColors.secondaryText, fontSize: 9, letterSpacing: 1.2, fontWeight: FontWeight.w700)),
+            child: Text('COLLECTION',
+                style: TextStyle(
+                    color: AetherColors.secondaryText,
+                    fontSize: 9,
+                    letterSpacing: 1.2,
+                    fontWeight: FontWeight.w700)),
           ),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 15),
-            child: Text('Soft-focus studies', style: TextStyle(color: AetherColors.paper, fontSize: 12)),
+            child: Text('HypnoSynth / original sounds',
+                style: TextStyle(color: AetherColors.paper, fontSize: 12)),
           ),
           const SizedBox(height: 3),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 15),
-            child: Text('12 presets · original sounds', style: TextStyle(color: AetherColors.secondaryText, fontSize: 10)),
+            child: Text('3 native instrument presets',
+                style:
+                    TextStyle(color: AetherColors.secondaryText, fontSize: 10)),
           ),
           const Divider(height: 25, indent: 14, endIndent: 14),
           Expanded(
@@ -114,11 +168,13 @@ class BrowserPanel extends StatelessWidget {
                     child: ListTile(
                       dense: true,
                       visualDensity: const VisualDensity(vertical: -3),
-                      leading: Icon(_itemIcon(category), size: 16, color: AetherColors.sage),
+                      leading: Icon(_itemIcon(category),
+                          size: 16, color: AetherColors.sage),
                       title: Text(item, style: const TextStyle(fontSize: 11)),
                       onTap: () => onPresetSelected(item),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6)),
                     ),
                   ),
               ],
@@ -126,7 +182,11 @@ class BrowserPanel extends StatelessWidget {
           ),
           const Padding(
             padding: EdgeInsets.all(12),
-            child: Text('DEMO CONTENT · NO AUDIO FILES', style: TextStyle(color: AetherColors.secondaryText, fontSize: 8, letterSpacing: 0.4)),
+            child: Text('PLAY HYPNOSYNTH BELOW OR IMPORT AUDIO',
+                style: TextStyle(
+                    color: AetherColors.secondaryText,
+                    fontSize: 8,
+                    letterSpacing: 0.4)),
           ),
         ],
       ),
@@ -134,20 +194,20 @@ class BrowserPanel extends StatelessWidget {
   }
 
   IconData _categoryIcon(String item) => switch (item) {
-    'Instruments' => Icons.music_note_outlined,
-    'Presets' => Icons.tune,
-    'Effects' => Icons.blur_on,
-    'Samples' => Icons.graphic_eq,
-    _ => Icons.folder_open_outlined,
-  };
+        'Instruments' => Icons.music_note_outlined,
+        'Presets' => Icons.tune,
+        'Effects' => Icons.blur_on,
+        'Samples' => Icons.graphic_eq,
+        _ => Icons.folder_open_outlined,
+      };
 
   IconData _itemIcon(String item) => switch (item) {
-    'Instruments' => Icons.piano_outlined,
-    'Presets' => Icons.waves,
-    'Effects' => Icons.auto_fix_high,
-    'Samples' => Icons.audio_file,
-    _ => Icons.folder_outlined,
-  };
+        'Instruments' => Icons.piano_outlined,
+        'Presets' => Icons.waves,
+        'Effects' => Icons.auto_fix_high,
+        'Samples' => Icons.audio_file,
+        _ => Icons.folder_outlined,
+      };
 }
 
 class InstrumentDock extends StatelessWidget {
@@ -162,6 +222,7 @@ class InstrumentDock extends StatelessWidget {
     required this.onVolumeChanged,
     required this.onPanChanged,
     required this.onMuteChanged,
+    required this.onSoloChanged,
     required this.peakLeft,
     required this.peakRight,
     super.key,
@@ -177,6 +238,7 @@ class InstrumentDock extends StatelessWidget {
   final void Function(TrackModel, double) onVolumeChanged;
   final void Function(TrackModel, double) onPanChanged;
   final void Function(TrackModel, bool) onMuteChanged;
+  final void Function(TrackModel, bool) onSoloChanged;
   final double peakLeft;
   final double peakRight;
 
@@ -194,14 +256,27 @@ class InstrumentDock extends StatelessWidget {
             height: 37,
             child: Row(
               children: [
-                _DockTab(label: 'DEVICE', selected: !isMixer, onTap: () => onTabChanged(false)),
-                _DockTab(label: 'MIXER', selected: isMixer, onTap: () => onTabChanged(true)),
+                _DockTab(
+                    label: 'DEVICE',
+                    selected: !isMixer,
+                    onTap: () => onTabChanged(false)),
+                _DockTab(
+                    label: 'MIXER',
+                    selected: isMixer,
+                    onTap: () => onTabChanged(true)),
                 const Spacer(),
                 Container(
                   margin: const EdgeInsets.only(right: 12),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(color: AetherColors.background, borderRadius: BorderRadius.circular(4)),
-                  child: const Text('INSTRUMENT PREVIEW', style: TextStyle(color: AetherColors.secondaryText, fontSize: 8, letterSpacing: 0.6)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                      color: AetherColors.background,
+                      borderRadius: BorderRadius.circular(4)),
+                  child: const Text('INSTRUMENT PREVIEW',
+                      style: TextStyle(
+                          color: AetherColors.secondaryText,
+                          fontSize: 8,
+                          letterSpacing: 0.6)),
                 ),
               ],
             ),
@@ -222,11 +297,22 @@ class InstrumentDock extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('EFFECT CHAIN', style: TextStyle(color: AetherColors.secondaryText, fontSize: 9, letterSpacing: 1.2, fontWeight: FontWeight.w700)),
+                const Text('EFFECT CHAIN',
+                    style: TextStyle(
+                        color: AetherColors.secondaryText,
+                        fontSize: 9,
+                        letterSpacing: 1.2,
+                        fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
-                const _EffectTile(name: 'Memory Chorus', detail: 'soft modulation', color: AetherColors.blue),
+                const _EffectTile(
+                    name: 'Memory Chorus',
+                    detail: 'soft modulation',
+                    color: AetherColors.blue),
                 const SizedBox(height: 5),
-                const _EffectTile(name: 'Afterglow Reverb', detail: 'wide / slow', color: AetherColors.sage),
+                const _EffectTile(
+                    name: 'Afterglow Reverb',
+                    detail: 'wide / slow',
+                    color: AetherColors.sage),
               ],
             ),
           ),
@@ -240,20 +326,34 @@ class InstrumentDock extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    const Text('AFTERIMAGE', style: TextStyle(color: AetherColors.paper, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.0)),
+                    const Text('AFTERIMAGE',
+                        style: TextStyle(
+                            color: AetherColors.paper,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.0)),
                     const SizedBox(width: 12),
-                    const Text('TEXTURE SYNTH / DEMO', style: TextStyle(color: AetherColors.secondaryText, fontSize: 9, letterSpacing: 0.7)),
+                    const Text('TEXTURE SYNTH / DEMO',
+                        style: TextStyle(
+                            color: AetherColors.secondaryText,
+                            fontSize: 9,
+                            letterSpacing: 0.7)),
                     const Spacer(),
                     DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
                         value: preset,
                         dropdownColor: AetherColors.raised,
-                        style: const TextStyle(color: AetherColors.paper, fontSize: 11),
+                        style: const TextStyle(
+                            color: AetherColors.paper, fontSize: 11),
                         items: const [
-                          DropdownMenuItem(value: 'Soft Focus', child: Text('Soft Focus')),
-                          DropdownMenuItem(value: 'Pale Blue', child: Text('Pale Blue')),
-                          DropdownMenuItem(value: 'Slow Bloom', child: Text('Slow Bloom')),
-                          DropdownMenuItem(value: 'Velvet Tape', child: Text('Velvet Tape')),
+                          DropdownMenuItem(
+                              value: 'Soft Focus', child: Text('Soft Focus')),
+                          DropdownMenuItem(
+                              value: 'Pale Blue', child: Text('Pale Blue')),
+                          DropdownMenuItem(
+                              value: 'Slow Bloom', child: Text('Slow Bloom')),
+                          DropdownMenuItem(
+                              value: 'Velvet Tape', child: Text('Velvet Tape')),
                         ],
                         onChanged: onPresetChanged,
                       ),
@@ -294,13 +394,22 @@ class InstrumentDock extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('OUTPUT', style: TextStyle(color: AetherColors.secondaryText, fontSize: 9, letterSpacing: 1.2, fontWeight: FontWeight.w700)),
+                const Text('OUTPUT',
+                    style: TextStyle(
+                        color: AetherColors.secondaryText,
+                        fontSize: 9,
+                        letterSpacing: 1.2,
+                        fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
-                _MeterBar(label: 'L', value: peakLeft, color: AetherColors.sage),
+                _MeterBar(
+                    label: 'L', value: peakLeft, color: AetherColors.sage),
                 const SizedBox(height: 8),
-                _MeterBar(label: 'R', value: peakRight, color: AetherColors.magenta),
+                _MeterBar(
+                    label: 'R', value: peakRight, color: AetherColors.magenta),
                 const Spacer(),
-                const Text('DEMO METER ONLY', style: TextStyle(color: AetherColors.secondaryText, fontSize: 8)),
+                const Text('LIVE OUTPUT',
+                    style: TextStyle(
+                        color: AetherColors.secondaryText, fontSize: 8)),
               ],
             ),
           ),
@@ -326,7 +435,8 @@ class InstrumentDock extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: AetherColors.background,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border(top: BorderSide(color: track.color, width: 2)),
+                      border:
+                          Border(top: BorderSide(color: track.color, width: 2)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -339,7 +449,8 @@ class InstrumentDock extends StatelessWidget {
                         const Spacer(),
                         Text('Gain ${(track.volume * 100).round()}%',
                             style: const TextStyle(
-                                fontSize: 10, color: AetherColors.secondaryText)),
+                                fontSize: 10,
+                                color: AetherColors.secondaryText)),
                         SizedBox(
                           height: 24,
                           child: Slider(
@@ -351,7 +462,8 @@ class InstrumentDock extends StatelessWidget {
                         ),
                         Text('Pan ${((track.pan - 0.5) * 200).round()}',
                             style: const TextStyle(
-                                fontSize: 10, color: AetherColors.secondaryText)),
+                                fontSize: 10,
+                                color: AetherColors.secondaryText)),
                         SizedBox(
                           height: 24,
                           child: Slider(
@@ -363,20 +475,39 @@ class InstrumentDock extends StatelessWidget {
                         ),
                         Align(
                           alignment: Alignment.centerRight,
-                          child: IconButton(
-                            tooltip: 'Mute ${track.name}',
-                            onPressed: () => onMuteChanged(track, !track.muted),
-                            constraints: const BoxConstraints(
-                                minWidth: 32, minHeight: 26),
-                            padding: EdgeInsets.zero,
-                            iconSize: 16,
-                            icon: Icon(
-                              track.muted ? Icons.volume_off : Icons.volume_up,
-                              color: track.muted
-                                  ? AetherColors.magenta
-                                  : AetherColors.secondaryText,
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            IconButton(
+                              tooltip: 'Solo ${track.name}',
+                              onPressed: () =>
+                                  onSoloChanged(track, !track.solo),
+                              constraints: const BoxConstraints(
+                                  minWidth: 30, minHeight: 26),
+                              padding: EdgeInsets.zero,
+                              iconSize: 15,
+                              icon: Text('S',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: track.solo
+                                          ? AetherColors.sage
+                                          : AetherColors.secondaryText)),
                             ),
-                          ),
+                            IconButton(
+                              tooltip: 'Mute ${track.name}',
+                              onPressed: () =>
+                                  onMuteChanged(track, !track.muted),
+                              constraints: const BoxConstraints(
+                                  minWidth: 30, minHeight: 26),
+                              padding: EdgeInsets.zero,
+                              iconSize: 16,
+                              icon: Icon(
+                                  track.muted
+                                      ? Icons.volume_off
+                                      : Icons.volume_up,
+                                  color: track.muted
+                                      ? AetherColors.magenta
+                                      : AetherColors.secondaryText),
+                            ),
+                          ]),
                         ),
                       ],
                     ),
@@ -391,7 +522,8 @@ class InstrumentDock extends StatelessWidget {
 }
 
 class _DockTab extends StatelessWidget {
-  const _DockTab({required this.label, required this.selected, required this.onTap});
+  const _DockTab(
+      {required this.label, required this.selected, required this.onTap});
 
   final String label;
   final bool selected;
@@ -405,15 +537,20 @@ class _DockTab extends StatelessWidget {
         height: 37,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: selected ? AetherColors.magenta : Colors.transparent, width: 2)),
+          border: Border(
+              bottom: BorderSide(
+                  color: selected ? AetherColors.magenta : Colors.transparent,
+                  width: 2)),
         ),
         child: Center(
-          child: Text(label, style: TextStyle(
-            color: selected ? AetherColors.paper : AetherColors.secondaryText,
-            fontSize: 10,
-            letterSpacing: 1,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-          )),
+          child: Text(label,
+              style: TextStyle(
+                color:
+                    selected ? AetherColors.paper : AetherColors.secondaryText,
+                fontSize: 10,
+                letterSpacing: 1,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              )),
         ),
       ),
     );
@@ -421,7 +558,8 @@ class _DockTab extends StatelessWidget {
 }
 
 class _EffectTile extends StatelessWidget {
-  const _EffectTile({required this.name, required this.detail, required this.color});
+  const _EffectTile(
+      {required this.name, required this.detail, required this.color});
 
   final String name;
   final String detail;
@@ -444,12 +582,20 @@ class _EffectTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(name, style: const TextStyle(color: AetherColors.paper, fontSize: 10, fontWeight: FontWeight.w600)),
-                Text(detail, style: const TextStyle(color: AetherColors.secondaryText, fontSize: 9)),
+                Text(name,
+                    style: const TextStyle(
+                        color: AetherColors.paper,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600)),
+                Text(detail,
+                    style: const TextStyle(
+                        color: AetherColors.secondaryText, fontSize: 9)),
               ],
             ),
           ),
-          Icon(Icons.more_horiz, color: AetherColors.secondaryText.withValues(alpha: 0.75), size: 16),
+          Icon(Icons.more_horiz,
+              color: AetherColors.secondaryText.withValues(alpha: 0.75),
+              size: 16),
         ],
       ),
     );
@@ -478,7 +624,8 @@ class DialControl extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           GestureDetector(
-            onVerticalDragUpdate: (details) => onChanged((value - details.delta.dy / 130).clamp(0.0, 1.0).toDouble()),
+            onVerticalDragUpdate: (details) => onChanged(
+                (value - details.delta.dy / 130).clamp(0.0, 1.0).toDouble()),
             onDoubleTap: () => onChanged(0.5),
             child: CustomPaint(
               size: const Size(44, 44),
@@ -487,8 +634,13 @@ class DialControl extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 2),
-          Text(label.toUpperCase(), style: const TextStyle(color: AetherColors.secondaryText, fontSize: 8, letterSpacing: 0.5)),
-          Text('${(value * 100).round()}', style: const TextStyle(color: AetherColors.paper, fontSize: 9)),
+          Text(label.toUpperCase(),
+              style: const TextStyle(
+                  color: AetherColors.secondaryText,
+                  fontSize: 8,
+                  letterSpacing: 0.5)),
+          Text('${(value * 100).round()}',
+              style: const TextStyle(color: AetherColors.paper, fontSize: 9)),
         ],
       ),
     );
@@ -505,25 +657,39 @@ class DialPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final rect = Rect.fromCircle(center: center, radius: 17);
-    final track = Paint()..color = AetherColors.raised..style = PaintingStyle.stroke..strokeWidth = 3.5..strokeCap = StrokeCap.round;
-    final progress = Paint()..color = accent..style = PaintingStyle.stroke..strokeWidth = 3.5..strokeCap = StrokeCap.round;
+    final track = Paint()
+      ..color = AetherColors.raised
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.5
+      ..strokeCap = StrokeCap.round;
+    final progress = Paint()
+      ..color = accent
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.5
+      ..strokeCap = StrokeCap.round;
     canvas.drawArc(rect, math.pi * 0.75, math.pi * 1.5, false, track);
-    canvas.drawArc(rect, math.pi * 0.75, math.pi * 1.5 * value, false, progress);
+    canvas.drawArc(
+        rect, math.pi * 0.75, math.pi * 1.5 * value, false, progress);
     canvas.drawCircle(center, 12.5, Paint()..color = AetherColors.background);
     final angle = math.pi * 0.75 + math.pi * 1.5 * value;
     canvas.drawLine(
       center,
       Offset(center.dx + math.cos(angle) * 9, center.dy + math.sin(angle) * 9),
-      Paint()..color = AetherColors.paper..strokeWidth = 2..strokeCap = StrokeCap.round,
+      Paint()
+        ..color = AetherColors.paper
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round,
     );
   }
 
   @override
-  bool shouldRepaint(covariant DialPainter oldDelegate) => oldDelegate.value != value || oldDelegate.accent != accent;
+  bool shouldRepaint(covariant DialPainter oldDelegate) =>
+      oldDelegate.value != value || oldDelegate.accent != accent;
 }
 
 class _MeterBar extends StatelessWidget {
-  const _MeterBar({required this.label, required this.value, required this.color});
+  const _MeterBar(
+      {required this.label, required this.value, required this.color});
 
   final String label;
   final double value;
@@ -533,7 +699,11 @@ class _MeterBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        SizedBox(width: 12, child: Text(label, style: const TextStyle(color: AetherColors.secondaryText, fontSize: 10))),
+        SizedBox(
+            width: 12,
+            child: Text(label,
+                style: const TextStyle(
+                    color: AetherColors.secondaryText, fontSize: 10))),
         Expanded(
           child: ClipRRect(
             borderRadius: BorderRadius.circular(3),
@@ -541,7 +711,8 @@ class _MeterBar extends StatelessWidget {
               height: 7,
               child: Stack(
                 children: [
-                  const Positioned.fill(child: ColoredBox(color: AetherColors.raised)),
+                  const Positioned.fill(
+                      child: ColoredBox(color: AetherColors.raised)),
                   Align(
                     alignment: Alignment.centerLeft,
                     child: FractionallySizedBox(

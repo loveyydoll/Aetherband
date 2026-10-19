@@ -116,8 +116,8 @@ pub struct StreamDecoder {
 impl StreamDecoder {
     /// Spawn a background decode worker for `path`, targeting `output_sample_rate`.
     ///
-    /// The worker pre-decodes the entire file into the ring buffer,
-    /// converting sample rate if necessary.
+    /// The worker decodes the file in bounded blocks and keeps the ring buffer
+    /// fed as the audio thread consumes it, converting rate when necessary.
     pub fn spawn(path: &Path, output_sample_rate: u32) -> Result<Self, DecoderError> {
         let path = path.to_path_buf();
         let stop_flag = Arc::new(AtomicBool::new(false));
@@ -163,10 +163,8 @@ impl StreamDecoder {
     pub fn stop(&mut self) {
         self.stop_flag.store(true, Ordering::Release);
         if let Some(worker) = self.worker.take() {
-            if worker.thread().id() != std::thread::current().id() {
-                if worker.join().is_err() {
-                    log::error!("Stream decoder worker panicked while shutting down");
-                }
+            if worker.thread().id() != std::thread::current().id() && worker.join().is_err() {
+                log::error!("Stream decoder worker panicked while shutting down");
             }
         }
     }
@@ -353,9 +351,12 @@ fn decode_worker(
                 if stop_flag.load(Ordering::Relaxed) {
                     return Ok(());
                 }
-                match producer.push(block.clone()) {
+                match producer.push(block) {
                     Ok(_) => break,
-                    Err(_) => std::thread::sleep(std::time::Duration::from_millis(1)),
+                    Err(rtrb::PushError::Full(returned)) => {
+                        block = returned;
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                    }
                 }
             }
         }
@@ -400,9 +401,12 @@ fn decode_worker(
             if stop_flag.load(Ordering::Relaxed) {
                 return Ok(());
             }
-            match producer.push(block.clone()) {
+            match producer.push(block) {
                 Ok(_) => break,
-                Err(_) => std::thread::sleep(std::time::Duration::from_millis(1)),
+                Err(rtrb::PushError::Full(returned)) => {
+                    block = returned;
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
             }
         }
     } else {
@@ -414,9 +418,12 @@ fn decode_worker(
             if stop_flag.load(Ordering::Relaxed) {
                 return Ok(());
             }
-            match producer.push(terminal.clone()) {
+            match producer.push(terminal) {
                 Ok(_) => break,
-                Err(_) => std::thread::sleep(std::time::Duration::from_millis(1)),
+                Err(rtrb::PushError::Full(returned)) => {
+                    terminal = returned;
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
             }
         }
     }
@@ -435,5 +442,63 @@ mod tests {
         assert_eq!(block.samples.len(), 1024);
         assert_eq!(block.valid_frames, 512);
         assert!(block.samples.iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn streaming_wav_decoder_emits_audible_samples() {
+        use std::io::Write;
+        use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("aetherband-signal-{stamp}.wav"));
+        let frames = 2048u32;
+        let data_bytes = frames * 4;
+        let mut wav = Vec::with_capacity(44 + data_bytes as usize);
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data_bytes).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        wav.extend_from_slice(&2u16.to_le_bytes()); // stereo
+        wav.extend_from_slice(&48_000u32.to_le_bytes());
+        wav.extend_from_slice(&192_000u32.to_le_bytes());
+        wav.extend_from_slice(&4u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data_bytes.to_le_bytes());
+        for frame in 0..frames {
+            let phase = frame as f32 * 0.12;
+            let sample = (phase.sin() * 12_000.0) as i16;
+            wav.extend_from_slice(&sample.to_le_bytes());
+            wav.extend_from_slice(&sample.to_le_bytes());
+        }
+        std::fs::File::create(&path)
+            .unwrap()
+            .write_all(&wav)
+            .unwrap();
+
+        let mut decoder = StreamDecoder::spawn(&path, 48_000).unwrap();
+        let mut consumer = decoder.take_consumer();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut audible = false;
+        while Instant::now() < deadline {
+            match consumer.pop() {
+                Ok(block) => {
+                    audible |= block.samples[..block.valid_frames * 2]
+                        .iter()
+                        .any(|sample| sample.abs() > 0.05);
+                    if block.is_last {
+                        break;
+                    }
+                }
+                Err(_) => std::thread::sleep(Duration::from_millis(2)),
+            }
+        }
+        decoder.stop();
+        std::fs::remove_file(path).unwrap();
+        assert!(audible, "the decoded PCM stream must contain a real signal");
     }
 }

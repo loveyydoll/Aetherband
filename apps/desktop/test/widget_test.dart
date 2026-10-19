@@ -17,7 +17,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Aetherband'), findsOneWidget);
-    expect(find.text('AFTERIMAGE'), findsOneWidget);
+    expect(find.text('HYPNOSYNTH'), findsOneWidget);
+    expect(find.text('Morning Haze'), findsWidgets);
+    expect(find.text('DEMO CONTENT · NO AUDIO FILES'), findsNothing);
+    expect(find.text('lead vocal / close'), findsNothing);
     expect(find.text('File'), findsOneWidget);
     expect(find.text('Untitled Session'), findsOneWidget);
     expect(find.byTooltip('Play transport'), findsOneWidget);

@@ -7,7 +7,9 @@ pub mod audio;
 pub mod decoder;
 pub mod device;
 pub mod dsp;
+mod envelope;
 pub mod graph;
+pub mod hypnosynth;
 pub mod ringbuf;
 pub mod spatial;
 pub mod track;
@@ -77,6 +79,7 @@ pub struct TrackInfo {
     pub gain: f32,
     pub pan: f32,
     pub muted: bool,
+    pub solo: bool,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -158,14 +161,10 @@ impl DAWEngine {
             } else {
                 0
             };
-            let mut player = Box::new(TrackPlayer::new(
-                track.id,
-                consumer,
-                track.gain,
-                output_frames,
-            ));
+            let mut player = TrackPlayer::new(track.id, consumer, track.gain, output_frames);
             player.pan = track.pan;
             player.muted = track.muted;
+            player.solo = track.solo;
             new_players.push(player);
             new_decoders.insert(track.id.0, decoder);
             let mut updated = track.clone();
@@ -182,7 +181,7 @@ impl DAWEngine {
 
         let mut new_ui_endpoints = new_ui_endpoints;
         for player in new_players {
-            let raw = Box::into_raw(player) as usize;
+            let raw = Box::into_raw(Box::new(player)) as usize;
             if new_ui_endpoints
                 .cmd_producer
                 .push(EngineCommand::AddTrack { player_ptr: raw })
@@ -244,69 +243,53 @@ impl DAWEngine {
     /// - Control thread stops the old StreamDecoders and spawns fresh ones so
     ///   the next Play consumes audio from frame 0 again.
     pub fn stop(&mut self) -> bool {
-        let pushed = self
+        if self.ui_endpoints.cmd_producer.slots() < self.tracks.len() + 1 {
+            return false;
+        }
+        if self
             .ui_endpoints
             .cmd_producer
             .push(EngineCommand::Stop)
-            .is_ok();
-
-        // Restart decoders so the next Play starts at the beginning of each file.
-        // This must happen on the control thread (joins worker threads, opens files).
-        self.restart_all_decoders();
-
-        pushed
-    }
-
-    /// Stops every live StreamDecoder and spawns a replacement that begins
-    /// decoding from the start of the file. The new consumer is delivered to
-    /// the audio thread via `RestartTrack` so the existing TrackPlayer keeps
-    /// its gain/pan/mute state.
-    fn restart_all_decoders(&mut self) {
-        // Snapshot the track list because we mutate `decoders`.
-        let tracks: Vec<TrackInfo> = self.tracks.clone();
-
-        for track in tracks {
-            // Stop and drop the old decoder (joins the worker).
-            if let Some(mut old) = self.decoders.remove(&track.id.0) {
-                old.stop();
-            }
-
-            // Spawn a fresh decoder from the same path.
-            let path = Path::new(&track.file_path);
-            match StreamDecoder::spawn(path, self.output_sample_rate) {
-                Ok(mut new_decoder) => {
-                    let consumer = new_decoder.take_consumer();
-                    // Box the consumer so we can smuggle it through the command queue
-                    // as a raw pointer (same pattern used by AddTrack).
-                    let boxed = Box::new(consumer);
-                    let consumer_ptr = Box::into_raw(boxed) as usize;
-
-                    if self
-                        .ui_endpoints
-                        .cmd_producer
-                        .push(EngineCommand::RestartTrack {
-                            track_id: track.id,
-                            consumer_ptr,
-                        })
-                        .is_err()
-                    {
-                        // Queue full — reclaim the consumer on this thread.
-                        drop(unsafe {
-                            Box::from_raw(
-                                consumer_ptr as *mut rtrb::Consumer<crate::ringbuf::DecodedBlock>,
-                            )
-                        });
-                        // Also drop the new decoder we just created.
-                        drop(new_decoder);
-                    } else {
-                        self.decoders.insert(track.id.0, new_decoder);
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to restart decoder for track {:?}: {}", track.id, e);
-                }
-            }
+            .is_err()
+        {
+            return false;
         }
+        let mut replacements = Vec::with_capacity(self.tracks.len());
+        for track in &self.tracks {
+            let Ok(mut decoder) =
+                StreamDecoder::spawn(Path::new(&track.file_path), self.output_sample_rate)
+            else {
+                return false;
+            };
+            let mut player = Box::new(TrackPlayer::new(
+                track.id,
+                decoder.take_consumer(),
+                track.gain,
+                track.output_frames,
+            ));
+            player.pan = track.pan;
+            player.muted = track.muted;
+            replacements.push((track.id, decoder, player));
+        }
+        // Single producer: slots reserved above cannot be consumed by another sender.
+        for (track_id, decoder, player) in replacements {
+            let player_ptr = Box::into_raw(player) as usize;
+            if self
+                .ui_endpoints
+                .cmd_producer
+                .push(EngineCommand::RestartTrack {
+                    track_id,
+                    player_ptr,
+                })
+                .is_err()
+            {
+                // SAFETY: rejection leaves ownership on this control thread.
+                drop(unsafe { Box::from_raw(player_ptr as *mut TrackPlayer) });
+                return false;
+            }
+            self.decoders.insert(track_id.0, decoder);
+        }
+        true
     }
 
     pub fn seek(&mut self, frame: i64) -> bool {
@@ -320,6 +303,9 @@ impl DAWEngine {
 
     /// Sets master volume with 256-sample de-zippering ramp.
     pub fn set_master_volume(&mut self, target_gain: f32) -> bool {
+        if !target_gain.is_finite() {
+            return false;
+        }
         self.ui_endpoints
             .cmd_producer
             .push(EngineCommand::SetMasterVolume {
@@ -341,6 +327,39 @@ impl DAWEngine {
     }
 
     // ── Track management ──────────────────────────────────────────────────
+
+    /// Bounded instrument events: note on/off, preset, macro, and panic.
+    pub fn synth_event(&mut self, event: u32, key: u32, value: f32) -> bool {
+        let valid = value.is_finite()
+            && match event {
+                0 => key <= 127 && (0.0..=1.0).contains(&value),
+                1 => key <= 127,
+                2 => key < 3,
+                3 => key < 5 && (0.0..=1.0).contains(&value),
+                4 => true,
+                _ => false,
+            };
+        valid
+            && self
+                .ui_endpoints
+                .cmd_producer
+                .push(EngineCommand::SynthEvent { event, key, value })
+                .is_ok()
+    }
+
+    pub fn configure_transport(&mut self, bpm: f32, metronome: bool, sequence: bool) -> bool {
+        bpm.is_finite()
+            && (30.0..=300.0).contains(&bpm)
+            && self
+                .ui_endpoints
+                .cmd_producer
+                .push(EngineCommand::ConfigureTransport {
+                    bpm,
+                    metronome,
+                    sequence,
+                })
+                .is_ok()
+    }
 
     /// Loads an audio file, spawns a background decoder, and returns the new `TrackId`.
     ///
@@ -383,6 +402,7 @@ impl DAWEngine {
             gain: 0.8,
             pan: 0.5,
             muted: false,
+            solo: false,
         });
 
         // Smuggle the player as a raw pointer through the command queue.
@@ -496,6 +516,22 @@ impl DAWEngine {
         true
     }
 
+    pub fn solo_track(&mut self, track_id: TrackId, solo: bool) -> bool {
+        let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) else {
+            return false;
+        };
+        if self
+            .ui_endpoints
+            .cmd_producer
+            .push(EngineCommand::SoloTrack { track_id, solo })
+            .is_err()
+        {
+            return false;
+        }
+        track.solo = solo;
+        true
+    }
+
     // ── Telemetry ─────────────────────────────────────────────────────────
 
     /// Polls the latest telemetry frame from the audio thread.
@@ -506,9 +542,21 @@ impl DAWEngine {
             drop(player);
         }
 
+        while let Ok(block) = self.ui_endpoints.retired_blocks.pop() {
+            drop(block);
+        }
         let mut latest = None;
         while let Ok(frame) = self.ui_endpoints.telemetry_consumer.pop() {
             latest = Some(frame);
+        }
+        if self
+            .active_stream
+            .as_ref()
+            .is_some_and(|stream| !stream.is_running())
+        {
+            let frame = latest.get_or_insert_with(TelemetryFrame::default);
+            frame.device_error_flag = 1;
+            frame.is_playing = false;
         }
         latest
     }
@@ -543,6 +591,7 @@ mod engine_tests {
                 gain: 0.8,
                 pan: 0.5,
                 muted: false,
+                solo: false,
             }],
         };
         assert!(engine.play());

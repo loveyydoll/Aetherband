@@ -95,12 +95,15 @@ impl EngineHandle {
     command!(play);
     command!(pause);
     command!(stop);
+    command!(synth_event, event: u32, key: u32, value: f32);
+    command!(configure_transport, bpm: f32, metronome: bool, sequence: bool);
     command!(set_master_volume, gain: f32);
     command!(set_test_tone, enabled: bool, frequency: f32);
     command!(remove_track, id: TrackId);
     command!(set_track_volume, id: TrackId, gain: f32);
     command!(set_track_pan, id: TrackId, pan: f32);
     command!(mute_track, id: TrackId, muted: bool);
+    command!(solo_track, id: TrackId, solo: bool);
 
     pub fn enumerate_devices(&self) -> Result<Vec<DeviceInfo>, DeviceError> {
         self.call(|engine| engine.enumerate_devices())

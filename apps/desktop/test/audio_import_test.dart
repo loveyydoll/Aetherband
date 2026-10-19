@@ -12,7 +12,7 @@ import 'package:aetherband_desktop/src/widgets/clip_tile.dart';
 import 'package:aetherband_desktop/src/widgets/workspace_panels.dart';
 import 'package:aetherband_desktop/src/session_store.dart';
 
-class FakeEngine implements EngineController {
+class FakeEngine implements EngineController, PerformanceEngine {
   final frames = StreamController<EngineTelemetry>.broadcast();
   final calls = <String>[];
   Completer<LoadedAudioTrack>? importResult;
@@ -74,6 +74,27 @@ class FakeEngine implements EngineController {
   @override
   Future<void> muteTrack(int trackId, bool muted) async {
     calls.add('mute:$trackId:$muted');
+  }
+
+  @override
+  Future<void> soloTrack(int trackId, bool solo) async {
+    calls.add('solo:$trackId:$solo');
+  }
+
+  @override
+  Future<void> synthEvent(int event, int key, double value) async {
+    calls.add('synth:$event:$key:$value');
+  }
+
+  @override
+  Future<void> configureTransport(
+      double bpm, bool metronome, bool sequence) async {
+    calls.add('transport:$bpm:$metronome:$sequence');
+  }
+
+  @override
+  Future<void> setMasterVolume(double gain) async {
+    calls.add('master:$gain');
   }
 
   @override
@@ -320,11 +341,13 @@ void main() {
     dock.onPanChanged(importedTrack, 0.75);
     dock.onMuteChanged(importedTrack, true);
     await tester.pumpAndSettle();
-    expect(engine.calls, containsAllInOrder([
-      'volume:1:0.25',
-      'pan:1:0.75',
-      'mute:1:true',
-    ]));
+    expect(
+        engine.calls,
+        containsAllInOrder([
+          'volume:1:0.25',
+          'pan:1:0.75',
+          'mute:1:true',
+        ]));
     expect(importedTrack.volume, 0.25);
     expect(importedTrack.pan, 0.75);
     expect(importedTrack.muted, isTrue);
@@ -368,7 +391,8 @@ void main() {
       factory: () async => creations++ == 0 ? first : restored,
     );
     await importAudio(tester);
-    final imported = tester.widget<InstrumentDock>(find.byType(InstrumentDock))
+    final imported = tester
+        .widget<InstrumentDock>(find.byType(InstrumentDock))
         .tracks
         .singleWhere((track) => track.id.startsWith('native-'));
     final stableId = imported.id;
@@ -376,6 +400,7 @@ void main() {
     mixer.onVolumeChanged(imported, 0.35);
     mixer.onPanChanged(imported, 0.8);
     mixer.onMuteChanged(imported, true);
+    mixer.onSoloChanged(imported, true);
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('File menu'));
@@ -397,6 +422,7 @@ void main() {
     expect(saved.tracks.single.gain, 0.35);
     expect(saved.tracks.single.pan, 0.8);
     expect(saved.tracks.single.muted, isTrue);
+    expect(saved.tracks.single.solo, isTrue);
 
     await tester.tap(find.byTooltip('File menu'));
     await tester.pumpAndSettle();
@@ -408,18 +434,23 @@ void main() {
       }
     });
     await tester.pumpAndSettle();
-    expect(restored.calls, containsAllInOrder([
-      'load:${File.fromUri(audio.absolute.uri).path}',
-      'volume:1:0.35',
-      'pan:1:0.8',
-      'mute:1:true',
-    ]));
-    final reopened = tester.widget<InstrumentDock>(find.byType(InstrumentDock))
+    expect(
+        restored.calls,
+        containsAllInOrder([
+          'load:${File.fromUri(audio.absolute.uri).path}',
+          'volume:1:0.35',
+          'pan:1:0.8',
+          'mute:1:true',
+          'solo:1:true',
+        ]));
+    final reopened = tester
+        .widget<InstrumentDock>(find.byType(InstrumentDock))
         .tracks
         .singleWhere((track) => track.id == stableId);
     expect(reopened.volume, 0.35);
     expect(reopened.pan, 0.8);
     expect(reopened.muted, isTrue);
+    expect(reopened.solo, isTrue);
     for (var i = 0; i < 100 && first.disposeCount == 0; i++) {
       await tester.pump(const Duration(milliseconds: 20));
     }
@@ -455,5 +486,4 @@ void main() {
     expect(project.existsSync(), isTrue);
     await tester.pumpWidget(const SizedBox.shrink());
   });
-
 }

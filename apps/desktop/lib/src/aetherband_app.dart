@@ -9,6 +9,8 @@ import 'engine_controller.dart';
 import 'native_engine.dart';
 import 'session_store.dart';
 import 'models.dart';
+import 'performance_settings.dart';
+import 'widgets/hypnosynth_panel.dart';
 import 'theme.dart';
 import 'widgets/timeline_view.dart';
 import 'widgets/workspace_panels.dart';
@@ -64,7 +66,9 @@ class AetherbandWorkspace extends StatefulWidget {
 class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   EngineController? _engine;
   Object? _engineError;
-  final List<TrackModel> _tracks = createDemoTracks();
+  final List<TrackModel> _tracks = [];
+  PerformanceSettings _performance = const PerformanceSettings();
+  Future<void> _performanceChain = Future.value();
   final Map<String, int> _nativeTrackIds = <String, int>{};
   final Map<String, String> _nativeTrackSources = <String, String>{};
   final AudioSessionStore _sessionStore = const AudioSessionStore();
@@ -91,7 +95,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     isPlaying: false,
   );
 
-  String _selectedTrackId = 'afterimage';
+  String _selectedTrackId = '';
   String? _selectedClipId;
   String _browserCategory = 'Instruments';
   String _preset = 'Soft Focus';
@@ -102,8 +106,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   bool _importingAudio = false;
   double _zoom = 1;
 
-  TrackModel get _selectedTrack =>
-      _tracks.firstWhere((track) => track.id == _selectedTrackId);
+  TrackModel? get _selectedTrack =>
+      _tracks.where((track) => track.id == _selectedTrackId).firstOrNull;
 
   String _createPersistentTrackId() =>
       'native-${DateTime.now().microsecondsSinceEpoch}-${_nextPersistentTrackSerial++}';
@@ -140,7 +144,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         _sessionTitle = 'Untitled Session';
         _sessionDirty = false;
         if (!_tracks.any((track) => track.id == _selectedTrackId)) {
-          _selectedTrackId = _tracks.first.id;
+          _selectedTrackId = _tracks.isEmpty ? '' : _tracks.first.id;
           _selectedClipId = null;
         }
         _telemetry = const EngineTelemetry(
@@ -266,6 +270,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       setState(() {
         _nativeTrackIds[id] = nativeId;
         _nativeTrackSources[id] = file.path;
+        _showMixer = true;
         _markSessionChanged();
         _tracks.add(TrackModel(
           id: id,
@@ -325,7 +330,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         _nativeTrackSources.remove(selectedId);
         _markSessionChanged();
         if (_selectedTrackId == selectedId) {
-          _selectedTrackId = _tracks.first.id;
+          _selectedTrackId = _tracks.isEmpty ? '' : _tracks.first.id;
           _selectedClipId = null;
         }
       });
@@ -352,9 +357,11 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         gain: track.volume,
         pan: track.pan,
         muted: track.muted,
+        solo: track.solo,
       ));
     }
-    return AudioSessionDocument(title: title, tracks: tracks);
+    return AudioSessionDocument(
+        title: title, tracks: tracks, performance: _performance);
   }
 
   String _titleFromSessionPath(String path) {
@@ -362,9 +369,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     const extension = '.aetherband.json';
     final result = name.endsWith(extension)
         ? name.substring(0, name.length - extension.length)
-        : (name.endsWith('.json')
-            ? name.substring(0, name.length - 5)
-            : name);
+        : (name.endsWith('.json') ? name.substring(0, name.length - 5) : name);
     if (result.trim().isEmpty) return 'Untitled Session';
     return result.length > 120 ? result.substring(0, 120) : result;
   }
@@ -461,6 +466,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     required Map<String, String> preparedSources,
     required String title,
     required String? path,
+    PerformanceSettings performance = const PerformanceSettings(),
   }) async {
     final previousEngine = _engine;
     if (identical(preparedEngine, previousEngine)) {
@@ -478,16 +484,17 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     );
     setState(() {
       _engine = preparedEngine;
+      _performance = performance;
       _tracks.removeWhere((track) => _nativeTrackIds.containsKey(track.id));
       _tracks.addAll(preparedTracks);
+      _showMixer = preparedTracks.isNotEmpty;
       _nativeTrackIds
         ..clear()
         ..addAll(preparedIds);
       _nativeTrackSources
         ..clear()
         ..addAll(preparedSources);
-      _selectedTrackId =
-          preparedTracks.isEmpty ? 'afterimage' : preparedTracks.first.id;
+      _selectedTrackId = preparedTracks.isEmpty ? '' : preparedTracks.first.id;
       _selectedClipId =
           preparedTracks.isEmpty ? null : preparedTracks.first.clips.first.id;
       _sessionTitle = title;
@@ -534,8 +541,14 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       if (!mounted) return;
       staged = await (widget.createEngine ?? NativeEngineController.create)();
       if (identical(staged, _engine)) {
-        throw StateError('Cannot reuse an active native engine for project staging.');
+        throw StateError(
+            'Cannot reuse an active native engine for project staging.');
       }
+      if (staged is! PerformanceEngine) {
+        throw StateError('This engine does not support HypnoSynth settings.');
+      }
+      await _applyPerformance(
+          staged as PerformanceEngine, document.performance);
       final tracks = <TrackModel>[];
       final ids = <String, int>{};
       final sources = <String, String>{};
@@ -545,6 +558,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         await staged.setTrackVolume(loaded.id, saved.gain);
         await staged.setTrackPan(loaded.id, saved.pan);
         await staged.muteTrack(loaded.id, saved.muted);
+        await staged.soloTrack(loaded.id, saved.solo);
         ids[saved.id] = loaded.id;
         sources[saved.id] = source;
         tracks.add(TrackModel(
@@ -555,6 +569,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
           volume: saved.gain,
           pan: saved.pan,
           muted: saved.muted,
+          solo: saved.solo,
           clips: [
             ClipModel(
               id: '${saved.id}-clip',
@@ -576,6 +591,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         preparedSources: sources,
         title: document.title,
         path: file.path,
+        performance: document.performance,
       );
       staged = null; // Ownership now belongs to the workspace.
       if (mounted) {
@@ -606,7 +622,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     try {
       staged = await (widget.createEngine ?? NativeEngineController.create)();
       if (identical(staged, _engine)) {
-        throw StateError('Cannot reuse an active native engine for a new session.');
+        throw StateError(
+            'Cannot reuse an active native engine for a new session.');
       }
       if (!mounted) return;
       await _adoptPreparedSession(
@@ -632,6 +649,65 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     }
   }
 
+  Future<void> _applyPerformance(
+      PerformanceEngine engine, PerformanceSettings settings) async {
+    await engine.synthEvent(2, settings.preset, 0);
+    for (var i = 0; i < 5; i++) {
+      await engine.synthEvent(3, i, settings.macros[i]);
+    }
+    await engine.configureTransport(
+        settings.tempo, settings.metronome, settings.sequence);
+    await engine.setMasterVolume(settings.master);
+  }
+
+  void _changePerformance(PerformanceSettings settings) {
+    final engine = _engine;
+    if (engine == null ||
+        engine is! PerformanceEngine ||
+        _trackOperationPending ||
+        _initializingEngine) {
+      return;
+    }
+    final performance = engine as PerformanceEngine;
+    final previous = _performance;
+    setState(() {
+      _performance = settings;
+      _markSessionChanged();
+    });
+    final action = _performanceChain
+        .then((_) => _applyPerformance(performance, settings))
+        .catchError((Object error) {
+      if (mounted && identical(_performance, settings)) {
+        setState(() => _performance = previous);
+      }
+      _reportMixerFailure('Instrument settings', error);
+    });
+    _performanceChain = action;
+    _mixerActions.add(action);
+    unawaited(action.whenComplete(() => _mixerActions.remove(action)));
+  }
+
+  Future<void> _sendSynth(int event, int key, double value) async {
+    final engine = _engine;
+    if (engine == null ||
+        engine is! PerformanceEngine ||
+        _trackOperationPending ||
+        _initializingEngine) {
+      return;
+    }
+    try {
+      await (engine as PerformanceEngine).synthEvent(event, key, value);
+    } catch (error) {
+      _reportMixerFailure('HypnoSynth', error);
+    }
+  }
+
+  Future<void> _auditionSynth() async {
+    _changePerformance(_performance.copyWith(sequence: true));
+    await _performanceChain;
+    if (!_telemetry.isPlaying) await _togglePlay();
+  }
+
   void _handleMenuCommand(_MenuAction action) {
     switch (action.id) {
       case 'file.new':
@@ -651,6 +727,9 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         return;
       case 'view.mixer':
         setState(() => _showMixer = !_showMixer);
+        return;
+      case 'track.addInstrument':
+        setState(() => _showMixer = false);
         return;
       case 'track.addAudio':
         unawaited(_importAudio());
@@ -734,8 +813,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     }
   }
 
-  Future<void> _commitVolume(EngineController engine, TrackModel track,
-      int id, double value, double previous) async {
+  Future<void> _commitVolume(EngineController engine, TrackModel track, int id,
+      double value, double previous) async {
     try {
       await engine.setTrackVolume(id, value);
     } catch (error) {
@@ -765,8 +844,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     }
   }
 
-  Future<void> _commitPan(EngineController engine, TrackModel track,
-      int id, double value, double previous) async {
+  Future<void> _commitPan(EngineController engine, TrackModel track, int id,
+      double value, double previous) async {
     try {
       await engine.setTrackPan(id, value);
     } catch (error) {
@@ -796,8 +875,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     }
   }
 
-  Future<void> _commitMute(EngineController engine, TrackModel track,
-      int id, bool value, bool previous) async {
+  Future<void> _commitMute(EngineController engine, TrackModel track, int id,
+      bool value, bool previous) async {
     try {
       await engine.muteTrack(id, value);
     } catch (error) {
@@ -809,172 +888,225 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     }
   }
 
+  void _setTrackSolo(TrackModel track, bool value) {
+    final id = _nativeTrackIds[track.id];
+    final engine = _engine;
+    if (_trackOperationPending) return;
+    if (id != null && engine == null) {
+      _showEngineUnavailable();
+      return;
+    }
+    final previous = track.solo;
+    setState(() {
+      track.solo = value;
+      if (id != null) _markSessionChanged();
+    });
+    if (id != null) {
+      _queueMixerAction(_commitSolo(engine!, track, id, value, previous));
+    }
+  }
+
+  Future<void> _commitSolo(EngineController engine, TrackModel track, int id,
+      bool value, bool previous) async {
+    try {
+      await engine.soloTrack(id, value);
+    } catch (error) {
+      if (!mounted) return;
+      if (_nativeTrackIds[track.id] == id && track.solo == value) {
+        setState(() => track.solo = previous);
+      }
+      _reportMixerFailure('Track solo', error);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.keyS, control: true):
-            () => unawaited(_saveSession()),
-        const SingleActivator(LogicalKeyboardKey.keyS, meta: true):
-            () => unawaited(_saveSession()),
-        const SingleActivator(
-            LogicalKeyboardKey.keyS, control: true, shift: true):
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true): () =>
+            unawaited(_saveSession()),
+        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): () =>
+            unawaited(_saveSession()),
+        const SingleActivator(LogicalKeyboardKey.keyS,
+            control: true,
+            shift: true): () => unawaited(_saveSession(saveAs: true)),
+        const SingleActivator(LogicalKeyboardKey.keyS, meta: true, shift: true):
             () => unawaited(_saveSession(saveAs: true)),
-        const SingleActivator(
-            LogicalKeyboardKey.keyS, meta: true, shift: true):
-            () => unawaited(_saveSession(saveAs: true)),
-        const SingleActivator(LogicalKeyboardKey.keyO, control: true):
-            () => unawaited(_openSession()),
-        const SingleActivator(LogicalKeyboardKey.keyO, meta: true):
-            () => unawaited(_openSession()),
-        const SingleActivator(LogicalKeyboardKey.keyN, control: true):
-            () => unawaited(_newSession()),
-        const SingleActivator(LogicalKeyboardKey.keyN, meta: true):
-            () => unawaited(_newSession()),
+        const SingleActivator(LogicalKeyboardKey.keyO, control: true): () =>
+            unawaited(_openSession()),
+        const SingleActivator(LogicalKeyboardKey.keyO, meta: true): () =>
+            unawaited(_openSession()),
+        const SingleActivator(LogicalKeyboardKey.keyN, control: true): () =>
+            unawaited(_newSession()),
+        const SingleActivator(LogicalKeyboardKey.keyN, meta: true): () =>
+            unawaited(_newSession()),
       },
       child: Focus(
         autofocus: true,
         child: Scaffold(
           body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final compact = constraints.maxWidth < 1000;
-            return Column(
-              children: [
-                if (_engineError != null)
-                  MaterialBanner(
-                    content: Text('Native engine unavailable: $_engineError'),
-                    actions: [
-                      TextButton(
-                        onPressed: _initializingEngine || _trackOperationPending
-                            ? null
-                            : () => unawaited(_initializeEngine()),
-                        child: const Text('Retry'),
-                      )
-                    ],
-                  ),
-                _MenuBar(
-                  onSelected: _handleMenuCommand,
-                  sessionTitle: _sessionTitle,
-                  sessionDirty: _sessionDirty,
-                ),
-                _TopBar(
-                  isPlaying: _telemetry.isPlaying,
-                  isRecording: false,
-                  browserOpen: _browserOpen,
-                  mixerOpen: _showMixer,
-                  onPlay: _togglePlay,
-                  onStop: _stop,
-                  onRecord: () => _showFeatureUnavailable('Audio recording'),
-                  onBrowser: () => setState(() => _browserOpen = !_browserOpen),
-                  onMixer: () => setState(() => _showMixer = !_showMixer),
-                ),
-                Expanded(
-                  child: Row(
-                    children: [
-                      if (_browserOpen && !compact)
-                        SizedBox(
-                          width: 222,
-                          child: BrowserPanel(
-                            category: _browserCategory,
-                            onCategoryChanged: (category) =>
-                                setState(() => _browserCategory = category),
-                            onPresetSelected: (name) {
-                              setState(() {
-                                _preset = const [
-                                  'Soft Focus',
-                                  'Pale Blue',
-                                  'Slow Bloom',
-                                  'Velvet Tape'
-                                ].contains(name)
-                                    ? name
-                                    : 'Soft Focus';
-                                _selectedTrackId = 'afterimage';
-                              });
-                            },
-                          ),
-                        ),
-                      Expanded(
-                        child: Column(
-                          children: [
-                            _TimelineToolbar(
-                              selectedTrack: _selectedTrack.name,
-                              importing: _importingAudio,
-                              onImport:
-                                  _initializingEngine || _trackOperationPending
-                                      ? null
-                                      : _importAudio,
-                              zoom: _zoom,
-                              onZoomChanged: (value) =>
-                                  setState(() => _zoom = value),
-                              browserOpen: _browserOpen,
-                              onBrowser: () =>
-                                  setState(() => _browserOpen = !_browserOpen),
-                            ),
-                            Expanded(
-                              child: TimelineView(
-                                tracks: _tracks,
-                                selectedTrackId: _selectedTrackId,
-                                selectedClipId: _selectedClipId,
-                                zoom: _zoom,
-                                playheadSeconds: _telemetry.playheadSeconds,
-                                tempo: 92,
-                                onTrackSelected: _selectTrack,
-                                onClipSelected: _selectClip,
-                                onClipMoved: _moveClip,
-                                onMuteChanged: _setTrackMute,
-                                onSoloChanged: (track, value) {
-                                  if (_nativeTrackIds.containsKey(track.id)) {
-                                    _showFeatureUnavailable(
-                                        'Native track solo controls');
-                                  } else {
-                                    setState(() => track.solo = value);
-                                  }
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 1000;
+                return Column(
+                  children: [
+                    if (_engineError != null)
+                      MaterialBanner(
+                        content:
+                            Text('Native engine unavailable: $_engineError'),
+                        actions: [
+                          TextButton(
+                            onPressed:
+                                _initializingEngine || _trackOperationPending
+                                    ? null
+                                    : () => unawaited(_initializeEngine()),
+                            child: const Text('Retry'),
+                          )
+                        ],
+                      ),
+                    _MenuBar(
+                      onSelected: _handleMenuCommand,
+                      sessionTitle: _sessionTitle,
+                      sessionDirty: _sessionDirty,
+                    ),
+                    _TopBar(
+                      isPlaying: _telemetry.isPlaying,
+                      isRecording: false,
+                      browserOpen: _browserOpen,
+                      mixerOpen: _showMixer,
+                      onPlay: _togglePlay,
+                      onStop: _stop,
+                      onRecord: () =>
+                          _showFeatureUnavailable('Audio recording'),
+                      onBrowser: () =>
+                          setState(() => _browserOpen = !_browserOpen),
+                      onMixer: () => setState(() => _showMixer = !_showMixer),
+                      tempo: _performance.tempo,
+                    ),
+                    Expanded(
+                      child: Row(
+                        children: [
+                          if (_browserOpen && !compact)
+                            SizedBox(
+                              width: 222,
+                              child: BrowserPanel(
+                                category: _browserCategory,
+                                onCategoryChanged: (category) =>
+                                    setState(() => _browserCategory = category),
+                                onPresetSelected: (name) {
+                                  setState(() {
+                                    _preset = const [
+                                      'Soft Focus',
+                                      'Pale Blue',
+                                      'Slow Bloom',
+                                      'Velvet Tape'
+                                    ].contains(name)
+                                        ? name
+                                        : 'Soft Focus';
+                                    _showMixer = false;
+                                    final preset = PerformanceSettings.presets
+                                        .indexOf(name);
+                                    if (preset >= 0) {
+                                      _changePerformance(_performance.copyWith(
+                                          preset: preset,
+                                          macros: PerformanceSettings
+                                              .presetMacros[preset]));
+                                    }
+                                  });
                                 },
-                                onVolumeChanged: _setTrackVolume,
                               ),
                             ),
-                          ],
-                        ),
+                          Expanded(
+                            child: Column(
+                              children: [
+                                _TimelineToolbar(
+                                  selectedTrack: _selectedTrack?.name ??
+                                      'Import audio or play HypnoSynth',
+                                  importing: _importingAudio,
+                                  onImport: _initializingEngine ||
+                                          _trackOperationPending
+                                      ? null
+                                      : _importAudio,
+                                  zoom: _zoom,
+                                  onZoomChanged: (value) =>
+                                      setState(() => _zoom = value),
+                                  browserOpen: _browserOpen,
+                                  onBrowser: () => setState(
+                                      () => _browserOpen = !_browserOpen),
+                                ),
+                                Expanded(
+                                  child: TimelineView(
+                                    tracks: _tracks,
+                                    selectedTrackId: _selectedTrackId,
+                                    selectedClipId: _selectedClipId,
+                                    zoom: _zoom,
+                                    playheadSeconds: _telemetry.playheadSeconds,
+                                    tempo: _performance.tempo.round(),
+                                    onTrackSelected: _selectTrack,
+                                    onClipSelected: _selectClip,
+                                    onClipMoved: _moveClip,
+                                    onMuteChanged: _setTrackMute,
+                                    onSoloChanged: _setTrackSolo,
+                                    onVolumeChanged: _setTrackVolume,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-                InstrumentDock(
-                  isMixer: _showMixer,
-                  onTabChanged: (value) => setState(() => _showMixer = value),
-                  preset: const [
-                    'Soft Focus',
-                    'Pale Blue',
-                    'Slow Bloom',
-                    'Velvet Tape'
-                  ].contains(_preset)
-                      ? _preset
-                      : 'Soft Focus',
-                  onPresetChanged: (value) {
-                    if (value != null) setState(() => _preset = value);
-                  },
-                  knobValues: _knobValues,
-                  onKnobChanged: (name, value) =>
-                      setState(() => _knobValues[name] = value),
-                  tracks: _tracks,
-                  onVolumeChanged: _setTrackVolume,
-                  onPanChanged: _setTrackPan,
-                  onMuteChanged: _setTrackMute,
-                  peakLeft: _telemetry.peakLeft,
-                  peakRight: _telemetry.peakRight,
-                ),
-                _StatusBar(
-                  engineConnected: _engine != null && _engineError == null,
-                  isPlaying: _telemetry.isPlaying,
-                  engineError: _engineError,
-                  loadedTrackCount: _nativeTrackIds.length,
-                ),
-              ],
-            );
-          },
-        ),
-      ),
+                    ),
+                    if (!_showMixer)
+                      HypnoSynthPanel(
+                        settings: _performance,
+                        enabled: _engine is PerformanceEngine &&
+                            !_trackOperationPending &&
+                            !_initializingEngine,
+                        onSettings: _changePerformance,
+                        onNote: (note, down) => unawaited(
+                            _sendSynth(down ? 0 : 1, note, down ? 0.8 : 0)),
+                        onPanic: () => unawaited(_sendSynth(4, 0, 0)),
+                        onAudition: () => unawaited(_auditionSynth()),
+                        onMixer: () => setState(() => _showMixer = true),
+                      )
+                    else
+                      InstrumentDock(
+                        isMixer: _showMixer,
+                        onTabChanged: (value) =>
+                            setState(() => _showMixer = value),
+                        preset: const [
+                          'Soft Focus',
+                          'Pale Blue',
+                          'Slow Bloom',
+                          'Velvet Tape'
+                        ].contains(_preset)
+                            ? _preset
+                            : 'Soft Focus',
+                        onPresetChanged: (value) {
+                          if (value != null) setState(() => _preset = value);
+                        },
+                        knobValues: _knobValues,
+                        onKnobChanged: (name, value) =>
+                            setState(() => _knobValues[name] = value),
+                        tracks: _tracks,
+                        onVolumeChanged: _setTrackVolume,
+                        onPanChanged: _setTrackPan,
+                        onMuteChanged: _setTrackMute,
+                        onSoloChanged: _setTrackSolo,
+                        peakLeft: _telemetry.peakLeft,
+                        peakRight: _telemetry.peakRight,
+                      ),
+                    _StatusBar(
+                      engineConnected: _engine != null && _engineError == null,
+                      isPlaying: _telemetry.isPlaying,
+                      engineError: _engineError,
+                      loadedTrackCount: _nativeTrackIds.length,
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
@@ -1153,8 +1285,7 @@ class _MenuBar extends StatelessWidget {
           Text(sessionDirty ? '$sessionTitle *' : sessionTitle,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                  color: AetherColors.paper, fontSize: 11)),
+              style: const TextStyle(color: AetherColors.paper, fontSize: 11)),
           const SizedBox(width: 11),
         ],
       ),
@@ -1165,6 +1296,7 @@ class _MenuBar extends StatelessWidget {
 class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.isPlaying,
+    required this.tempo,
     required this.isRecording,
     required this.browserOpen,
     required this.mixerOpen,
@@ -1176,6 +1308,7 @@ class _TopBar extends StatelessWidget {
   });
 
   final bool isPlaying;
+  final double tempo;
   final bool isRecording;
   final bool browserOpen;
   final bool mixerOpen;
@@ -1196,7 +1329,10 @@ class _TopBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _TransportButton(icon: Icons.stop_rounded, tooltip: 'Stop transport', onTap: onStop),
+          _TransportButton(
+              icon: Icons.stop_rounded,
+              tooltip: 'Stop transport',
+              onTap: onStop),
           const SizedBox(width: 4),
           _TransportButton(
             icon: isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
@@ -1209,7 +1345,8 @@ class _TopBar extends StatelessWidget {
             icon: Icons.fiber_manual_record,
             tooltip: isRecording ? 'Stop recording' : 'Recording unavailable',
             onTap: onRecord,
-            color: isRecording ? AetherColors.magenta : AetherColors.secondaryText,
+            color:
+                isRecording ? AetherColors.magenta : AetherColors.secondaryText,
           ),
           const SizedBox(width: 12),
           Container(width: 1, height: 25, color: AetherColors.raised),
@@ -1225,34 +1362,50 @@ class _TopBar extends StatelessWidget {
               children: [
                 Icon(Icons.timeline, size: 14, color: AetherColors.sage),
                 SizedBox(width: 7),
-                Text('001 : 01 : 000', style: TextStyle(color: AetherColors.paper, fontSize: 11, fontFeatures: [FontFeature.tabularFigures()])),
+                Text('001 : 01 : 000',
+                    style: TextStyle(
+                        color: AetherColors.paper,
+                        fontSize: 11,
+                        fontFeatures: [FontFeature.tabularFigures()])),
               ],
             ),
           ),
           const SizedBox(width: 12),
-          const _ValuePlate(label: 'TEMPO', value: '92.0'),
+          _ValuePlate(label: 'TEMPO', value: tempo.toStringAsFixed(1)),
           const SizedBox(width: 6),
           const _ValuePlate(label: 'METER', value: '4/4', width: 61),
           const Spacer(),
           Text(
             'UI PREVIEW',
-            style: TextStyle(color: AetherColors.secondaryText.withValues(alpha: 0.78), fontSize: 9, letterSpacing: 0.8),
+            style: TextStyle(
+                color: AetherColors.secondaryText.withValues(alpha: 0.78),
+                fontSize: 9,
+                letterSpacing: 0.8),
           ),
           const SizedBox(width: 10),
           IconButton(
             tooltip: browserOpen ? 'Hide browser' : 'Show browser',
             onPressed: onBrowser,
             visualDensity: VisualDensity.compact,
-            icon: Icon(Icons.view_sidebar_outlined, size: 18, color: browserOpen ? AetherColors.sage : AetherColors.secondaryText),
+            icon: Icon(Icons.view_sidebar_outlined,
+                size: 18,
+                color: browserOpen
+                    ? AetherColors.sage
+                    : AetherColors.secondaryText),
           ),
           IconButton(
             tooltip: mixerOpen ? 'Hide mixer' : 'Show mixer',
             onPressed: onMixer,
             visualDensity: VisualDensity.compact,
-            icon: Icon(Icons.equalizer, size: 18, color: mixerOpen ? AetherColors.magenta : AetherColors.secondaryText),
+            icon: Icon(Icons.equalizer,
+                size: 18,
+                color: mixerOpen
+                    ? AetherColors.magenta
+                    : AetherColors.secondaryText),
           ),
           const SizedBox(width: 3),
-          const Icon(Icons.settings_outlined, size: 17, color: AetherColors.secondaryText),
+          const Icon(Icons.settings_outlined,
+              size: 17, color: AetherColors.secondaryText),
         ],
       ),
     );
@@ -1260,7 +1413,8 @@ class _TopBar extends StatelessWidget {
 }
 
 class _ValuePlate extends StatelessWidget {
-  const _ValuePlate({required this.label, required this.value, this.width = 72});
+  const _ValuePlate(
+      {required this.label, required this.value, this.width = 72});
 
   final String label;
   final String value;
@@ -1279,9 +1433,17 @@ class _ValuePlate extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, style: const TextStyle(color: AetherColors.secondaryText, fontSize: 8, letterSpacing: 0.6)),
+          Text(label,
+              style: const TextStyle(
+                  color: AetherColors.secondaryText,
+                  fontSize: 8,
+                  letterSpacing: 0.6)),
           const SizedBox(height: 1),
-          Text(value, style: const TextStyle(color: AetherColors.paper, fontSize: 11, fontWeight: FontWeight.w600)),
+          Text(value,
+              style: const TextStyle(
+                  color: AetherColors.paper,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -1311,12 +1473,17 @@ class _TransportButton extends StatelessWidget {
         width: 36,
         height: 36,
         child: Material(
-          color: primary ? AetherColors.sage.withValues(alpha: 0.15) : AetherColors.panel,
+          color: primary
+              ? AetherColors.sage.withValues(alpha: 0.15)
+              : AetherColors.panel,
           borderRadius: BorderRadius.circular(7),
           child: InkWell(
             borderRadius: BorderRadius.circular(7),
             onTap: onTap,
-            child: Icon(icon, size: 19, color: color ?? (primary ? AetherColors.sage : AetherColors.paper)),
+            child: Icon(icon,
+                size: 19,
+                color: color ??
+                    (primary ? AetherColors.sage : AetherColors.paper)),
           ),
         ),
       ),

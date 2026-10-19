@@ -1,6 +1,6 @@
 # C ABI Contract — Aetherband
 
-**Current ABI version:** `0.3.0` (`daw_get_api_version() == 0x00000300`)
+**Current ABI version:** `0.4.0` (`daw_get_api_version() == 0x00000400`)
 **Source of truth:** `bindings/c_abi/src/lib.rs`. If this document disagrees with the Rust exports, fix the documentation or deliberately update the ABI and version together.
 
 This contract is for the Flutter/Dart desktop app using `dart:ffi`. The former C# / Avalonia frontend and its `csbindgen` P/Invoke generation have been removed from the desktop architecture.
@@ -19,7 +19,7 @@ This contract is for the Flutter/Dart desktop app using `dart:ffi`. The former C
 
 ## ABI version
 
-`daw_get_api_version()` returns `(major << 16) | (minor << 8) | patch`. Version 0.3.0 adds `daw_engine_get_track_info`, preserves engine OS-thread ownership behind the opaque handle, and returns -3 for queue-rejected removal without deleting track metadata. Version 0.2.0 introduced the active sample-rate query. Rebuild the native library and Dart app together; the Dart adapter requires an exact version match.
+`daw_get_api_version()` returns `(major << 16) | (minor << 8) | patch`. Version 0.4.0 adds HypnoSynth event and transport configuration calls plus per-track solo. Version 0.3.0 added `daw_engine_get_track_info`, preserves engine OS-thread ownership behind the opaque handle, and returns -3 for queue-rejected removal without deleting track metadata. Version 0.2.0 introduced the active sample-rate query. Rebuild the native library and Dart app together; the Dart adapter requires an exact version match.
 
 Any incompatible layout/signature/ownership change requires a version change and synchronized Rust/Dart updates. Additive exports should still be documented and versioned deliberately.
 
@@ -71,6 +71,9 @@ Do not substitute a different field order or widths in Dart. The Dart `Struct` d
 | `daw_engine_poll_telemetry(engine, out_frame)` | Read telemetry | 0 frame read; 1 no new frame; negative error |
 | `daw_engine_get_sample_rate(engine, out_rate)` | Get active output rate in Hz | 0 success; negative error |
 | `daw_engine_set_master_volume(engine, gain)` | Set master linear gain | 0 accepted; negative error |
+| `daw_engine_synth_event(engine, event, key, value)` | Send HypnoSynth note, preset, macro or panic event | 0 accepted; negative error |
+| `daw_engine_configure_transport(engine, bpm, metronome, sequence)` | Configure tempo, click and original synth phrase | 0 accepted; negative error |
+| `daw_engine_solo_track(engine, track_id, solo)` | Enable implicit solo for one imported track | 0 accepted; negative error |
 | `daw_engine_set_test_tone(engine, enabled, freq_hz)` | Toggle diagnostic tone | 0 accepted; negative error |
 | `daw_engine_get_device_count(engine)` | Enumerate output devices and return count | Non-negative count; negative error |
 | `daw_engine_get_device_info(engine, index, out_info)` | Read device metadata | 0 success; negative error |

@@ -1,0 +1,9 @@
+SoundCraft
+Copyright (c) 2026 ArtCraft Team and the SoundCraft contributors.
+
+The upstream project offers the MIT License or Apache License 2.0. Aetherband uses
+only the MIT option for the adapted ADSR code in `core/src/envelope.rs`; the full
+MIT terms are in `LICENSE-MIT` and the source attribution is in `README.md`.
+
+The ArtCraft name, wordmark and logos are trademarks and are not included in
+Aetherband. The rest of HypnoSynth is original Aetherband implementation.

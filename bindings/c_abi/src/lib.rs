@@ -110,7 +110,73 @@ impl Default for DAWDeviceInfo {
 /// Returns the API version (major << 16 | minor << 8 | patch).
 #[no_mangle]
 pub extern "C" fn daw_get_api_version() -> u32 {
-    3 << 8
+    4 << 8
+}
+
+/// HypnoSynth events: 0 note-on (key 0..127, velocity 0..1), 1 note-off,
+/// 2 preset (0..2), 3 macro (key 0..4, value 0..1), 4 all-sounds-off.
+///
+/// # Safety
+/// `engine` must be a live handle returned by `daw_engine_create`, with calls
+/// serialized on its owner thread and no concurrent destroy.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_synth_event(
+    engine: *mut DAWEngine,
+    event: u32,
+    key: u32,
+    value: f32,
+) -> i32 {
+    let Some(eng) = to_core_mut(engine) else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    if eng.synth_event(event, key, value) {
+        DAW_OK
+    } else {
+        DAW_ERROR_COMMAND_REJECTED
+    }
+}
+
+/// Set implicit track solo. Other tracks stay muted until the final solo clears.
+///
+/// # Safety
+/// `engine` must be a live handle returned by `daw_engine_create`, with calls
+/// serialized on its owner thread and no concurrent destroy.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_solo_track(
+    engine: *mut DAWEngine,
+    track_id: u32,
+    solo: u8,
+) -> i32 {
+    let Some(eng) = to_core_mut(engine) else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    if eng.solo_track(daw_core::ringbuf::TrackId(track_id), solo != 0) {
+        DAW_OK
+    } else {
+        DAW_ERROR_TRACK_NOT_FOUND
+    }
+}
+
+/// Configure the sample-clock tempo, metronome and original HypnoSynth phrase.
+///
+/// # Safety
+/// `engine` must be a live handle returned by `daw_engine_create`, with calls
+/// serialized on its owner thread and no concurrent destroy.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_configure_transport(
+    engine: *mut DAWEngine,
+    bpm: f32,
+    metronome: u8,
+    sequence: u8,
+) -> i32 {
+    let Some(eng) = to_core_mut(engine) else {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    };
+    if eng.configure_transport(bpm, metronome != 0, sequence != 0) {
+        DAW_OK
+    } else {
+        DAW_ERROR_COMMAND_REJECTED
+    }
 }
 
 /// Creates a new DAW engine instance and initializes the default audio stream.
@@ -496,7 +562,7 @@ mod ffi_contract_tests {
 
     #[test]
     fn api_version_matches_dart_ffi_contract() {
-        assert_eq!(daw_get_api_version(), 0x0000_0300);
+        assert_eq!(daw_get_api_version(), 0x0000_0400);
     }
 
     #[test]
@@ -514,6 +580,7 @@ mod ffi_contract_tests {
             gain: 0.8,
             pan: 0.5,
             muted: false,
+            solo: false,
         };
         let info = DAWTrackInfo::from(&track);
         assert_eq!(info.total_frames, track.info.total_frames);

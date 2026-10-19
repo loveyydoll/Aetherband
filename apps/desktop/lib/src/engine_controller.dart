@@ -43,6 +43,14 @@ abstract class EngineController {
   Future<void> setTrackVolume(int trackId, double gain);
   Future<void> setTrackPan(int trackId, double pan);
   Future<void> muteTrack(int trackId, bool muted);
+  Future<void> soloTrack(int trackId, bool solo);
   Future<int> getTrackCount();
   Future<void> dispose();
+}
+
+/// Optional native performance capabilities, separate from imported-track I/O.
+abstract interface class PerformanceEngine {
+  Future<void> synthEvent(int event, int key, double value);
+  Future<void> configureTransport(double bpm, bool metronome, bool sequence);
+  Future<void> setMasterVolume(double gain);
 }

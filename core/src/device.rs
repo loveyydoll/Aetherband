@@ -159,7 +159,7 @@ impl AudioBackend for CpalBackend {
     fn start_output_stream(
         &mut self,
         device_index: Option<usize>,
-        mut processor: AudioProcessor,
+        processor: AudioProcessor,
     ) -> Result<ActiveStream, DeviceError> {
         let device = match device_index {
             Some(idx) => self.get_device_by_index(idx)?,
@@ -177,27 +177,30 @@ impl AudioBackend for CpalBackend {
         let sample_rate = default_config.sample_rate().0;
         let channels = default_config.channels();
 
+        let sample_format = default_config.sample_format();
         let stream_config: StreamConfig = default_config.into();
 
         let is_running = Arc::new(AtomicBool::new(true));
-        let running_flag = Arc::clone(&is_running);
-
-        let err_callback = move |err: cpal::StreamError| {
-            log::error!("Hardware audio stream error: {}", err);
-            running_flag.store(false, Ordering::Relaxed);
-        };
-
         let ch_count = channels as usize;
-        let stream = device
-            .build_output_stream(
-                &stream_config,
-                move |data: &mut [f32], _: &OutputCallbackInfo| {
-                    processor.process_interleaved(data, ch_count);
-                },
-                err_callback,
-                None, // Dynamic buffer latency
-            )
-            .map_err(|e| DeviceError::StreamBuildError(e.to_string()))?;
+        let stream = match sample_format {
+            cpal::SampleFormat::F32 => {
+                build_stream::<f32>(&device, &stream_config, processor, ch_count, &is_running)
+            }
+            cpal::SampleFormat::F64 => {
+                build_stream::<f64>(&device, &stream_config, processor, ch_count, &is_running)
+            }
+            cpal::SampleFormat::I16 => {
+                build_stream::<i16>(&device, &stream_config, processor, ch_count, &is_running)
+            }
+            cpal::SampleFormat::I32 => {
+                build_stream::<i32>(&device, &stream_config, processor, ch_count, &is_running)
+            }
+            cpal::SampleFormat::U16 => {
+                build_stream::<u16>(&device, &stream_config, processor, ch_count, &is_running)
+            }
+            format => return Err(DeviceError::FormatNotSupported(format!("{format:?}"))),
+        }
+        .map_err(|e| DeviceError::StreamBuildError(e.to_string()))?;
 
         stream
             .play()
@@ -211,6 +214,24 @@ impl AudioBackend for CpalBackend {
             channels,
         })
     }
+}
+
+fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
+    device: &Device,
+    config: &StreamConfig,
+    mut processor: AudioProcessor,
+    channels: usize,
+    running: &Arc<AtomicBool>,
+) -> Result<Stream, cpal::BuildStreamError> {
+    let running = Arc::clone(running);
+    device.build_output_stream(
+        config,
+        move |data: &mut [T], _: &OutputCallbackInfo| processor.process_samples(data, channels),
+        move |_| {
+            running.store(false, Ordering::Relaxed);
+        },
+        None,
+    )
 }
 
 #[cfg(test)]

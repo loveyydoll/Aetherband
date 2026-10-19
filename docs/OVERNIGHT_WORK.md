@@ -1,0 +1,31 @@
+# Audio and HypnoSynth implementation
+
+Requested outcome: one PR restoring audible music creation in the existing Flutter workspace, with HypnoSynth and the essential DAW controls that currently remain presentation-only.
+
+Working branch: `feat/hypnosynth-daw-foundations`, based on main `caa70b5`.
+Checkout: this `overnight/` directory. The Desktop checkout has pre-existing merge conflicts and must not be modified.
+
+## Acceptance plan
+
+1. Audio: device sample formats, full callback buffers, surfaced device errors, Stop/Pause/restart, deferred resource reclamation, and decoded-file signal tests.
+2. HypnoSynth: native polyphonic oscillator/filter/envelope/modulation/delay instrument, original atmospheric and tense post-punk presets, playable keyboard, panic, and persistence. Musical references are inspiration, not sampled recordings or a claim to reproduce a specific patch.
+3. DAW essentials: real empty session, master gain, solo, tempo/metronome, project safety, useful MIDI/sequence creation and stereo export as coherent vertical slices. Audit remaining defaults explicitly rather than claiming commercial DAW parity.
+4. Verification: Rust format/check/test/Clippy, Flutter analysis/tests, Windows build and native signal testing; CI on the single PR. Physical listening needs separate evidence. Windows is the only current target; other platforms are deferred by owner direction.
+
+## Initial evidence
+
+- Main opens six visual demo tracks with no native audio sources. Instrument knobs and presets are presentation-only.
+- Device backend always requests f32 despite reading the device's default format.
+- Callbacks over 2048 frames discard the tail while advancing the full transport duration.
+- Stream restart and decoded-block replacement free heap resources in the audio callback.
+- Baseline Windows `cargo test --workspace --all-targets`: 33 core tests, one callback allocation test and six FFI tests passed. Existing allocation test does not exercise real stream turnover/restart.
+
+SoundCraft reuse is authorized; only its ADSR envelope was adapted, and upstream attribution plus MIT license text are tracked in `third_party/soundcraft/`. Rust and Dart/Flutter are retained because audio DSP/CPAL has a concrete fit in Rust and the UI already uses Flutter; no extra language offered a clear advantage for this vertical slice.
+
+## Current implementation status
+
+- Fixed output conversion for common Windows CPAL default sample formats, callback overflow tail loss, stream-error telemetry, and callback-thread decoder/player destruction.
+- Added Rust HypnoSynth with three authored presets, real note events/macros/phrase/metronome/master controls, a 13-note pointer/computer keyboard, and persisted settings.
+- Replaced the initial fake arrangement with an empty session; connected mixer solo and v2 audio session persistence for imported tracks and synth settings.
+- Rust formatting, all workspace tests (38 core, 1 real-time allocation, 6 ABI), Windows C ABI build, core Clippy and Dart analyzer pass. Flutter test/build execution is blocked because the SDK tries to write a lockfile outside the approved writable root. No physical device listening is claimed.
+- Still outstanding: Flutter widget tests and Windows app build on an approved SDK, physical Windows output/listening, and review of CI after opening one PR. Recording, stereo export, editable MIDI, waveform display, clip editing and undo/redo remain out of scope for this repair slice and must be labeled as incomplete.

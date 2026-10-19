@@ -66,7 +66,7 @@ From quick sketches to more involved projects, we want an interface that can bec
 </td></tr>
 </table>
 
-> **These are product goals.** Recording, MIDI editing, instruments, effects, automation, third-party plugins, spatial rendering and full project workflows are **not** being advertised as complete features today.
+> **These are product goals.** HypnoSynth and basic performance controls are experimental foundations. Recording, editable MIDI, effects, automation, third-party plugins, spatial rendering and full project workflows are not complete.
 
 ## Built for curious people
 
@@ -85,11 +85,11 @@ You don't need to be all three. The point is to make room for different ways of 
 
 The foundations are taking shape: a Rust audio-engine workspace, native playback/mixing capabilities, a versioned C ABI, and a Flutter desktop application communicating with the engine through Dart FFI. This is real development work, but it is **not** the same as a complete recording-to-export workflow.
 
-**Right now, the focus is connection and reliability:** validating the Flutter ↔ Rust integration, transport and device behavior, and end-to-end tests before expanding the creative toolset.
+**Current target: Windows.** Rust audio playback, imported-track mixing, and the original HypnoSynth instrument are now connected to the Flutter workspace. Physical listening and the full app test/build path still need confirmation.
 
 | Now | Next | Later |
 | --- | --- | --- |
-| Stabilize native-engine and Flutter integration; verify real behavior | Audio import, sessions, timeline, recording and mixing workflows | MIDI, instruments, effects, automation, plugin ecosystem and exploratory creative-engine features |
+| Verify Windows playback and HypnoSynth on real output | Stereo export, recording, real MIDI editing, waveforms and clip editing | Effects, automation and plugin ecosystem |
 
 For the precise implementation status, read [What works today?](#what-works-today) and the [development roadmap](#roadmap).
 
@@ -100,7 +100,7 @@ For the precise implementation status, read [What works today?](#what-works-toda
 | **Audio engine** | Rust | Real-time native audio processing and DSP foundations |
 | **Engine interface** | Versioned C ABI | Explicit boundary between audio engine and app |
 | **Desktop integration** | Dart FFI | Connects the Flutter UI to the native engine |
-| **Desktop experience** | Flutter / Dart | Primary Windows/macOS user interface |
+| **Desktop experience** | Flutter / Dart | Windows user interface |
 
 The architecture is designed to keep real-time audio processing separate from interface rendering. That design still needs platform testing and ongoing engineering to deliver the intended experience.
 
@@ -121,17 +121,16 @@ Aetherband is in an early stage. The distinction between existing code, verified
 ### Current foundations
 
 - A Rust audio-engine workspace and a C ABI for communication with the desktop UI.
-- Native engine functionality for multi-track playback and mixing.
-- C ABI exports for engine lifecycle, transport, telemetry, audio-device operations, test tone, and track controls. Not every exported operation is yet connected to a complete user-facing workflow.
-- The primary Flutter desktop application with Dart FFI integration for engine lifecycle, ABI-version validation, transport, sample-rate query, and telemetry; full DAW feature parity is not yet complete.
-- Regression coverage for the **Stop/rewind transport fix**. The Flutter migration does not intentionally change that transport implementation.
+- Native multi-track playback and mixing, master gain, per-track gain/pan/mute/solo, native device sample formats, and full-buffer callback processing.
+- HypnoSynth, an original polyphonic software instrument with three original atmospheric and post-punk presets, a live keyboard, performance macros, tempo, metronome, phrase playback and panic.
+- Versioned C ABI 0.4.0 and Dart FFI routes for engine, audio, mixer, synth and session settings.
+- Windows is the only current target. Rust signal, transport, callback and FFI tests pass; Dart analysis passes.
 
 ### Known gaps
 
-- The Flutter application is the main desktop UI, but the current workspace is still early alpha: demo tracks/clips are not evidence of a loaded or saved session. The directory name `apps/desktop/` is legacy organization, not a statement that Flutter is a disposable or secondary frontend.
-- Device selection, audio import, track management, and transport behavior still need end-to-end verification on supported desktop platforms.
-- Recording, MIDI editing, built-in instruments, effects, automation, third-party plugin hosting, project save/load, and export must not be considered complete unless they are implemented and tested.
-- Windows and macOS native-library packaging, playback, and clean shutdown need repeatable verification.
+- Recording, stereo export, MIDI editing, effects, automation, plugin hosting, clip editing and undo/redo remain unimplemented.
+- Flutter widget tests and Windows app packaging were not run in this environment because Flutter's installed SDK requires a writable lockfile outside the project workspace. Physical output also remains unverified.
+- Synced `sources/` references and the pre-existing Desktop checkout remain untouched.
 - The current CI checks need to pass before the migration can be described as stable.
 
 **Please treat the current build as experimental.** Do not use it as the only copy of important sessions or irreplaceable recordings.
@@ -155,7 +154,7 @@ These are **versioned development milestones**, not delivery-date promises. Alph
 
 | Version | Direction | Intended outcome | Exit criteria |
 |---|---|---|---|
-| **Alpha 0.1 — Connect the Engine** | Stabilize Flutter + native integration | Flutter is the desktop frontend, connected to the Rust engine through the versioned C ABI and Dart FFI. | Windows and macOS builds verified; ABI/version and error handling tested; engine lifecycle and clean shutdown verified; CI green. |
+| **Alpha 0.1 — Connect the Engine** | Stabilize Flutter + native integration | Flutter is the Windows desktop frontend, connected to the Rust engine through the versioned C ABI and Dart FFI. | Windows build, ABI/version and error handling tested; engine lifecycle and clean shutdown verified; Windows CI green. |
 | **Alpha 0.2 — Bring Audio In** | Audio import and session basics | Load and remove real audio tracks, show real transport state, and establish a basic session model. | Import/play/pause/stop/remove regression tests; session round-trip tests; failures represented honestly in the UI. |
 | **Alpha 0.3 — Shape the Arrangement** | Timeline and waveforms | Work with clips in a visual timeline, with waveform peaks, zoom, scroll, selection, and basic non-destructive edits. | Editing-model tests, large-session profiling, and DPI/layout checks. |
 | **Alpha 0.4 — Capture Ideas** | Recording and export | Record from an input and render audio to a usable output file. | Device tests, background disk writing, interruption/error recovery, and export validation. |
@@ -186,14 +185,14 @@ Aetherband separates the creative interface from the work that must run close to
 | Technology | Role | Current status |
 |---|---|---|
 | **Rust** | Native audio engine, decoding, mixing, DSP and real-time callback | Core implementation exists; correctness and platform behavior still require regression testing |
-| **C ABI** | Versioned boundary between native engine and desktop UI | ABI 0.3.0; includes sample-rate and loaded-track metadata queries; exported functions are documented in [API_CONTRACT.md](docs/API_CONTRACT.md) |
-| **Dart FFI** | Native library loading, ABI validation, engine lifecycle and telemetry | Initial lifecycle/transport/telemetry path implemented; device and track workflows remain incomplete |
-| **Flutter / Dart** | Windows/macOS primary desktop UI and creative workspace | Chosen sole desktop frontend; demo clips remain illustrative and several menu actions are not implemented |
+| **C ABI** | Versioned boundary between native engine and desktop UI | ABI 0.4.0; includes audio, mixer, transport, HypnoSynth and session controls; see [API_CONTRACT.md](docs/API_CONTRACT.md) |
+| **Dart FFI** | Native library loading, ABI validation, engine lifecycle and telemetry | Windows worker-isolate path connects audio and performance controls |
+| **Flutter / Dart** | Windows desktop UI and creative workspace | Main interface; the initial session opens empty with HypnoSynth ready |
 | **CPAL / Symphonia / rtrb** | Audio device I/O, media decoding and bounded cross-thread communication | Used by the Rust engine; exact supported formats and runtime behavior must be verified per platform |
 
 ### Why Flutter?
 
-Flutter gives Aetherband control over a highly customized interface and a shared Windows/macOS presentation layer. Its rendering and iteration model offer useful opportunities for custom timeline and editor work.
+Flutter gives Aetherband control over a highly customized Windows interface. Its rendering and iteration model offer useful opportunities for custom timeline and editor work.
 
 Flutter is **not automatically faster** than other UI frameworks. Large arrangements, waveform rendering, meters, memory use, accessibility, and platform behavior must be measured and tested. The reason for choosing Flutter is the balance of interface flexibility, rapid visual iteration, cross-platform UI development, and a clear boundary around the native engine—not a blanket performance claim.
 
@@ -254,7 +253,7 @@ Aetherband is for musicians who want to shape their tools and developers who wan
 - Include reproduction steps for bugs, especially for device, transport, and shutdown issues.
 - Discuss substantial architectural or product changes before investing in a large implementation.
 
-Useful contributions include Rust audio engineering, Flutter interaction design, testing on Windows and macOS, accessibility, documentation, and feedback from real music-making workflows.
+Useful contributions include Rust audio engineering, Flutter interaction design, Windows testing, accessibility, documentation, and feedback from real music-making workflows.
 
 Bug reports and thoughtful feature discussions are welcome. Please include your operating system, steps to reproduce, expected behavior, and actual behavior. Do not attach private recordings or sensitive project files unless you are comfortable sharing them publicly.
 

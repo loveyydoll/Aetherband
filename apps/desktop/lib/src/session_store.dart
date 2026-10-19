@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'performance_settings.dart';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -13,6 +14,7 @@ class SavedAudioTrack {
     required this.gain,
     required this.pan,
     required this.muted,
+    this.solo = false,
   });
 
   final String id;
@@ -21,6 +23,7 @@ class SavedAudioTrack {
   final double gain;
   final double pan;
   final bool muted;
+  final bool solo;
 
   String get sourcePath => File.fromUri(_sourceFileUri(sourceUri)).path;
 
@@ -31,6 +34,7 @@ class SavedAudioTrack {
         'gain': gain,
         'pan': pan,
         'muted': muted,
+        'solo': solo,
       };
 
   factory SavedAudioTrack.fromJson(Object? value) {
@@ -39,38 +43,47 @@ class SavedAudioTrack {
     }
     final id = _boundedText(value['id'], 'track id', 128);
     final name = _boundedText(value['name'], 'track name', 120);
-    final sourceUri = _boundedText(value['sourceUri'], 'audio source URI', 4096);
+    final sourceUri =
+        _boundedText(value['sourceUri'], 'audio source URI', 4096);
     _sourceFileUri(sourceUri);
     final gain = _unitNumber(value['gain'], 'gain');
     final pan = _unitNumber(value['pan'], 'pan');
     final muted = value['muted'];
-    if (muted is! bool) {
+    final solo = value['solo'] ?? false;
+    if (muted is! bool || solo is! bool) {
       throw const FormatException('Track muted must be a boolean.');
     }
     return SavedAudioTrack(
-        id: id,
-        name: name,
-        sourceUri: sourceUri,
-        gain: gain,
-        pan: pan,
-        muted: muted);
+      id: id,
+      name: name,
+      sourceUri: sourceUri,
+      gain: gain,
+      pan: pan,
+      muted: muted,
+      solo: solo,
+    );
   }
 }
 
 class AudioSessionDocument {
-  const AudioSessionDocument({required this.title, required this.tracks});
+  const AudioSessionDocument(
+      {required this.title,
+      required this.tracks,
+      this.performance = const PerformanceSettings()});
 
   static const String format = 'aetherband-session';
-  static const int schemaVersion = 1;
+  static const int schemaVersion = 2;
   static const int maxTracks = 64;
 
   final String title;
   final List<SavedAudioTrack> tracks;
+  final PerformanceSettings performance;
 
   Map<String, Object?> toJson() => {
         'format': format,
         'schemaVersion': schemaVersion,
         'title': title,
+        'performance': performance.toJson(),
         'tracks': tracks.map((track) => track.toJson()).toList(),
       };
 
@@ -81,7 +94,8 @@ class AudioSessionDocument {
     if (value['format'] != format) {
       throw const FormatException('Not an Aetherband audio session.');
     }
-    if (value['schemaVersion'] != schemaVersion) {
+    if (value['schemaVersion'] != 1 &&
+        value['schemaVersion'] != schemaVersion) {
       throw FormatException(
         'Unsupported session version: ${value['schemaVersion']}.',
       );
@@ -96,7 +110,12 @@ class AudioSessionDocument {
     if (ids.length != tracks.length) {
       throw const FormatException('Duplicate persistent track IDs.');
     }
-    return AudioSessionDocument(title: title, tracks: tracks);
+    return AudioSessionDocument(
+        title: title,
+        tracks: tracks,
+        performance: value['schemaVersion'] == 1
+            ? const PerformanceSettings()
+            : PerformanceSettings.fromJson(value['performance']));
   }
 }
 
@@ -142,7 +161,8 @@ class AudioSessionStore {
   Future<void> save(String path, AudioSessionDocument document) async {
     // Validate the outgoing representation too, not only untrusted inputs.
     AudioSessionDocument.fromJson(document.toJson());
-    final payload = const JsonEncoder.withIndent('  ').convert(document.toJson());
+    final payload =
+        const JsonEncoder.withIndent('  ').convert(document.toJson());
     if (utf8.encode(payload).length > _maximumDocumentBytes) {
       throw const FormatException('Session exceeds the maximum file size.');
     }
@@ -164,8 +184,8 @@ class AudioSessionStore {
     if (await file.length() > _maximumDocumentBytes) {
       throw const FormatException('Session file is too large.');
     }
-    final document = AudioSessionDocument.fromJson(
-        jsonDecode(await file.readAsString()));
+    final document =
+        AudioSessionDocument.fromJson(jsonDecode(await file.readAsString()));
     for (final track in document.tracks) {
       final audio = File(track.sourcePath);
       if (!await audio.exists()) {
@@ -184,8 +204,8 @@ class AudioSessionStore {
       throw FileSystemException(
           'Project directory does not exist.', target.parent.path);
     }
-    final temporary = File(
-        '${target.path}.tmp.${DateTime.now().microsecondsSinceEpoch}');
+    final temporary =
+        File('${target.path}.tmp.${DateTime.now().microsecondsSinceEpoch}');
     final backup = File('${target.path}.bak');
     var movedOriginal = false;
     try {

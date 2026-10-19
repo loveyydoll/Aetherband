@@ -9,7 +9,7 @@
 
 use crate::dsp::GainRamp;
 use crate::ringbuf::{DecodedBlock, TrackId};
-use rtrb::Consumer;
+use rtrb::{Consumer, Producer};
 use std::f32::consts::PI;
 
 /// State of a single audio track inside the real-time audio thread.
@@ -28,6 +28,8 @@ pub struct TrackPlayer {
     pub pan: f32,
     /// Whether this track is muted.
     pub muted: bool,
+    /// Included alone when any track in the session is soloed.
+    pub solo: bool,
     /// Whether this track has reached end-of-file.
     pub finished: bool,
     /// Total duration in output-rate frames (for UI scrubber).
@@ -52,6 +54,7 @@ impl TrackPlayer {
             gain: GainRamp::new(initial_gain),
             pan: 0.5,
             muted: false,
+            solo: false,
             finished: false,
             total_frames,
         }
@@ -66,7 +69,15 @@ impl TrackPlayer {
     /// Zero allocations. Blocks on nothing; if the ring buffer is empty
     /// (decoder hasn't caught up) we output silence for the missing frames.
     #[inline]
-    pub fn mix_into(&mut self, out_left: &mut [f32], out_right: &mut [f32], frames: usize) {
+    pub fn mix_into(
+        &mut self,
+        out_left: &mut [f32],
+        out_right: &mut [f32],
+        frames: usize,
+        retired: &mut Producer<DecodedBlock>,
+        solo_active: bool,
+    ) {
+        let frames = frames.min(out_left.len()).min(out_right.len());
         if self.finished {
             return;
         }
@@ -78,11 +89,23 @@ impl TrackPlayer {
 
         let mut written = 0;
 
-        while written < frames {
+        let mut transitions = 0;
+        while written < frames && transitions < 128 {
             // Ensure we have a current block
             if self.current_block.is_none()
-                || self.block_cursor >= self.current_block.as_ref().unwrap().valid_frames
+                || self.block_cursor
+                    >= self
+                        .current_block
+                        .as_ref()
+                        .map_or(0, |block| block.valid_frames.min(block.samples.len() / 2))
             {
+                if let Some(old) = self.current_block.take() {
+                    if let Err(rtrb::PushError::Full(old)) = retired.push(old) {
+                        self.current_block = Some(old);
+                        break; // Silence/backpressure, never free audio memory here.
+                    }
+                }
+                transitions += 1;
                 match self.stream_consumer.pop() {
                     Ok(block) => {
                         let is_last = block.is_last;
@@ -105,7 +128,10 @@ impl TrackPlayer {
                 None => break,
             };
 
-            let remaining_in_block = block.valid_frames - self.block_cursor;
+            let remaining_in_block = block
+                .valid_frames
+                .min(block.samples.len() / 2)
+                .saturating_sub(self.block_cursor);
             let to_copy = remaining_in_block.min(frames - written);
 
             for i in 0..to_copy {
@@ -114,7 +140,7 @@ impl TrackPlayer {
                 // A muted track still consumes its stream in transport time.
                 // Otherwise unmuting would replay buffered audio from the
                 // old position instead of rejoining the active arrangement.
-                if !self.muted {
+                if !self.muted && (!solo_active || self.solo) {
                     let sample_l = block.samples[frame_idx];
                     let sample_r = block.samples[frame_idx + 1];
                     out_left[written + i] += sample_l * gain * pan_l;
@@ -127,7 +153,9 @@ impl TrackPlayer {
 
             // Check if this block was the last and we've exhausted it
             if let Some(block) = &self.current_block {
-                if block.is_last && self.block_cursor >= block.valid_frames {
+                if (block.is_last || block.valid_frames > block.samples.len() / 2)
+                    && self.block_cursor >= block.valid_frames.min(block.samples.len() / 2)
+                {
                     self.finished = true;
                     break;
                 }
@@ -140,11 +168,9 @@ impl TrackPlayer {
     /// Drains the ring buffer so a newly restarted decoder can refill from
     /// the start of the file.
     pub fn reset(&mut self) {
-        // Drain all pending blocks (non-blocking)
-        while self.stream_consumer.pop().is_ok() {}
-        self.current_block = None;
-        self.block_cursor = 0;
-        self.finished = false;
+        // Stop silences the old player. A whole replacement is prepared on the
+        // control thread; its consumer and blocks are reclaimed through retirement.
+        self.finished = true;
     }
 
     /// Replaces the stream consumer with a freshly spawned decoder and resets
@@ -177,6 +203,12 @@ pub const MAX_TRACKS: usize = 64;
 pub struct TrackSlots {
     slots: [Option<Box<TrackPlayer>>; MAX_TRACKS],
     count: usize,
+}
+
+impl Default for TrackSlots {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TrackSlots {
@@ -248,6 +280,10 @@ impl TrackSlots {
             .max()
             .unwrap_or(0)
     }
+
+    pub fn has_solo(&self) -> bool {
+        self.slots.iter().flatten().any(|track| track.solo)
+    }
 }
 
 #[cfg(test)]
@@ -284,7 +320,8 @@ mod tests {
         let mut left = vec![0.0f32; 128];
         let mut right = vec![0.0f32; 128];
         // No blocks in buffer → output remains silence
-        player.mix_into(&mut left, &mut right, 128);
+        let (mut retired, _reclaimed) = rtrb::RingBuffer::new(64);
+        player.mix_into(&mut left, &mut right, 128, &mut retired, false);
         assert!(left.iter().all(|&s| s == 0.0));
     }
 
@@ -297,7 +334,8 @@ mod tests {
 
         let mut left = vec![0.0f32; 64];
         let mut right = vec![0.0f32; 64];
-        player.mix_into(&mut left, &mut right, 64);
+        let (mut retired, _reclaimed) = rtrb::RingBuffer::new(64);
+        player.mix_into(&mut left, &mut right, 64, &mut retired, false);
 
         assert!(player.finished);
         assert!(left.iter().all(|sample| *sample == 0.0));
@@ -319,12 +357,14 @@ mod tests {
         player.muted = true;
         let mut left = [0.0f32; 64];
         let mut right = [0.0f32; 64];
-        player.mix_into(&mut left, &mut right, 64);
+        let (mut retired, _reclaimed) = rtrb::RingBuffer::new(64);
+        player.mix_into(&mut left, &mut right, 64, &mut retired, false);
         assert!(left.iter().all(|sample| *sample == 0.0));
         assert!(right.iter().all(|sample| *sample == 0.0));
 
         player.muted = false;
-        player.mix_into(&mut left, &mut right, 64);
+        let (mut retired, _reclaimed) = rtrb::RingBuffer::new(64);
+        player.mix_into(&mut left, &mut right, 64, &mut retired, false);
         // With equal-power center pan, the second half is around 0.566;
         // replaying the first half instead would yield roughly 0.071.
         assert!(left.iter().all(|sample| *sample > 0.5));
@@ -347,7 +387,8 @@ mod tests {
 
         let mut left = vec![0.0f32; 128];
         let mut right = vec![0.0f32; 128];
-        player.mix_into(&mut left, &mut right, 128);
+        let (mut retired, _reclaimed) = rtrb::RingBuffer::new(64);
+        player.mix_into(&mut left, &mut right, 128, &mut retired, false);
 
         // All samples should be non-zero (panning + gain applied)
         assert!(left.iter().any(|&s| s > 0.0));
@@ -379,7 +420,8 @@ mod tests {
 
         let mut left = vec![0.0f32; 64];
         let mut right = vec![0.0f32; 64];
-        player.mix_into(&mut left, &mut right, 64);
+        let (mut retired, _reclaimed) = rtrb::RingBuffer::new(64);
+        player.mix_into(&mut left, &mut right, 64, &mut retired, false);
 
         // Should play the *new* stream data, not the old one
         assert!(left.iter().any(|&s| (s - 0.25).abs() < 0.01 || s > 0.0));
