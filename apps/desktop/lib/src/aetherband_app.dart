@@ -83,6 +83,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   Future<void> _performanceChain = Future.value();
   final Map<String, int> _nativeTrackIds = <String, int>{};
   final Map<String, String> _nativeTrackSources = <String, String>{};
+  SavedAudioTrack? _copiedAudioTrack;
   final Map<String, Timer> _clipPositionTimers = <String, Timer>{};
   final Map<String, double> _confirmedClipStarts = <String, double>{};
   final Map<String, double> _clipMoveStarts = <String, double>{};
@@ -587,15 +588,29 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
   }
 
   Future<void> _duplicateSelectedTrack() async {
-    if (_trackOperationPending || _initializingEngine) return;
-    final engine = _engine;
     final selected = _selectedTrack;
     final source = selected == null ? null : _nativeTrackSources[selected.id];
-    final clip = selected?.clips.firstOrNull;
-    if (engine == null || selected == null || source == null || clip == null) {
+    if (selected == null || source == null) {
       _showFeatureUnavailable('Duplicating demo or instrument tracks');
       return;
     }
+    await _duplicateAudioTrack(selected, source);
+  }
+
+  Future<void> _duplicateAudioTrack(
+    TrackModel selected,
+    String source, {
+    double? startSeconds,
+  }) async {
+    if (_trackOperationPending || _initializingEngine) return;
+    final engine = _engine;
+    final clip = selected.clips.firstOrNull;
+    if (engine == null) {
+      _showEngineUnavailable();
+      return;
+    }
+    if (clip == null) return;
+    final targetStart = startSeconds ?? clip.startSeconds;
 
     setState(() => _trackOperationPending = true);
     int? uncommittedNativeId;
@@ -611,7 +626,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       await engine.setTrackPan(loaded.id, selected.pan);
       await engine.muteTrack(loaded.id, selected.muted);
       await engine.soloTrack(loaded.id, selected.solo);
-      await engine.setTrackStartSeconds(loaded.id, clip.startSeconds);
+      await engine.setTrackStartSeconds(loaded.id, targetStart);
 
       final id = _createPersistentTrackId();
       final suffix = ' copy';
@@ -626,7 +641,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
         color: selected.color,
         isDemo: false,
         durationSeconds: loaded.durationSeconds,
-        startSeconds: clip.startSeconds,
+        startSeconds: targetStart,
         waveformPeaks: clip.waveformPeaks == null
             ? null
             : List<double>.of(clip.waveformPeaks!),
@@ -676,6 +691,66 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       }
       if (mounted) setState(() => _trackOperationPending = false);
     }
+  }
+
+  bool _copySelectedAudioTrack() {
+    final selected = _selectedTrack;
+    final source = selected == null ? null : _nativeTrackSources[selected.id];
+    final clip = selected?.clips.firstOrNull;
+    if (selected == null || source == null || clip == null) {
+      _showFeatureUnavailable('Copying demo or instrument tracks');
+      return false;
+    }
+    _copiedAudioTrack = SavedAudioTrack(
+      id: selected.id,
+      name: selected.name,
+      sourceUri: File(source).absolute.uri.toString(),
+      gain: selected.volume,
+      pan: selected.pan,
+      muted: selected.muted,
+      solo: selected.solo,
+      startSeconds: clip.startSeconds,
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Copied ${selected.name}.')),
+    );
+    return true;
+  }
+
+  Future<void> _pasteAudioTrack() async {
+    if (_trackOperationPending || _initializingEngine) return;
+    final copied = _copiedAudioTrack;
+    if (copied == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Copy an audio track before pasting.'),
+      ));
+      return;
+    }
+    final clip = ClipModel(
+      id: '${copied.id}-clipboard',
+      title: copied.name,
+      start: 0,
+      width: 0,
+      color: AetherColors.sage,
+      isDemo: false,
+      startSeconds: copied.startSeconds,
+    );
+    final sourceTrack = TrackModel(
+      id: copied.id,
+      name: copied.name,
+      kind: 'AUDIO',
+      color: AetherColors.sage,
+      clips: <ClipModel>[clip],
+      muted: copied.muted,
+      solo: copied.solo,
+      volume: copied.gain,
+      pan: copied.pan,
+    );
+    await _duplicateAudioTrack(
+      sourceTrack,
+      copied.sourcePath,
+      startSeconds: _telemetry.playheadSeconds,
+    );
   }
 
   Future<void> _renameSelectedTrack() async {
@@ -1215,6 +1290,18 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       case 'edit.redo':
         unawaited(_redoClipMove());
         return;
+      case 'edit.cut':
+        if (_copySelectedAudioTrack()) unawaited(_removeSelectedTrack());
+        return;
+      case 'edit.copy':
+        _copySelectedAudioTrack();
+        return;
+      case 'edit.paste':
+        unawaited(_pasteAudioTrack());
+        return;
+      case 'edit.duplicate':
+        unawaited(_duplicateSelectedTrack());
+        return;
       case 'file.new':
         unawaited(_newSession());
         return;
@@ -1700,6 +1787,15 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
             () => unawaited(_redoClipMove()),
         const SingleActivator(LogicalKeyboardKey.keyY, control: true): () =>
             unawaited(_redoClipMove()),
+        const SingleActivator(LogicalKeyboardKey.keyX, control: true): () {
+          if (_copySelectedAudioTrack()) unawaited(_removeSelectedTrack());
+        },
+        const SingleActivator(LogicalKeyboardKey.keyC, control: true): () =>
+            _copySelectedAudioTrack(),
+        const SingleActivator(LogicalKeyboardKey.keyV, control: true): () =>
+            unawaited(_pasteAudioTrack()),
+        const SingleActivator(LogicalKeyboardKey.keyD, control: true): () =>
+            unawaited(_duplicateSelectedTrack()),
         const SingleActivator(LogicalKeyboardKey.keyS, control: true): () =>
             unawaited(_saveSession()),
         const SingleActivator(LogicalKeyboardKey.keyS, meta: true): () =>

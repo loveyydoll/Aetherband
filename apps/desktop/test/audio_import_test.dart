@@ -23,6 +23,7 @@ class FakeEngine implements EngineController, PerformanceEngine, ExportEngine {
   Object? exportError;
   int disposeCount = 0;
   int count = 0;
+  int nextTrackId = 0;
 
   @override
   Stream<EngineTelemetry> get telemetry => frames.stream;
@@ -48,11 +49,12 @@ class FakeEngine implements EngineController, PerformanceEngine, ExportEngine {
     final loaded = await (importResult?.future ??
         Future.value(
           LoadedAudioTrack(
-              id: ++count,
+              id: ++nextTrackId,
               totalFrames: 44100 * 120,
               sampleRateHz: 44100,
               channels: 2),
         ));
+    count++;
     return loaded;
   }
 
@@ -456,6 +458,63 @@ void main() {
     );
     final trackContentWidth = 120 * timelinePixelsPerSecond(92) + 84;
     expect(zoom.value, closeTo((1440 - 222 - 196) / trackContentWidth, 1e-6));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('cut and paste restores audio at the transport position',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+    engine.frames.add(const EngineTelemetry(
+      playheadSeconds: 5,
+      sampleRateHz: 44100,
+      peakLeft: 0,
+      peakRight: 0,
+      isPlaying: false,
+    ));
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Edit menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cut'));
+    await tester.pumpAndSettle();
+    expect(await engine.getTrackCount(), 0);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(await engine.getTrackCount(), 1);
+    expect(engine.calls, contains('start:2:5.0'));
+    expect(find.textContaining('take.wav copy'), findsWidgets);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('Ctrl+C, Ctrl+V and Ctrl+D edit imported audio tracks',
+      (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+    await importAudio(tester);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(await engine.getTrackCount(), 2);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(await engine.getTrackCount(), 3);
+    expect(engine.calls, contains('start:3:0.0'));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
