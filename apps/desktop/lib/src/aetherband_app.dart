@@ -3276,6 +3276,23 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     });
   }
 
+  /// Reorders arrangement lanes without touching native track IDs or audio
+  /// resources. The session store serializes the ordered track list, so the
+  /// lane order survives Save/Open just like other session edits.
+  void _moveTrack(TrackModel track, int delta) {
+    if (_trackOperationPending || _initializingEngine || _isRecording) return;
+    final currentIndex = _tracks.indexWhere((item) => item.id == track.id);
+    final targetIndex = currentIndex + delta;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= _tracks.length) {
+      return;
+    }
+    setState(() {
+      final moved = _tracks.removeAt(currentIndex);
+      _tracks.insert(targetIndex, moved);
+      _markSessionChanged();
+    });
+  }
+
   // Native operations are asynchronous; the UI responds immediately, while
   // rejecting operations roll back the value if it has not since changed.
   // This keeps control errors visible rather than silently pretending success.
@@ -3718,6 +3735,7 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                                     onMuteChanged: _setTrackMute,
                                     onSoloChanged: _setTrackSolo,
                                     onVolumeChanged: _setTrackVolume,
+                                    onMoveTrack: _moveTrack,
                                   ),
                                 ),
                               ],
