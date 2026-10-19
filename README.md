@@ -123,13 +123,13 @@ Aetherband is in an early stage. The distinction between existing code, verified
 - A Rust audio-engine workspace and a C ABI for communication with the desktop UI.
 - Native multi-track playback and mixing, master gain, per-track gain/pan/mute/solo, native device sample formats, and full-buffer callback processing.
 - HypnoSynth, an original polyphonic software instrument with three original atmospheric and post-punk presets, a live keyboard, performance macros, tempo, metronome, phrase playback and panic.
-- Versioned C ABI 0.5.0 and Dart FFI routes for engine, audio, mixer, clip positioning, synth and session settings.
+- Versioned C ABI 0.6.0 and Dart FFI routes for engine, audio, mixer, clip positioning, synth and session settings, Windows output-device selection and stereo WAV export.
 - Windows is the only current target. Rust signal, transport, callback and FFI tests pass; the opt-in WASAPI callback smoke test passes; Dart analysis passed during implementation.
 
 ### Known gaps
 
-- Recording, stereo export, MIDI editing, effects, automation, plugin hosting, clip split/trim/resize and undo/redo remain unimplemented. Imported audio clips snap to quarter-note beats when moved while stopped at the start, and their positions persist in session files.
-- Flutter widget tests and Windows app packaging were not run locally because Flutter's installed SDK requires a writable lockfile outside the project workspace. Physical listening/loopback capture also remains unverified.
+- Recording, editable MIDI, waveform display, effects, automation, plugin hosting, clip split/trim/resize and undo/redo remain unimplemented. Imported audio clips snap to quarter-note beats when moved while stopped at the start, and their positions persist in session files.
+- Local Rust and Flutter checks pass, including 30 Flutter tests with the native DLL, default WASAPI output selection/playback and stereo WAV export; a Windows debug build succeeds. The latest device-selector commit is awaiting CI. Physical listening/loopback capture remains unverified.
 - Synced `sources/` references and the pre-existing Desktop checkout remain untouched.
 - The current CI checks need to pass before the migration can be described as stable.
 
@@ -185,7 +185,7 @@ Aetherband separates the creative interface from the work that must run close to
 | Technology | Role | Current status |
 |---|---|---|
 | **Rust** | Native audio engine, decoding, mixing, DSP and real-time callback | Core implementation exists; correctness and platform behavior still require regression testing |
-| **C ABI** | Versioned boundary between native engine and desktop UI | ABI 0.5.0; includes audio, mixer, clip positions, transport, HypnoSynth and session controls; see [API_CONTRACT.md](docs/API_CONTRACT.md) |
+| **C ABI** | Versioned boundary between native engine and desktop UI | ABI 0.6.0; includes audio, mixer, clip positions, transport, HypnoSynth, device selection, and stereo export; see [API_CONTRACT.md](docs/API_CONTRACT.md) |
 | **Dart FFI** | Native library loading, ABI validation, engine lifecycle and telemetry | Windows worker-isolate path connects audio and performance controls |
 | **Flutter / Dart** | Windows desktop UI and creative workspace | Main interface; the initial session opens empty with HypnoSynth ready |
 | **CPAL / Symphonia / rtrb** | Audio device I/O, media decoding and bounded cross-thread communication | Used by the Rust engine; exact supported formats and runtime behavior must be verified per platform |
@@ -194,7 +194,7 @@ Aetherband separates the creative interface from the work that must run close to
 
 Flutter gives Aetherband control over a highly customized Windows interface. Its rendering and iteration model offer useful opportunities for custom timeline and editor work.
 
-Flutter is **not automatically faster** than other UI frameworks. Large arrangements, waveform rendering, meters, memory use, accessibility, and platform behavior must be measured and tested. The reason for choosing Flutter is the balance of interface flexibility, rapid visual iteration, cross-platform UI development, and a clear boundary around the native engine—not a blanket performance claim.
+Flutter is **not automatically faster** than other UI frameworks. Large arrangements, waveform rendering, meters, memory use, accessibility, and platform behavior must be measured and tested. The current target is Windows only; platform work will be reconsidered after its audio and session workflows are dependable.
 
 ### Why keep audio in Rust?
 
