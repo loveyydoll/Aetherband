@@ -14,6 +14,8 @@ typedef _CreateN = Int32 Function(Pointer<Pointer<Void>>);
 typedef _CreateD = int Function(Pointer<Pointer<Void>>);
 typedef _CommandN = Int32 Function(Pointer<Void>);
 typedef _CommandD = int Function(Pointer<Void>);
+typedef _SeekN = Int32 Function(Pointer<Void>, Double);
+typedef _SeekD = int Function(Pointer<Void>, double);
 typedef _PollN = Int32 Function(Pointer<Void>, Pointer<_MeteringFrame>);
 typedef _PollD = int Function(Pointer<Void>, Pointer<_MeteringFrame>);
 typedef _SampleRateN = Int32 Function(Pointer<Void>, Pointer<Uint32>);
@@ -60,7 +62,7 @@ typedef _StopRecordingN = Int32 Function(
     Pointer<Void>, Pointer<_RecordingStats>);
 typedef _StopRecordingD = int Function(Pointer<Void>, Pointer<_RecordingStats>);
 
-const int _expectedApiVersion = 0x00000800;
+const int _expectedApiVersion = 0x00000900;
 
 final class _TrackInfo extends Struct {
   @Uint64()
@@ -121,7 +123,8 @@ class NativeEngineController
         PerformanceEngine,
         ExportEngine,
         AudioOutputEngine,
-        AudioRecordingEngine {
+        AudioRecordingEngine,
+        TransportSeekEngine {
   NativeEngineController._() {
     _events.listen(_onEvent);
   }
@@ -259,6 +262,14 @@ class NativeEngineController
   @override
   Future<void> stop() => _request<void>('stop');
   @override
+  Future<void> seekSeconds(double seconds) {
+    if (!seconds.isFinite || seconds < 0 || seconds > 86400) {
+      return Future.error(ArgumentError.value(seconds, 'seconds'));
+    }
+    return _request<void>('seek', seconds);
+  }
+
+  @override
   Future<LoadedAudioTrack> loadTrack(String path) {
     if (path.isEmpty || path.contains('\u0000')) {
       return Future.error(ArgumentError(
@@ -375,6 +386,8 @@ Future<void> _runNativeEngine((SendPort, String?) configuration) async {
             await session.pause();
           case 'stop':
             await session.stop();
+          case 'seek':
+            await session.seekSeconds(argument as double);
           case 'load':
             result = await session.loadTrack(argument as String);
           case 'remove':
@@ -425,7 +438,8 @@ class _NativeEngineSession
         PerformanceEngine,
         ExportEngine,
         AudioOutputEngine,
-        AudioRecordingEngine {
+        AudioRecordingEngine,
+        TransportSeekEngine {
   _NativeEngineSession._({
     required this.synthNative,
     required this.transportNative,
@@ -438,6 +452,7 @@ class _NativeEngineSession
     required _CommandD playNative,
     required _CommandD pauseNative,
     required _CommandD stopNative,
+    required _SeekD seekNative,
     required _CommandD destroyNative,
     required _PollD pollNative,
     required this.sampleRateHz,
@@ -459,6 +474,7 @@ class _NativeEngineSession
         _playNative = playNative,
         _pauseNative = pauseNative,
         _stopNative = stopNative,
+        _seekNative = seekNative,
         _destroyNative = destroyNative,
         _pollNative = pollNative,
         _loadTrackNative = loadTrackNative,
@@ -481,6 +497,7 @@ class _NativeEngineSession
   final _CommandD _playNative;
   final _CommandD _pauseNative;
   final _CommandD _stopNative;
+  final _SeekD _seekNative;
   final _CommandD _destroyNative;
   final _PollD _pollNative;
   final _LoadTrackD _loadTrackNative;
@@ -536,6 +553,8 @@ class _NativeEngineSession
         library.lookupFunction<_CommandN, _CommandD>('daw_engine_pause');
     final stop =
         library.lookupFunction<_CommandN, _CommandD>('daw_engine_stop');
+    final seek =
+        library.lookupFunction<_SeekN, _SeekD>('daw_engine_seek_seconds');
     final destroy =
         library.lookupFunction<_CommandN, _CommandD>('daw_engine_destroy');
     final poll =
@@ -614,6 +633,7 @@ class _NativeEngineSession
           playNative: play,
           pauseNative: pause,
           stopNative: stop,
+          seekNative: seek,
           destroyNative: destroy,
           pollNative: poll,
           sampleRateHz: outSampleRate.value,
@@ -928,6 +948,12 @@ class _NativeEngineSession
   Future<void> stop() async {
     if (_disposed) throw StateError('Native engine has been disposed.');
     _check('stop', _stopNative(_handle));
+  }
+
+  @override
+  Future<void> seekSeconds(double seconds) async {
+    if (_disposed) throw StateError('Native engine has been disposed.');
+    _check('transport seek', _seekNative(_handle, seconds));
   }
 
   @override

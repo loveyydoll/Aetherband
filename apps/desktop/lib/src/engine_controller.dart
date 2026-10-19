@@ -80,6 +80,11 @@ abstract class EngineController {
   Future<void> dispose();
 }
 
+/// Optional seeking capability, implemented by the Windows native engine.
+abstract interface class TransportSeekEngine {
+  Future<void> seekSeconds(double seconds);
+}
+
 /// Optional native performance capabilities, separate from imported-track I/O.
 abstract interface class PerformanceEngine {
   Future<void> synthEvent(int event, int key, double value);

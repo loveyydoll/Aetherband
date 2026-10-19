@@ -272,6 +272,51 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
     await _stop();
   }
 
+  Future<void> _seekToSeconds(double seconds) async {
+    if (_isRecording) {
+      _showRecordingSessionGuard();
+      return;
+    }
+    final engine = _engine;
+    if (engine == null || engine is! TransportSeekEngine) {
+      _showFeatureUnavailable('Transport seeking');
+      return;
+    }
+    try {
+      await (engine as TransportSeekEngine).seekSeconds(seconds);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not seek transport: $error')),
+        );
+      }
+    }
+  }
+
+  Future<void> _seekPreviousBar() async {
+    final secondsPerBar = 240 / _performance.tempo;
+    final currentBar = (_telemetry.playheadSeconds / secondsPerBar).ceil() - 1;
+    await _seekToSeconds(math.max(0, currentBar) * secondsPerBar);
+  }
+
+  Future<void> _seekNextBar() async {
+    final secondsPerBar = 240 / _performance.tempo;
+    final nextBar = (_telemetry.playheadSeconds / secondsPerBar).floor() + 1;
+    await _seekToSeconds(nextBar * secondsPerBar);
+  }
+
+  Future<void> _seekToEnd() async {
+    final endSeconds = _tracks.expand((track) => track.clips).fold<double>(
+          0,
+          (end, clip) => math.max(
+            end,
+            clip.timelineLeft(_performance.tempo.round()) +
+                clip.timelineWidth(_performance.tempo.round()),
+          ),
+        );
+    await _seekToSeconds(endSeconds);
+  }
+
   void _zoomToFit() {
     final tempo = _performance.tempo.round();
     final clipEnd = _tracks.expand((track) => track.clips).fold<double>(
@@ -1353,6 +1398,15 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
       case 'navigate.start':
         unawaited(_goToStart());
         return;
+      case 'navigate.previous':
+        unawaited(_seekPreviousBar());
+        return;
+      case 'navigate.next':
+        unawaited(_seekNextBar());
+        return;
+      case 'navigate.end':
+        unawaited(_seekToEnd());
+        return;
       case 'transport.record':
         unawaited(_toggleRecording());
         return;
@@ -1777,6 +1831,12 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
             unawaited(_toggleRecording()),
         const SingleActivator(LogicalKeyboardKey.home): () =>
             unawaited(_goToStart()),
+        const SingleActivator(LogicalKeyboardKey.arrowLeft, control: true):
+            () => unawaited(_seekPreviousBar()),
+        const SingleActivator(LogicalKeyboardKey.arrowRight, control: true):
+            () => unawaited(_seekNextBar()),
+        const SingleActivator(LogicalKeyboardKey.end): () =>
+            unawaited(_seekToEnd()),
         const SingleActivator(LogicalKeyboardKey.keyZ, control: true): () =>
             unawaited(_undoClipMove()),
         const SingleActivator(LogicalKeyboardKey.keyZ,
@@ -1932,6 +1992,8 @@ class _AetherbandWorkspaceState extends State<AetherbandWorkspace> {
                                     zoom: _zoom,
                                     playheadSeconds: _telemetry.playheadSeconds,
                                     tempo: _performance.tempo.round(),
+                                    onSeek: (seconds) =>
+                                        unawaited(_seekToSeconds(seconds)),
                                     onTrackSelected: _selectTrack,
                                     onClipSelected: _selectClip,
                                     onClipMoved: _moveClip,
@@ -2070,8 +2132,8 @@ class _MenuBar extends StatelessWidget {
     ],
     'Navigate': [
       _MenuAction('navigate.start', 'Go to Start', 'Home'),
-      _MenuAction('navigate.previous', 'Previous Bar', '←'),
-      _MenuAction('navigate.next', 'Next Bar', '→'),
+      _MenuAction('navigate.previous', 'Previous Bar', 'Ctrl+←'),
+      _MenuAction('navigate.next', 'Next Bar', 'Ctrl+→'),
       _MenuAction('navigate.end', 'Go to End', 'End'),
     ],
     'Record': [

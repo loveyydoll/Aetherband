@@ -83,6 +83,11 @@ void main() {
       await engine.telemetry
           .firstWhere((frame) => frame.isPlaying && frame.peakLeft > 0)
           .timeout(const Duration(seconds: 5));
+      await engine.seekSeconds(1.25);
+      final sought = await engine.telemetry
+          .firstWhere((frame) => frame.isPlaying && frame.playheadSeconds >= 1.25)
+          .timeout(const Duration(seconds: 5));
+      expect(sought.playheadSeconds, greaterThanOrEqualTo(1.25));
       await engine.stop();
 
       // Offline rendering traverses the real Dart isolate -> C ABI -> Rust

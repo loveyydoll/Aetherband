@@ -1,7 +1,7 @@
 # Aetherband — Project State Handoff
 
 **Snapshot date:** 2026-10-19
-**Evidence level:** Windows Rust workspace tests, C ABI build, core Clippy and Dart analysis pass for the current branch. An opt-in WASAPI smoke test produced nonzero HypnoSynth callback samples and shut down cleanly. Flutter analysis and all 40 tests pass locally; a separate Windows Dart FFI integration test passes against the release DLL; speaker listening/loopback capture is not independently verified.
+**Evidence level:** Windows Rust workspace tests, C ABI build, core Clippy and Dart analysis pass for the current local changes. An opt-in WASAPI smoke test produced nonzero HypnoSynth callback samples and shut down cleanly. Flutter analysis and all 52 tests pass locally; a separate Windows Dart FFI integration test passes against the release DLL; speaker listening/loopback capture is not independently verified.
 
 ## Product identity
 
@@ -22,7 +22,7 @@ Do not reintroduce C#/.NET/Avalonia as a second desktop frontend. Verify current
 - The launch arrangement is a real empty session rather than six visual demo tracks. Imported audio remains duration-aware and native playback is routed to the default Windows device using its native sample format.
 - The real-time Rust callback now renders imported tracks and HypnoSynth, supports full oversized buffers, and defers decoder/player reclamation to the control thread. Device stream errors are surfaced through telemetry. Space toggles play/pause and R toggles recording through the native engine.
 - HypnoSynth is an original polyphonic instrument with three original presets, live keyboard input and a persisted, editable 16-step sequence with tempo/metronome playback. Its musical references do not use copied recordings or claim to recreate a specific patch.
-- ABI 0.8.0, Dart FFI and session schema v3 carry synth, transport, master gain, track solo state, imported-audio clip positions, the editable 16-step synth sequence, offline stereo WAV export and Windows input recording. Sessions stage media in a fresh engine before replacing active state; schema v1 and v2 remain readable.
+- ABI 0.9.0, Dart FFI and session schema v3 carry transport seek, synth, master gain, track solo state, imported-audio clip positions, the editable 16-step synth sequence, offline stereo WAV export and Windows input recording. Sessions stage media in a fresh engine before replacing active state; schema v1 and v2 remain readable.
 - Rust callback tests confirm audible generated and decoded signals; physical speaker or loopback listening still requires a user machine with an audio output.
 - Windows recording uses the default input device and a background stereo PCM16 WAV writer; stopping finalizes and imports the take at the transport position. Input hardware behavior remains unverified.
 - Live meters must use actual engine telemetry, not invented animation.
@@ -46,7 +46,7 @@ See [Feature Tracker](FEATURE_TRACKER.md) for the living backlog. Initial order:
 
 ## Current verification and uncertainty
 
-On 2026-10-19, published implementation commit `e164b9f` includes tested Delete-key, F2 rename and Ctrl+Alt+E export shortcuts. Rust CI run 294 and Flutter desktop run 90 pass on that head. Current local Windows checks also pass with 51 Flutter tests, clean analysis and Windows debug build. Rust workspace tests (47 core, 8 ABI, callback-allocation and WASAPI smoke target), Clippy, release DLL build, and the focused Dart FFI integration test against the release DLL and default output device pass. The WASAPI smoke produces nonzero callback samples. These results do not prove audible output through speakers or successful microphone/line-in capture. Clippy passes with existing missing-`# Safety` documentation warnings in C ABI exports.
+On 2026-10-19, published implementation commit `e164b9f` includes tested Delete-key, F2 rename and Ctrl+Alt+E export shortcuts. Rust CI run 294 and Flutter desktop run 90 pass on that earlier head. Current local Windows changes add transport seeking through ABI 0.9.0, bar keyboard navigation and timeline-ruler seeking while preserving playback state. Local checks pass with 52 Flutter tests, 48 core tests, 9 ABI tests, callback-allocation and WASAPI smoke targets, clean analysis, Clippy and Windows debug/release builds. The focused Dart FFI integration test seeks during playback against the default output device. These results do not prove audible output through speakers or successful microphone/line-in capture; latest changes still require remote CI. Clippy passes with existing missing-`# Safety` documentation warnings in C ABI exports.
 
 PR #33 remains open and unmerged. New local edits must be published to the same PR and checked by remote CI; do not infer sound quality or hardware recording from callback/unit tests alone.
 ## Required handoff format

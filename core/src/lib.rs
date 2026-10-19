@@ -134,6 +134,7 @@ pub struct DAWEngine {
     sequence_pattern: [Option<u8>; 16],
     preset: u8,
     macros: [f32; 5],
+    transport_playing: bool,
 }
 
 impl DAWEngine {
@@ -163,6 +164,7 @@ impl DAWEngine {
             sequence_pattern: DEFAULT_SEQUENCE,
             preset: 0,
             macros: [0.42, 0.38, 0.55, 0.36, 0.7],
+            transport_playing: false,
         })
     }
 
@@ -285,6 +287,7 @@ impl DAWEngine {
         self.tracks = new_track_infos;
         self.output_sample_rate = new_sample_rate;
         self.current_device_index = Some(device_index);
+        self.transport_playing = false;
 
         Ok(())
     }
@@ -323,17 +326,27 @@ impl DAWEngine {
     // ── Transport controls ────────────────────────────────────────────────
 
     pub fn play(&mut self) -> bool {
-        self.ui_endpoints
+        let accepted = self
+            .ui_endpoints
             .cmd_producer
             .push(EngineCommand::Play)
-            .is_ok()
+            .is_ok();
+        if accepted {
+            self.transport_playing = true;
+        }
+        accepted
     }
 
     pub fn pause(&mut self) -> bool {
-        self.ui_endpoints
+        let accepted = self
+            .ui_endpoints
             .cmd_producer
             .push(EngineCommand::Pause)
-            .is_ok()
+            .is_ok();
+        if accepted {
+            self.transport_playing = false;
+        }
+        accepted
     }
 
     /// Stops playback, resets the playhead to zero, and restarts every track's
@@ -356,6 +369,7 @@ impl DAWEngine {
         {
             return false;
         }
+        self.transport_playing = false;
         let mut replacements = Vec::with_capacity(self.tracks.len());
         for track in &self.tracks {
             let Ok(mut decoder) =
@@ -391,14 +405,71 @@ impl DAWEngine {
             }
             self.decoders.insert(track_id.0, decoder);
         }
+        self.transport_playing = false;
         true
     }
 
     pub fn seek(&mut self, frame: i64) -> bool {
-        self.ui_endpoints
-            .cmd_producer
-            .push(EngineCommand::Seek(frame))
-            .is_ok()
+        let frame = frame.max(0);
+        let restart_playback = self.transport_playing;
+        let commands_needed = self.tracks.len() + usize::from(restart_playback) * 2 + 1;
+        if self.ui_endpoints.cmd_producer.slots() < commands_needed {
+            return false;
+        }
+
+        let mut replacements = Vec::with_capacity(self.tracks.len());
+        for track in &self.tracks {
+            let source_offset = frame.saturating_sub(track.start_frame).max(0);
+            let Ok(mut decoder) = StreamDecoder::spawn_from_output_frame(
+                Path::new(&track.file_path),
+                self.output_sample_rate,
+                source_offset,
+            ) else {
+                return false;
+            };
+            let mut player = Box::new(TrackPlayer::new(
+                track.id,
+                decoder.take_consumer(),
+                track.gain,
+                track.output_frames,
+            ));
+            player.start_frame = track.start_frame;
+            player.pan = track.pan;
+            player.muted = track.muted;
+            player.solo = track.solo;
+            replacements.push((track.id, decoder, Some(player)));
+        }
+
+        let commands = &mut self.ui_endpoints.cmd_producer;
+        if restart_playback && commands.push(EngineCommand::Pause).is_err() {
+            return false;
+        }
+        if commands.push(EngineCommand::Seek(frame)).is_err() {
+            return false;
+        }
+        for (track_id, _, player) in &mut replacements {
+            let player_ptr =
+                Box::into_raw(player.take().expect("replacement player exists")) as usize;
+            if commands
+                .push(EngineCommand::RestartTrack {
+                    track_id: *track_id,
+                    player_ptr,
+                })
+                .is_err()
+            {
+                // The queue capacity was reserved above; rejection cannot occur
+                // unless the single-producer invariant has been violated.
+                drop(unsafe { Box::from_raw(player_ptr as *mut TrackPlayer) });
+                return false;
+            }
+        }
+        if restart_playback && commands.push(EngineCommand::Play).is_err() {
+            return false;
+        }
+        for (track_id, decoder, _) in replacements {
+            self.decoders.insert(track_id.0, decoder);
+        }
+        true
     }
 
     // ── Master ────────────────────────────────────────────────────────────
@@ -796,6 +867,7 @@ mod engine_tests {
             sequence_pattern: DEFAULT_SEQUENCE,
             preset: 0,
             macros: [0.42, 0.38, 0.55, 0.36, 0.7],
+            transport_playing: false,
         };
         assert!(engine.play());
         assert!(!engine.remove_track(TrackId(1)));

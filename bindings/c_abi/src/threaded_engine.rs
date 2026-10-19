@@ -95,6 +95,19 @@ impl EngineHandle {
     command!(play);
     command!(pause);
     command!(stop);
+    pub fn seek_seconds(&self, seconds: f64) -> bool {
+        self.call(move |engine| {
+            if !seconds.is_finite() || seconds < 0.0 {
+                return false;
+            }
+            let frame = seconds * engine.output_sample_rate() as f64;
+            if !frame.is_finite() || frame > i64::MAX as f64 {
+                return false;
+            }
+            engine.seek(frame.round() as i64)
+        })
+        .unwrap_or(false)
+    }
     command!(synth_event, event: u32, key: u32, value: f32);
     command!(configure_transport, bpm: f32, metronome: bool, sequence: bool);
     command!(set_master_volume, gain: f32);

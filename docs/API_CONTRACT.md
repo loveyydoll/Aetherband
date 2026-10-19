@@ -1,6 +1,6 @@
 # C ABI Contract — Aetherband
 
-**Current ABI version:** `0.8.0` (`daw_get_api_version() == 0x00000800`)
+**Current ABI version:** `0.9.0` (`daw_get_api_version() == 0x00000900`)
 **Source of truth:** `bindings/c_abi/src/lib.rs`. If this document disagrees with the Rust exports, fix the documentation or deliberately update the ABI and version together.
 
 This contract is for the Flutter/Dart desktop app using `dart:ffi`. The former C# / Avalonia frontend and its `csbindgen` P/Invoke generation have been removed from the desktop architecture.
@@ -19,7 +19,7 @@ This contract is for the Flutter/Dart desktop app using `dart:ffi`. The former C
 
 ## ABI version
 
-`daw_get_api_version()` returns `(major << 16) | (minor << 8) | patch`. Version 0.8.0 adds editable 16-step HypnoSynth sequence events and keeps their session/export state synchronized. Version 0.7.0 adds default Windows input recording and final statistics. Version 0.6.0 adds `daw_engine_export_wav` for offline stereo PCM export. Version 0.5.0 adds `daw_engine_set_track_start_seconds` for scheduling imported clips in the arrangement. Version 0.4.0 adds HypnoSynth event and transport configuration calls plus per-track solo. Version 0.3.0 added `daw_engine_get_track_info`, preserves engine OS-thread ownership behind the opaque handle, and returns -3 for queue-rejected removal without deleting track metadata. Version 0.2.0 introduced the active sample-rate query. Rebuild the native library and Dart app together; the Dart adapter requires an exact version match.
+`daw_get_api_version()` returns `(major << 16) | (minor << 8) | patch`. Version 0.9.0 adds transport seeking by seconds; seek restarts affected decoders on the control thread and preserves whether playback was active. Version 0.8.0 adds editable 16-step HypnoSynth sequence events and keeps their session/export state synchronized. Version 0.7.0 adds default Windows input recording and final statistics. Version 0.6.0 adds `daw_engine_export_wav` for offline stereo PCM export. Version 0.5.0 adds `daw_engine_set_track_start_seconds` for scheduling imported clips in the arrangement. Version 0.4.0 adds HypnoSynth event and transport configuration calls plus per-track solo. Version 0.3.0 added `daw_engine_get_track_info`, preserves engine OS-thread ownership behind the opaque handle, and returns -3 for queue-rejected removal without deleting track metadata. Version 0.2.0 introduced the active sample-rate query. Rebuild the native library and Dart app together; the Dart adapter requires an exact version match.
 
 Any incompatible layout/signature/ownership change requires a version change and synchronized Rust/Dart updates. Additive exports should still be documented and versioned deliberately.
 
@@ -78,6 +78,7 @@ Do not substitute a different field order or widths in Dart. The Dart `Struct` d
 | `daw_engine_play(engine)` | Request playback | 0 accepted; negative error |
 | `daw_engine_pause(engine)` | Request pause | 0 accepted; negative error |
 | `daw_engine_stop(engine)` | Request Stop and decoder restart | 0 accepted; negative error |
+| `daw_engine_seek_seconds(engine, seconds)` | Seek transport; rebuild decoders at that position and resume if already playing (0–86,400 seconds) | 0 accepted; -1 invalid input; -3 command rejected |
 | `daw_engine_poll_telemetry(engine, out_frame)` | Read telemetry | 0 frame read; 1 no new frame; negative error |
 | `daw_engine_get_sample_rate(engine, out_rate)` | Get active output rate in Hz | 0 success; negative error |
 | `daw_engine_set_master_volume(engine, gain)` | Set master linear gain | 0 accepted; negative error |

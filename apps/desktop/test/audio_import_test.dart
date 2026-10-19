@@ -13,7 +13,12 @@ import 'package:aetherband_desktop/src/widgets/workspace_panels.dart';
 import 'package:aetherband_desktop/src/widgets/timeline_view.dart';
 import 'package:aetherband_desktop/src/session_store.dart';
 
-class FakeEngine implements EngineController, PerformanceEngine, ExportEngine {
+class FakeEngine
+    implements
+        EngineController,
+        PerformanceEngine,
+        ExportEngine,
+        TransportSeekEngine {
   final frames = StreamController<EngineTelemetry>.broadcast();
   final calls = <String>[];
   Completer<LoadedAudioTrack>? importResult;
@@ -40,6 +45,11 @@ class FakeEngine implements EngineController, PerformanceEngine, ExportEngine {
   @override
   Future<void> stop() async {
     calls.add('stop');
+  }
+
+  @override
+  Future<void> seekSeconds(double seconds) async {
+    calls.add('seek:$seconds');
   }
 
   @override
@@ -247,6 +257,20 @@ void main() {
 
     expect(engine.calls, contains('export:C:/exports/Keyboard Mix.wav'));
     expect(find.textContaining('Stereo WAV exported to'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('Ctrl+Right seeks to the next musical bar', (tester) async {
+    final engine = FakeEngine();
+    await mountWorkspace(tester, engine);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+
+    expect(engine.calls, contains('seek:${240 / 92}'));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });

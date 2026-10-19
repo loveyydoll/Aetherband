@@ -123,13 +123,13 @@ Aetherband is in an early stage. The distinction between existing code, verified
 - A Rust audio-engine workspace and a C ABI for communication with the desktop UI.
 - Native multi-track playback and mixing, master gain, per-track gain/pan/mute/solo, native device sample formats, and full-buffer callback processing.
 - HypnoSynth, an original polyphonic software instrument with three original atmospheric and post-punk presets, a live keyboard, performance macros, tempo, metronome, phrase playback and panic.
-- Versioned C ABI 0.8.0 and Dart FFI routes for engine, audio, mixer, clip positioning, synth, editable 16-step sequence, Space/R transport shortcuts and session settings, Windows output-device selection, stereo WAV export and Windows input recording.
+- Versioned C ABI 0.9.0 and Dart FFI routes for engine, audio, mixer, clip positioning, timeline/bar transport seeking, synth, editable 16-step sequence, Space/R transport shortcuts and session settings, Windows output-device selection, stereo WAV export and Windows input recording.
 - Windows is the only current target. Rust signal, transport, callback and FFI tests pass; the opt-in WASAPI callback smoke test passes; Dart analysis passed during implementation.
 
 ### Known gaps
 
 - Windows input recording writes a WAV and adds it as a real audio track; its hardware path remains unverified. PCM and IEEE-float WAV clips render measured peaks; other waveform formats are clearly marked unavailable. Imported audio tracks support rename, duplicate, copy, cut, and paste at the transport position, including Ctrl+X/C/V/D. Home/Go to Start rewinds transport outside recording. Zoom to Fit scales the arrangement to its content. Undo/redo covers clip moves; editable MIDI, effects, automation, plugin hosting, split/trim/resize and general editing history remain future work. Imported audio clips snap to quarter-note beats by default, with a toolbar toggle for free placement; positions persist in session files.
-- Local Windows checks pass: 47 Rust core tests, 8 ABI tests, callback-allocation and WASAPI smoke targets, Clippy, release DLL, Flutter analysis, 51 Flutter tests, native FFI integration against the default output device, and a Windows debug build. Rust run 294 and Flutter desktop run 90 pass on `e164b9f`. Physical listening/loopback capture remains unverified.
+- Local Windows checks pass: 48 Rust core tests, 9 ABI tests, callback-allocation and WASAPI smoke targets, Clippy, release DLL, Flutter analysis, 52 Flutter tests, native FFI integration including seek during playback against the default output device, and a Windows debug build. Rust run 294 and Flutter desktop run 90 pass on earlier commit `e164b9f`; latest seek changes await remote CI. Physical listening/loopback capture remains unverified.
 - Synced `sources/` references and the pre-existing Desktop checkout remain untouched.
 - The current CI checks need to pass before the migration can be described as stable.
 
@@ -185,7 +185,7 @@ Aetherband separates the creative interface from the work that must run close to
 | Technology | Role | Current status |
 |---|---|---|
 | **Rust** | Native audio engine, decoding, mixing, DSP and real-time callback | Core implementation exists; correctness and platform behavior still require regression testing |
-| **C ABI** | Versioned boundary between native engine and desktop UI | ABI 0.8.0; includes audio, mixer, clip positions, transport, editable HypnoSynth sequence, device selection, stereo export, and Windows input recording; see [API_CONTRACT.md](docs/API_CONTRACT.md) |
+| **C ABI** | Versioned boundary between native engine and desktop UI | ABI 0.9.0; includes audio, mixer, clip positions, transport seek, editable HypnoSynth sequence, device selection, stereo export, and Windows input recording; see [API_CONTRACT.md](docs/API_CONTRACT.md) |
 | **Dart FFI** | Native library loading, ABI validation, engine lifecycle and telemetry | Windows worker-isolate path connects audio and performance controls |
 | **Flutter / Dart** | Windows desktop UI and creative workspace | Main interface; the initial session opens empty with HypnoSynth ready |
 | **CPAL / Symphonia / rtrb** | Audio device I/O, media decoding and bounded cross-thread communication | Used by the Rust engine; exact supported formats and runtime behavior must be verified per platform |

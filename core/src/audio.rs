@@ -209,8 +209,13 @@ impl AudioProcessor {
                 }
                 Seek(frame) => {
                     self.playhead_frame = frame.max(0);
-                    // Track seek is handled by the control thread restarting
-                    // the decoder from the new position
+                    self.beat_phase = self.playhead_frame as f64 / self.sample_rate as f64
+                        * self.bpm as f64
+                        / 60.0;
+                    self.click_remaining = 0;
+                    if let Some(note) = self.sequence_note.take() {
+                        self.synth.note_off(note);
+                    }
                 }
                 SetMasterVolume {
                     target_gain,

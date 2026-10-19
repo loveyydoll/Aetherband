@@ -131,7 +131,7 @@ impl Default for DAWDeviceInfo {
 /// Returns the API version (major << 16 | minor << 8 | patch).
 #[no_mangle]
 pub extern "C" fn daw_get_api_version() -> u32 {
-    8 << 8
+    9 << 8
 }
 
 /// Starts recording from the default Windows input device to a new WAV path.
@@ -344,6 +344,27 @@ pub unsafe extern "C" fn daw_engine_stop(engine: *mut DAWEngine) -> i32 {
         }
     } else {
         -1
+    }
+}
+
+/// Seeks the transport to an absolute position in seconds.
+///
+/// # Safety
+/// `engine` must be null or a valid handle returned by `daw_engine_create` that
+/// has not been destroyed. Calls for one handle must be serialized.
+#[no_mangle]
+pub unsafe extern "C" fn daw_engine_seek_seconds(engine: *mut DAWEngine, seconds: f64) -> i32 {
+    if !seconds.is_finite() || seconds < 0.0 || seconds > 86_400.0 {
+        return DAW_ERROR_INVALID_ARGUMENT;
+    }
+    if let Some(eng) = to_core_ref(engine) {
+        if eng.seek_seconds(seconds) {
+            DAW_OK
+        } else {
+            DAW_ERROR_COMMAND_REJECTED
+        }
+    } else {
+        DAW_ERROR_INVALID_ARGUMENT
     }
 }
 
@@ -676,7 +697,7 @@ mod ffi_contract_tests {
 
     #[test]
     fn api_version_matches_dart_ffi_contract() {
-        assert_eq!(daw_get_api_version(), 0x0000_0800);
+        assert_eq!(daw_get_api_version(), 0x0000_0900);
     }
 
     #[test]
@@ -685,6 +706,16 @@ mod ffi_contract_tests {
             unsafe { daw_engine_export_wav(ptr::null_mut(), ptr::null()) },
             DAW_ERROR_INVALID_ARGUMENT
         );
+    }
+
+    #[test]
+    fn seek_rejects_null_handles_and_invalid_positions() {
+        unsafe {
+            assert_eq!(daw_engine_seek_seconds(ptr::null_mut(), 1.0), -1);
+            assert_eq!(daw_engine_seek_seconds(ptr::null_mut(), -1.0), -1);
+            assert_eq!(daw_engine_seek_seconds(ptr::null_mut(), f64::NAN), -1);
+            assert_eq!(daw_engine_seek_seconds(ptr::null_mut(), 86_400.1), -1);
+        }
     }
 
     #[test]

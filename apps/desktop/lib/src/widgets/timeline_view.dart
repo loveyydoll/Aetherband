@@ -14,6 +14,7 @@ class TimelineView extends StatelessWidget {
     required this.zoom,
     required this.playheadSeconds,
     required this.tempo,
+    required this.onSeek,
     required this.onTrackSelected,
     required this.onClipSelected,
     required this.onClipMoved,
@@ -31,6 +32,7 @@ class TimelineView extends StatelessWidget {
   final double zoom;
   final double playheadSeconds;
   final int tempo;
+  final ValueChanged<double> onSeek;
   final ValueChanged<TrackModel> onTrackSelected;
   final void Function(TrackModel, ClipModel) onClipSelected;
   final void Function(TrackModel, ClipModel, double) onClipMoved;
@@ -132,7 +134,12 @@ class TimelineView extends StatelessWidget {
                           children: [
                             Column(
                               children: [
-                                _TimelineRuler(width: contentWidth, zoom: zoom),
+                                _TimelineRuler(
+                                  width: contentWidth,
+                                  zoom: zoom,
+                                  tempo: tempo,
+                                  onSeek: onSeek,
+                                ),
                                 for (final track in tracks)
                                   _TimelineLane(
                                     key: ValueKey('lane-${track.id}'),
@@ -335,40 +342,54 @@ class _MiniButton extends StatelessWidget {
 }
 
 class _TimelineRuler extends StatelessWidget {
-  const _TimelineRuler({required this.width, required this.zoom});
+  const _TimelineRuler({
+    required this.width,
+    required this.zoom,
+    required this.tempo,
+    required this.onSeek,
+  });
 
   final double width;
   final double zoom;
+  final int tempo;
+  final ValueChanged<double> onSeek;
 
   @override
   Widget build(BuildContext context) {
     final barWidth = 84 * zoom;
     final bars = (width / barWidth).ceil();
-    return SizedBox(
-      height: 38,
-      width: width,
-      child: Row(
-        children: [
-          for (var i = 0; i < bars; i++)
-            Container(
-              width: i == bars - 1
-                  ? math.max(0.0, width - i * barWidth)
-                  : barWidth,
-              padding: const EdgeInsets.only(left: 6, top: 7),
-              decoration: const BoxDecoration(
-                color: AetherColors.panel,
-                border: Border(
-                  left: BorderSide(color: AetherColors.raised, width: 0.6),
-                  bottom: BorderSide(color: AetherColors.raised),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (details) {
+        final secondsPerBar = 240 / tempo;
+        onSeek(details.localPosition.dx / barWidth * secondsPerBar);
+      },
+      child: SizedBox(
+        height: 38,
+        width: width,
+        child: Row(
+          children: [
+            for (var i = 0; i < bars; i++)
+              Container(
+                width: i == bars - 1
+                    ? math.max(0.0, width - i * barWidth)
+                    : barWidth,
+                padding: const EdgeInsets.only(left: 6, top: 7),
+                decoration: const BoxDecoration(
+                  color: AetherColors.panel,
+                  border: Border(
+                    left: BorderSide(color: AetherColors.raised, width: 0.6),
+                    bottom: BorderSide(color: AetherColors.raised),
+                  ),
+                ),
+                child: Text(
+                  (i + 1).toString().padLeft(2, '0'),
+                  style: const TextStyle(
+                      color: AetherColors.secondaryText, fontSize: 10),
                 ),
               ),
-              child: Text(
-                (i + 1).toString().padLeft(2, '0'),
-                style: const TextStyle(
-                    color: AetherColors.secondaryText, fontSize: 10),
-              ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
