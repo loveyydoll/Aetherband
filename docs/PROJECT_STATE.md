@@ -46,7 +46,7 @@ See [Feature Tracker](FEATURE_TRACKER.md) for the living backlog. Initial order:
 
 ## Current verification and uncertainty
 
-On 2026-10-19, published commit `7ed5b8c` passed both Windows CI workflows; the Rust workflow also passes on `a1e3445`. Local Windows checks pass for the current working tree: Rust workspace tests (47 core, 8 ABI, callback-allocation and WASAPI smoke target), Clippy, release DLL build, Flutter analysis and 45 Flutter tests, plus the focused Dart FFI integration test against the release DLL and default output device. The WASAPI smoke produces nonzero callback samples. These results do not prove audible output through speakers or successful microphone/line-in capture. Clippy passes with existing missing-`# Safety` documentation warnings in C ABI exports. Rename and Home-navigation work are waiting for publication and latest-head CI.
+On 2026-10-19, published commit `68f212a` passed both Windows CI workflows. Local Windows checks pass for the current working tree: Rust workspace tests (47 core, 8 ABI, callback-allocation and WASAPI smoke target), Clippy, release DLL build, Flutter analysis and 45 Flutter tests, plus the focused Dart FFI integration test against the release DLL and default output device. The WASAPI smoke produces nonzero callback samples. These results do not prove audible output through speakers or successful microphone/line-in capture. Clippy passes with existing missing-`# Safety` documentation warnings in C ABI exports.
 
 PR #33 remains open and unmerged. New local edits must be published to the same PR and checked by remote CI; do not infer sound quality or hardware recording from callback/unit tests alone.
 ## Required handoff format
